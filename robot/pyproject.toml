@@ -1,0 +1,39 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "reachy-meetings-robot"
+version = "0.1.0"
+description = "Robot side of Reachy Mini Meetings: Reachy Mini Lite as a physical avatar for a remote XR participant"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "reachy-mini",          # Pollen Robotics SDK (+ daemon for Lite)
+    "numpy",
+    "scipy",                # rotations, resampling
+    "pyyaml",
+    "websockets>=12",       # bridge to xr-client / backend
+]
+
+[project.optional-dependencies]
+dev = ["pytest", "ruff"]
+
+# Lets the Reachy Mini dashboard (http://127.0.0.1:8000) discover and start the app.
+[project.entry-points."reachy_mini_apps"]
+reachy_meetings = "reachy_meetings_robot.main:MeetingAvatarApp"
+
+[project.scripts]
+reachy-meetings = "reachy_meetings_robot.main:cli"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+reachy_meetings_robot = ["default_config.yaml"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100

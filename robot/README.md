@@ -1,6 +1,94 @@
-# robot
+# robot – Reachy Mini Lite side
 
-Reachy Mini control: head-pose mirroring, expressive gestures (head / antennas), audio output for translated speech.
+Python package `reachy_meetings_robot`. Turns the Reachy Mini Lite into the remote user's physical avatar:
+
+- **Head mirroring**: the headset pose drives the robot head, and the body turns along when needed.
+- **Gestures**: nod, shake, tilt, antenna emotions. They are layered *on top of* the mirroring.
+- **Camera**: frames are stamped with the head pose, which the xr-client needs for reprojection.
+- **Microphone + DoA** (direction of arrival): audio goes to the backend for speech-to-text and translation. The speaker direction is used for the speech bubbles.
+- **Speaker**: plays the remote user's translated speech, and the antennas move while it talks.
+- **Bridge**: a WebSocket server that the xr-client and the backend connect to.
+
+## Setup (macOS, Lite over USB)
+
+Follows the [Pollen install guide](https://huggingface.co/docs/reachy_mini/main/SDK/installation). It uses Python 3.10–3.12 and `uv`, not conda base.
+
+```bash
+curl -LsSf https://astral.sh/uv/install.sh | sh      # once
+cd robot
+uv venv --python 3.12 && source .venv/bin/activate
+uv pip install -e ".[dev]"            # installs reachy-mini + this package
+uv pip install "reachy-mini[mujoco]"  # optional: simulation
+```
+
+## Run
+
+```bash
+# Terminal 1 – daemon (talks to the robot over USB, serves http://localhost:8000)
+reachy-mini-daemon            # real robot
+reachy-mini-daemon --sim      # simulation, no robot needed
+
+# Terminal 2
+python scripts/check_connection.py     # smoke test: wake up, nod, antennas, sleep
+python scripts/demo_gestures.py        # every gesture once
+python scripts/axis_check.py           # real robot: do yaw/pitch/roll go the documented way?
+reachy-meetings --no-media             # avatar: motion + bridge on ws://0.0.0.0:8765
+
+# Terminal 3 – fake headset until the xr-client exists
+python scripts/mock_headset.py
+```
+
+Tests, without robot or daemon: `pytest -q`
+
+## Layout
+
+```
+src/reachy_meetings_robot/
+├── main.py              Avatar (wires everything) + CLI + ReachyMiniApp for the dashboard
+├── default_config.yaml  all tunables (rates, smoothing, limits, ports); override with --config
+├── config.py            YAML -> dataclasses
+├── connection.py        connect / wake_up / goto_sleep
+├── safety.py            clamp to limits, body follow
+├── state.py             shared RobotState (what was commanded, speaking, DoA …)
+├── motion/
+│   ├── controller.py    THE control loop: the only place that calls set_target()
+│   ├── head_mirror.py   headset pose -> smoothed head target
+│   └── gestures.py      gesture library (offset functions) + player
+├── media/
+│   ├── camera.py        pose-stamped frames
+│   ├── audio_in.py      mic chunks + DoA
+│   └── audio_out.py     TTS playback queue
+└── bridge/
+    ├── protocol.py      JSON messages (keep in sync with xr-client / backend)
+    └── server.py        WebSocket server
+scripts/                 check_connection, demo_gestures, mock_headset
+tests/                   pure-logic tests
+```
+
+## Design rules
+
+1. **Only `MotionController` moves the robot.** Everything else sends it intents (a head pose or a gesture). Otherwise the `set_target` / `goto_target` calls fight each other.
+2. **Gestures are offsets, not poses.** A gesture is `f(s) -> (roll, pitch, yaw, antL, antR)` in degrees, with `s ∈ [0, 1]`. It starts and ends at 0. To add one, write the function and register it in `GESTURES`.
+3. **Report what was commanded.** `RobotState` holds the head pose after clamping. The headset reprojects against exactly that.
+4. **Units:** everything internal is in degrees and mm. Conversion to the SDK (4×4 pose matrix, radians) happens only in `controller.tick()`.
+
+## SDK facts used (reachy-mini 1.11, checked against the source)
+
+- `set_target(head=4x4, antennas=[right, left] rad, body_yaw=rad)`. **The antenna order is right, left.**
+- `create_head_pose(x, y, z, roll, pitch, yaw, mm=False, degrees=True)`
+- Limits: head pitch/roll ±40°, head yaw ±180°, body yaw ±160°, max 65° between head and body yaw
+- Audio: float32, 16 kHz. `push_audio_sample` is non-blocking. `get_DoA()` returns `(rad, speech)`, where 0 = left, π/2 = front, π = right.
+- `media.get_frame()` returns a (H, W, 3) uint8 array, and `media.get_frame_jpeg()` exists too.
+
+## Open TODOs
+
+- [ ] **Verify the axis signs on the real robot** (roll/pitch/yaw, antennas), then fix the comment in `bridge/protocol.py`
+- [ ] Video transport to the headset: the daemon's WebRTC stream or our own JPEG/H.264 over WebSocket, plus pose metadata (`media/camera.py`)
+- [ ] Mic audio → backend (STT/translation): wire it up in `main.py`
+- [ ] Measure latency: headset `t` vs. receive time, then add predictive filtering in `head_mirror.py`
+- [ ] Glance at the speaker via DoA (optional, needs arbitration with mirroring)
+- [ ] Tune gestures on the hardware (amplitudes, durations)
+
 
 ## `turn_to_speaker.py` – turn towards whoever is speaking
 

@@ -1,0 +1,40 @@
+# Default configuration. Override with --config path/to/your.yaml (only the keys you change).
+
+robot:                     # start the daemon first: `reachy-mini-daemon` (USB) or `reachy-mini-daemon --sim`
+  # "auto" lets the SDK decide (USB/localhost for Lite). Force "localhost_only" if needed.
+  connection_mode: auto
+  media_backend: default    # default | local | webrtc | no_media
+  wake_up_on_start: true
+  sleep_on_exit: true
+
+limits:                     # Reachy Mini safety limits (SDK clamps too; we clamp first so state stays consistent)
+  head_pitch_deg: 40
+  head_roll_deg: 40
+  head_yaw_deg: 180
+  body_yaw_deg: 160
+  max_head_body_yaw_delta_deg: 65
+  head_z_mm: [-20, 20]      # TODO: verify against hardware
+
+mirror:                     # headset pose -> robot head
+  rate_hz: 50               # control loop rate for set_target
+  smoothing: 0.35           # 0 = raw, 1 = frozen (exp. moving average)
+  deadband_deg: 0.8         # ignore jitter below this
+  gain: [1.0, 1.0, 1.0]     # roll, pitch, yaw scaling (headset deg -> robot deg)
+  stale_after_s: 0.5        # no pose for this long -> drift back to neutral
+  body_follow: true         # rotate body when head yaw exceeds the head/body delta
+
+gestures:
+  default_duration_s: 0.6
+
+camera:
+  rate_hz: 30
+  attach_head_pose: true    # pose-stamp every frame (needed for reprojection in xr-client)
+
+audio:
+  doa_rate_hz: 10           # direction-of-arrival polling
+  tts_sample_rate: 16000
+
+bridge:
+  host: 0.0.0.0
+  port: 8765                # WebSocket for xr-client + backend
+  state_rate_hz: 20         # how often robot state is broadcast
