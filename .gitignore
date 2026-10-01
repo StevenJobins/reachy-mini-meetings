@@ -1,0 +1,45 @@
+# OS / editors
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.swp
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+.ipynb_checkpoints/
+
+# Secrets
+.env
+*.env
+secrets.*
+
+# Unity
+[Ll]ibrary/
+[Tt]emp/
+[Oo]bj/
+[Bb]uild/
+[Bb]uilds/
+[Ll]ogs/
+[Uu]ser[Ss]ettings/
+*.csproj
+*.sln
+*.apk
+*.aab
+
+# Android / Gradle
+.gradle/
+local.properties
+*.keystore
+
+# Node
+node_modules/
+
+# Large media
+*.mp4
+*.mov
+*.bag
