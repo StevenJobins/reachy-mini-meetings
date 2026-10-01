@@ -1,0 +1,274 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Reachy Teleop</title>
+<style>
+  body { margin: 0; font: 14px/1.4 system-ui, sans-serif; background: #111; color: #eee; padding: 16px; }
+  video { width: 100%; max-width: 960px; background: #000; display: block; margin: 12px 0; }
+  button { font-size: 18px; padding: 10px 18px; margin-right: 8px; }
+  pre { background: #000; padding: 8px; height: 220px; overflow: auto; font-size: 12px; }
+  #hud { white-space: pre; font-family: ui-monospace, monospace; }
+</style>
+</head>
+<body>
+<button id="enter" disabled>Enter VR</button>
+<button id="recenter">Recenter</button>
+<div id="hud"></div>
+<video id="video" autoplay playsinline muted></video>
+<pre id="log"></pre>
+
+<script type="importmap">
+{ "imports": { "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js" } }
+</script>
+<script type="module">
+import * as THREE from "three";
+
+// Defaults assume `adb reverse` for 8000, 8443 + 8765, so everything is localhost (= secure context).
+const params = new URLSearchParams(location.search);
+const host = params.get("host") || location.hostname;
+const SIGNALLING_URL = params.get("signalling") || `ws://${host}:8443`;
+const BRIDGE_URL = params.get("bridge") || `ws://${host}:8765`;
+const DAEMON_STATE_URL = params.get("daemon") ||
+  `ws://${host}:8000/api/state/ws/full?frequency=60&with_head_pose=true&with_body_yaw=true`;
+const SEND_HZ = Number(params.get("hz") || 50);
+const VFOV_DEG = Number(params.get("vfov") || 80);   // MuJoCo eye_camera fovy; TODO real Lite camera
+const SCREEN_DIST = Number(params.get("dist") || 3);  // m
+const HEAD_LOCKED = params.get("mode") === "head";    // ?mode=head = old head-locked screen
+
+const logEl = document.getElementById("log");
+const hudEl = document.getElementById("hud");
+const video = document.getElementById("video");
+function log(...a) {
+  const line = `${(performance.now() / 1000).toFixed(2)} ${a.join(" ")}`;
+  console.log(line);
+  logEl.textContent = (line + "\n" + logEl.textContent).slice(0, 8000);
+}
+
+// ---------------------------------------------------------------- debug status
+const status = {
+  signalling: "-", ice: "-", video: "-", bridge: "-",
+  sent_hz: 0, cmd: [0, 0, 0], robot: [0, 0, 0], body: 0, xr: "off",
+  daemon: "-", meas: [0, 0, 0],
+};
+let sentCount = 0;
+setInterval(() => { status.sent_hz = sentCount; sentCount = 0; }, 1000);
+function statusText() {
+  const f = (v) => v.map((x) => x.toFixed(1).padStart(6)).join(" ");
+  return [
+    `signalling ${status.signalling}   ice ${status.ice}   video ${status.video}`,
+    `bridge     ${status.bridge}   send ${status.sent_hz} Hz   xr ${status.xr}`,
+    `sent  r/p/y ${f(status.cmd)}`,
+    `robot r/p/y ${f(status.robot)}   body ${status.body.toFixed(1)}`,
+    `meas  r/p/y ${f(status.meas)}   daemon ${status.daemon}`,
+  ].join("\n");
+}
+setInterval(() => { hudEl.textContent = statusText(); }, 200);
+
+// ---------------------------------------------------------------- WebRTC video (GStreamer webrtcsink signalling)
+function startVideo() {
+  const ws = new WebSocket(SIGNALLING_URL);
+  let pc = null, sessionId = null;
+  const send = (m) => ws.send(JSON.stringify(m));
+
+  ws.onopen = () => { status.signalling = "open"; send({ type: "list" }); };
+  ws.onclose = () => {
+    status.signalling = "closed";
+    if (pc) pc.close();
+    setTimeout(startVideo, 2000);
+  };
+  ws.onerror = () => log("signalling error", SIGNALLING_URL);
+  ws.onmessage = async (ev) => {
+    const msg = JSON.parse(ev.data);
+    if (msg.type === "list") {
+      const prod = msg.producers.find((p) => p.meta?.name === "reachymini") || msg.producers[0];
+      if (!prod) { log("no producer yet, retrying"); setTimeout(() => send({ type: "list" }), 1000); return; }
+      log("producer", prod.id);
+      send({ type: "startSession", peerId: prod.id });
+    } else if (msg.type === "sessionStarted") {
+      sessionId = msg.sessionId;
+      pc = new RTCPeerConnection({ iceServers: [{ urls: "stun:stun.l.google.com:19302" }] });
+      pc.ontrack = (e) => {
+        if (e.track.kind !== "video") return;
+        video.srcObject = new MediaStream([e.track]);
+        status.video = "track";
+      };
+      pc.onicecandidate = (e) => {
+        if (e.candidate) send({ type: "peer", sessionId, ice: { candidate: e.candidate.candidate, sdpMLineIndex: e.candidate.sdpMLineIndex } });
+      };
+      pc.oniceconnectionstatechange = () => { status.ice = pc.iceConnectionState; log("ice", pc.iceConnectionState); };
+    } else if (msg.type === "peer" && msg.sdp) {
+      await pc.setRemoteDescription(msg.sdp);
+      await pc.setLocalDescription(await pc.createAnswer());
+      send({ type: "peer", sessionId, sdp: { type: "answer", sdp: pc.localDescription.sdp } });
+    } else if (msg.type === "peer" && msg.ice) {
+      await pc.addIceCandidate(msg.ice).catch((e) => log("addIceCandidate", e));
+    } else if (msg.type === "endSession") {
+      log("session ended by producer");
+      ws.close();
+    } else if (msg.type === "error") {
+      log("signalling:", msg.details);
+    }
+  };
+}
+video.onplaying = () => { status.video = `${video.videoWidth}x${video.videoHeight}`; };
+
+// ---------------------------------------------------------------- bridge (robot/src/reachy_meetings_robot/bridge)
+let bridge = null;
+function startBridge() {
+  bridge = new WebSocket(BRIDGE_URL);
+  bridge.onopen = () => { status.bridge = "open"; };
+  bridge.onclose = () => { status.bridge = "closed"; setTimeout(startBridge, 2000); };
+  bridge.onmessage = (ev) => {
+    const m = JSON.parse(ev.data);
+    if (m.type === "state") {
+      status.robot = [m.head_roll_deg, m.head_pitch_deg, m.head_yaw_deg];
+      status.body = m.body_yaw_deg;
+    } else {
+      log("bridge:", ev.data.slice(0, 200));
+    }
+  };
+}
+
+// ---------------------------------------------------------------- headset pose -> robot head frame
+// WebXR: x right, y up, -z forward.  Robot: x forward, y left, z up.
+// Quaternion vector part maps like the axes: robot (x, y, z) = (-xr.z, -xr.x, xr.y).
+// Euler as in create_head_pose ("xyz" extrinsic, R = Rz(yaw) Ry(pitch) Rx(roll)):
+//   yaw + = look left, pitch + = look down, roll + = tilt right (signs still to verify on the robot).
+const q0 = new THREE.Quaternion();      // headset orientation at recenter = robot "straight ahead"
+const q0inv = new THREE.Quaternion();
+let wantRecenter = true;
+const qRel = new THREE.Quaternion();
+const DEG = 180 / Math.PI;
+
+function headsetToRobot(q) {
+  qRel.copy(q0inv).multiply(q);
+  const w = qRel.w, x = -qRel.z, y = -qRel.x, z = qRel.y;
+  const r00 = 1 - 2 * (y * y + z * z), r10 = 2 * (x * y + w * z);
+  const r20 = 2 * (x * z - w * y), r21 = 2 * (y * z + w * x), r22 = 1 - 2 * (x * x + y * y);
+  return [
+    Math.atan2(r21, r22) * DEG,
+    Math.asin(Math.max(-1, Math.min(1, -r20))) * DEG,
+    Math.atan2(r10, r00) * DEG,
+  ];
+}
+
+// Inverse: robot head roll/pitch/yaw (rad, robot frame) -> orientation in the XR world.
+const _e = new THREE.Euler(), _qr = new THREE.Quaternion();
+function robotToXR(roll, pitch, yaw, out) {
+  _qr.setFromEuler(_e.set(roll, pitch, yaw, "ZYX"));   // three "ZYX" = Rz(yaw) Ry(pitch) Rx(roll)
+  out.set(-_qr.y, _qr.z, -_qr.x, _qr.w);               // xr (x, y, z) = (-robot.y, robot.z, -robot.x)
+  return out.premultiply(q0);
+}
+
+let lastSend = 0;
+function sendPose(q, now) {
+  if (wantRecenter) { q0.copy(q); q0inv.copy(q).invert(); wantRecenter = false; log("recentered"); }
+  if (!bridge || bridge.readyState !== WebSocket.OPEN || now - lastSend < 1000 / SEND_HZ) return;
+  lastSend = now;
+  const [roll, pitch, yaw] = headsetToRobot(q);
+  status.cmd = [roll, pitch, yaw];
+  bridge.send(JSON.stringify({ type: "head_pose", roll, pitch, yaw, t: Date.now() / 1000 }));
+  sentCount++;
+}
+document.getElementById("recenter").onclick = () => { wantRecenter = true; };
+
+// ---------------------------------------------------------------- measured robot head pose (daemon)
+// The video is placed where the robot head ACTUALLY looks (measured), not where we told it to look.
+const robotHeadXR = new THREE.Quaternion();
+let haveRobotPose = false;
+function startDaemonState() {
+  const ws = new WebSocket(DAEMON_STATE_URL);
+  ws.onopen = () => { status.daemon = "open"; };
+  ws.onclose = () => { status.daemon = "closed"; setTimeout(startDaemonState, 2000); };
+  ws.onmessage = (ev) => {
+    const h = JSON.parse(ev.data).head_pose;
+    if (!h) return;
+    status.meas = [h.roll * DEG, h.pitch * DEG, h.yaw * DEG];
+    robotToXR(h.roll, h.pitch, h.yaw, robotHeadXR);
+    haveRobotPose = true;
+  };
+}
+
+// ---------------------------------------------------------------- XR scene
+// Default: the camera image is a world-anchored window at the robot's measured head orientation
+// (rotation-only reprojection). Turn your head and the image stays put in the room until the robot
+// has followed. Outside the camera's field of view there is nothing to show.
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.xr.enabled = true;
+renderer.xr.setReferenceSpaceType("local");
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x101014);
+const camera = new THREE.PerspectiveCamera(70, 1, 0.05, 100);
+scene.add(camera);
+
+const grid = new THREE.GridHelper(20, 40, 0x335533, 0x222822);   // floor for a sense of a stable room
+grid.position.y = -1.4;
+scene.add(grid);
+
+const videoTex = new THREE.VideoTexture(video);
+videoTex.colorSpace = THREE.SRGBColorSpace;
+const screenH = 2 * SCREEN_DIST * Math.tan(VFOV_DEG / 2 / DEG);   // rectilinear plane = pinhole camera
+const screen = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), new THREE.MeshBasicMaterial({ map: videoTex }));
+screen.scale.set(screenH * 16 / 9, screenH, 1);
+screen.position.set(0, 0, -SCREEN_DIST);
+video.addEventListener("resize", () => {
+  if (video.videoHeight) screen.scale.x = screenH * video.videoWidth / video.videoHeight;
+});
+const robotView = new THREE.Group();
+robotView.add(screen);
+if (HEAD_LOCKED) camera.add(robotView); else scene.add(robotView);
+
+const hudCanvas = document.createElement("canvas");
+hudCanvas.width = 1024; hudCanvas.height = 200;
+const hudCtx = hudCanvas.getContext("2d");
+const hudTex = new THREE.CanvasTexture(hudCanvas);
+const hudMesh = new THREE.Mesh(new THREE.PlaneGeometry(0.8, 0.156), new THREE.MeshBasicMaterial({ map: hudTex, transparent: true }));
+hudMesh.position.set(0, -0.45, -1.2);   // head-locked, low in the view
+camera.add(hudMesh);
+setInterval(() => {
+  hudCtx.clearRect(0, 0, hudCanvas.width, hudCanvas.height);
+  hudCtx.fillStyle = "rgba(0,0,0,0.6)";
+  hudCtx.fillRect(0, 0, hudCanvas.width, hudCanvas.height);
+  hudCtx.fillStyle = "#7f7"; hudCtx.font = "26px monospace";
+  statusText().split("\n").forEach((l, i) => hudCtx.fillText(l, 12, 34 + i * 36));
+  hudTex.needsUpdate = true;
+}, 200);
+
+const xrQuat = new THREE.Quaternion();
+renderer.setAnimationLoop((now, frame) => {
+  if (frame) {
+    const pose = frame.getViewerPose(renderer.xr.getReferenceSpace());
+    if (pose) {
+      const o = pose.transform.orientation;
+      sendPose(xrQuat.set(o.x, o.y, o.z, o.w), now);
+    }
+  }
+  if (!HEAD_LOCKED && haveRobotPose) robotView.quaternion.slerp(robotHeadXR, 0.5);   // 60 Hz state -> smooth
+  renderer.render(scene, camera);
+});
+
+const enterBtn = document.getElementById("enter");
+if (navigator.xr && await navigator.xr.isSessionSupported("immersive-vr")) {
+  enterBtn.disabled = false;
+} else {
+  log("immersive-vr not supported (needs a secure context: localhost or https)");
+}
+enterBtn.onclick = async () => {
+  const session = await navigator.xr.requestSession("immersive-vr", { optionalFeatures: ["local"] });
+  session.addEventListener("select", () => { wantRecenter = true; });   // pinch / trigger = recenter
+  session.addEventListener("end", () => { status.xr = "off"; });
+  await renderer.xr.setSession(session);
+  wantRecenter = true;
+  status.xr = "on";
+  video.play();
+};
+
+log("signalling", SIGNALLING_URL, "bridge", BRIDGE_URL);
+startVideo();
+startBridge();
+startDaemonState();
+</script>
+</body>
+</html>

@@ -1,0 +1,250 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Reachy Meetings XR</title>
+<style>
+  :root { --bg: #111; --fg: #eee; --muted: #999; --accent: #ff9500; }
+  body { margin: 0; font: 16px/1.5 system-ui, sans-serif; background: var(--bg); color: var(--fg); padding: 16px; }
+  main { max-width: 820px; margin: 0 auto; }
+  h1 { font-size: 24px; margin: 8px 0 4px; }
+  p { color: var(--muted); margin: 4px 0 16px; }
+  button { font-size: 18px; padding: 12px 20px; margin: 0 8px 8px 0; border: 0; border-radius: 8px;
+           background: var(--accent); color: #000; cursor: pointer; }
+  button:disabled { background: #444; color: #888; cursor: default; }
+  button.secondary { background: #333; color: var(--fg); }
+  video { width: 100%; background: #000; border-radius: 8px; margin: 8px 0; }
+  #hud { white-space: pre; font: 13px ui-monospace, monospace; color: #7f7; overflow-x: auto; }
+  #log { font: 12px ui-monospace, monospace; color: var(--muted); max-height: 160px; overflow: auto; white-space: pre-wrap; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Reachy Meetings XR</h1>
+  <p>Sign in with Hugging Face, connect to your Reachy Mini, then enter VR. Turn your head and the robot looks with you.</p>
+  <button id="signin">Sign in with Hugging Face</button>
+  <button id="connect" disabled>Connect robot</button>
+  <button id="enter" disabled>Enter VR</button>
+  <button id="recenter" class="secondary">Recenter</button>
+  <button id="signout" class="secondary">Sign out</button>
+  <div id="hud"></div>
+  <video id="video" autoplay playsinline muted></video>
+  <div id="log"></div>
+</main>
+
+<script type="importmap">
+{ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+  "reachy": "https://cdn.jsdelivr.net/npm/@pollen-robotics/reachy-mini-sdk@1.11.0/+esm"
+} }
+</script>
+<script type="module">
+import * as THREE from "three";
+import { ReachyMini, rpyToMatrix, matrixToRpy } from "reachy";
+
+// HF OAuth app (huggingface.co/settings/applications): public client id, redirect = this page's URL.
+const HF_CLIENT_ID = "";   // TODO fill in after registering the app
+const params = new URLSearchParams(location.search);
+const SEND_HZ = Number(params.get("hz") || 50);
+const VFOV_DEG = Number(params.get("vfov") || 80);   // MuJoCo eye_camera fovy; TODO real Lite camera
+const SCREEN_DIST = Number(params.get("dist") || 3);
+const SMOOTHING = Number(params.get("smooth") || 0.35);   // EMA like robot/default_config.yaml mirror.smoothing
+const LIM = { roll: 40, pitch: 40, yaw: 180, body: 160, headBody: 65 };   // robot/default_config.yaml limits
+
+const $ = (id) => document.getElementById(id);
+const video = $("video");
+function log(...a) {
+  const line = `${(performance.now() / 1000).toFixed(1)} ${a.join(" ")}`;
+  console.log(line);
+  $("log").textContent = (line + "\n" + $("log").textContent).slice(0, 6000);
+}
+
+// ---------------------------------------------------------------- status
+const status = { user: "-", robot: "-", ice: "-", video: "-", xr: "off", send: 0, cmd: [0, 0, 0], body: 0, meas: [0, 0, 0] };
+let sentCount = 0;
+setInterval(() => { status.send = sentCount; sentCount = 0; }, 1000);
+function statusText() {
+  const f = (v) => v.map((x) => x.toFixed(1).padStart(6)).join(" ");
+  return [
+    `user ${status.user}   robot ${status.robot}   ice ${status.ice}   video ${status.video}`,
+    `xr ${status.xr}   send ${status.send} Hz`,
+    `cmd  r/p/y ${f(status.cmd)}   body ${status.body.toFixed(1)}`,
+    `meas r/p/y ${f(status.meas)}`,
+  ].join("\n");
+}
+setInterval(() => { $("hud").textContent = statusText(); }, 200);
+
+// ---------------------------------------------------------------- Reachy SDK (HF sign-in + central signalling + WebRTC)
+const reachy = new ReachyMini({ clientId: HF_CLIENT_ID || undefined, appName: "Reachy Meetings XR", videoJitterBufferTargetMs: 0 });
+let connected = false;
+
+reachy.addEventListener("iceStateChange", (e) => { status.ice = e.detail?.state ?? String(e.detail); });
+reachy.addEventListener("sessionStopped", (e) => { connected = false; status.robot = "stopped"; log("session stopped", JSON.stringify(e.detail)); });
+reachy.addEventListener("sessionRejected", (e) => log("session rejected", JSON.stringify(e.detail)));
+reachy.addEventListener("error", (e) => log("error", JSON.stringify(e.detail)));
+reachy.addEventListener("state", (e) => {
+  const h = e.detail?.head ?? e.detail?.state?.head;
+  if (!h || h.length !== 16) return;
+  const { roll, pitch, yaw } = matrixToRpy([h.slice(0, 4), h.slice(4, 8), h.slice(8, 12), h.slice(12, 16)]);
+  status.meas = [roll, pitch, yaw];
+  robotToXR(roll / DEG, pitch / DEG, yaw / DEG, robotHeadXR);
+  haveRobotPose = true;
+});
+video.onplaying = () => { status.video = `${video.videoWidth}x${video.videoHeight}`; };
+
+async function init() {
+  const signedIn = await reachy.authenticate().catch((e) => { log("auth", e); return false; });
+  $("signin").disabled = signedIn;
+  $("connect").disabled = !signedIn;
+  status.user = signedIn ? "signed in" : "signed out";
+}
+$("signin").onclick = () => reachy.login();
+$("signout").onclick = () => { reachy.logout(); location.reload(); };
+$("connect").onclick = async () => {
+  $("connect").disabled = true;
+  status.robot = "connecting";
+  try {
+    const res = await reachy.autoConnect({
+      pickRobot: async (robots) => {
+        log("robots:", robots.map((r) => `${r.name ?? r.id}${r.busy ? " (busy)" : ""}`).join(", "));
+        return robots[0]?.id ?? null;   // TODO picker UI when the team has several robots
+      },
+    });
+    status.robot = res.robotName ?? res.robotId;
+    reachy.attachVideo(video);
+    reachy.subscribePose();
+    connected = true;
+    log("connected to", status.robot);
+  } catch (e) {
+    status.robot = "failed";
+    log("connect failed:", e?.message ?? e);
+    $("connect").disabled = false;
+  }
+};
+
+// ---------------------------------------------------------------- headset pose <-> robot head frame
+// WebXR: x right, y up, -z forward.  Robot: x forward, y left, z up.
+// Robot (x, y, z) = (-xr.z, -xr.x, xr.y). Euler ZYX: R = Rz(yaw) Ry(pitch) Rx(roll).
+// yaw + = look left, pitch + = look down, roll + = tilt right.
+const DEG = 180 / Math.PI;
+const q0 = new THREE.Quaternion(), q0inv = new THREE.Quaternion(), qRel = new THREE.Quaternion();
+let wantRecenter = true;
+
+function headsetToRobot(q) {
+  qRel.copy(q0inv).multiply(q);
+  const w = qRel.w, x = -qRel.z, y = -qRel.x, z = qRel.y;
+  const r00 = 1 - 2 * (y * y + z * z), r10 = 2 * (x * y + w * z);
+  const r20 = 2 * (x * z - w * y), r21 = 2 * (y * z + w * x), r22 = 1 - 2 * (x * x + y * y);
+  return [Math.atan2(r21, r22) * DEG, Math.asin(Math.max(-1, Math.min(1, -r20))) * DEG, Math.atan2(r10, r00) * DEG];
+}
+
+const _e = new THREE.Euler(), _qr = new THREE.Quaternion();
+function robotToXR(roll, pitch, yaw, out) {
+  _qr.setFromEuler(_e.set(roll, pitch, yaw, "ZYX"));
+  out.set(-_qr.y, _qr.z, -_qr.x, _qr.w);
+  return out.premultiply(q0);
+}
+
+// Same pipeline as robot/src/reachy_meetings_robot (head_mirror + safety): EMA, clamp, body follows yaw.
+const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+const filt = [0, 0, 0];
+let bodyYaw = 0, lastSend = 0;
+function sendPose(q, now) {
+  if (wantRecenter) { q0.copy(q); q0inv.copy(q).invert(); wantRecenter = false; log("recentered"); }
+  if (!connected || now - lastSend < 1000 / SEND_HZ) return;
+  lastSend = now;
+  const raw = headsetToRobot(q);
+  for (let i = 0; i < 3; i++) filt[i] = SMOOTHING * filt[i] + (1 - SMOOTHING) * raw[i];
+  let [roll, pitch, yaw] = filt;
+  roll = clamp(roll, -LIM.roll, LIM.roll);
+  pitch = clamp(pitch, -LIM.pitch, LIM.pitch);
+  yaw = clamp(yaw, -LIM.yaw, LIM.yaw);
+  if (yaw > bodyYaw + LIM.headBody) bodyYaw = yaw - LIM.headBody;
+  if (yaw < bodyYaw - LIM.headBody) bodyYaw = yaw + LIM.headBody;
+  bodyYaw = clamp(bodyYaw, -LIM.body, LIM.body);
+  yaw = clamp(yaw, bodyYaw - LIM.headBody, bodyYaw + LIM.headBody);
+  if (reachy.setTarget({ head: rpyToMatrix(roll, pitch, yaw).flat(), body_yaw: bodyYaw / DEG })) sentCount++;
+  status.cmd = [roll, pitch, yaw];
+  status.body = bodyYaw;
+}
+$("recenter").onclick = () => { wantRecenter = true; };
+
+// ---------------------------------------------------------------- XR scene
+// Camera image = world-anchored window at the robot's MEASURED head orientation (rotation-only reprojection).
+const robotHeadXR = new THREE.Quaternion();
+let haveRobotPose = false;
+
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.xr.enabled = true;
+renderer.xr.setReferenceSpaceType("local");
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x101014);
+const camera = new THREE.PerspectiveCamera(70, 1, 0.05, 100);
+scene.add(camera);
+
+const grid = new THREE.GridHelper(20, 40, 0x335533, 0x222822);
+grid.position.y = -1.4;
+scene.add(grid);
+
+const videoTex = new THREE.VideoTexture(video);
+videoTex.colorSpace = THREE.SRGBColorSpace;
+const screenH = 2 * SCREEN_DIST * Math.tan(VFOV_DEG / 2 / DEG);
+const screen = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), new THREE.MeshBasicMaterial({ map: videoTex }));
+screen.scale.set(screenH * 16 / 9, screenH, 1);
+screen.position.set(0, 0, -SCREEN_DIST);
+video.addEventListener("resize", () => {
+  if (video.videoHeight) screen.scale.x = screenH * video.videoWidth / video.videoHeight;
+});
+const robotView = new THREE.Group();
+robotView.add(screen);
+scene.add(robotView);
+
+const hudCanvas = document.createElement("canvas");
+hudCanvas.width = 1024; hudCanvas.height = 160;
+const hudCtx = hudCanvas.getContext("2d");
+const hudTex = new THREE.CanvasTexture(hudCanvas);
+const hudMesh = new THREE.Mesh(new THREE.PlaneGeometry(0.8, 0.125), new THREE.MeshBasicMaterial({ map: hudTex, transparent: true }));
+hudMesh.position.set(0, -0.45, -1.2);
+camera.add(hudMesh);
+setInterval(() => {
+  hudCtx.clearRect(0, 0, hudCanvas.width, hudCanvas.height);
+  hudCtx.fillStyle = "rgba(0,0,0,0.6)";
+  hudCtx.fillRect(0, 0, hudCanvas.width, hudCanvas.height);
+  hudCtx.fillStyle = "#7f7"; hudCtx.font = "24px monospace";
+  statusText().split("\n").forEach((l, i) => hudCtx.fillText(l, 12, 32 + i * 34));
+  hudTex.needsUpdate = true;
+}, 200);
+
+const xrQuat = new THREE.Quaternion();
+renderer.setAnimationLoop((now, frame) => {
+  if (frame) {
+    const pose = frame.getViewerPose(renderer.xr.getReferenceSpace());
+    if (pose) {
+      const o = pose.transform.orientation;
+      sendPose(xrQuat.set(o.x, o.y, o.z, o.w), now);
+    }
+  }
+  if (haveRobotPose) robotView.quaternion.slerp(robotHeadXR, 0.5);
+  renderer.render(scene, camera);
+});
+
+if (navigator.xr && await navigator.xr.isSessionSupported("immersive-vr").catch(() => false)) {
+  $("enter").disabled = false;
+} else {
+  log("immersive-vr not available in this browser (open the page on the headset)");
+}
+$("enter").onclick = async () => {
+  const session = await navigator.xr.requestSession("immersive-vr", { optionalFeatures: ["local"] });
+  session.addEventListener("select", () => { wantRecenter = true; });
+  session.addEventListener("end", () => { status.xr = "off"; });
+  await renderer.xr.setSession(session);
+  wantRecenter = true;
+  status.xr = "on";
+  video.play();
+};
+
+await init();
+</script>
+</body>
+</html>
