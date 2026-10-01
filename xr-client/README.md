@@ -47,18 +47,30 @@ The quaternion is mapped as robot `(x, y, z) = (-xr.z, -xr.x, xr.y)`, followed b
 
 Still to do: verify the signs on the real robot (see the TODO in `robot/README.md`).
 
-## Hosted teleop (`pages/index.html`)
+## Hosted teleop (`pages/`)
 
-URL: https://stevenjobins.github.io/reachy-mini-meetings/ (deployed by `.github/workflows/pages.yml` on every push to `main` that touches `xr-client/pages/`).
+URL: https://stevenjobins.github.io/reachy-mini-meetings/. It is deployed by `.github/workflows/pages.yml` on every push to `main` that touches `xr-client/pages/`.
 
-This version needs no cable, no certificate and no laptop server for the teleop itself. It uses Pollen's JS SDK `@pollen-robotics/reachy-mini-sdk@1.11.0`, loaded from jsdelivr, and goes through these steps:
+**Use on the headset:**
 
-1. Sign in with Hugging Face (OAuth).
-2. Pollen's central signalling finds the robot. The daemon must be signed in to HF on the dashboard.
-3. WebRTC carries video, `set_target` commands and the measured pose stream, directly between the headset and the robot.
+1. Open the URL in Chrome. Then choose ⋮ → *Install app* / *Add to home screen*, so the app gets an icon in the launcher.
+2. Start the app. The first time, sign in with Hugging Face. After that, sign-in is silent (OAuth `prompt=none`).
+3. The app connects to the robot automatically. When exactly one free robot is visible, it is picked without asking.
+4. Look straight ahead and tap **Start**. You are in VR. To recenter, pinch.
 
-Requirements and behaviour:
+Start is the only tap needed, because browsers allow entering VR only from a user gesture.
 
+- **The headset needs no cable.** Only the Reachy Mini Lite stays on USB at the laptop, with its daemon running and signed in to HF on the dashboard.
+- **How it connects:** the app uses Pollen's JS SDK `@pollen-robotics/reachy-mini-sdk@1.11.0`, loaded from jsdelivr. Pollen's central signalling finds the robot, and WebRTC carries video, `set_target` and the measured pose stream, directly between the headset and the robot.
 - **Who can connect:** only HF accounts that can see the robot in central signalling.
-- **Pose pipeline:** the page does the same pose processing as `robot/` itself (EMA, limits, body follow), because the Python bridge is not in this path.
-- **Setup:** `HF_CLIENT_ID` in `pages/index.html` must hold the client ID of a Hugging Face OAuth app whose redirect URL is the page URL above.
+- **OAuth:** `HF_CLIENT_ID` in `app.js` is the client ID of the HF OAuth app "Reachy Meetings XR". Its registered redirect URLs are the page URL above and `http://localhost:8080/`. Always open the page without a query string, because HF only accepts the exact registered redirect URL.
+
+| File | Content | Uses |
+|---|---|---|
+| `pose.js` | Headset ↔ robot maths, recenter, `HeadMirror` (EMA, limits, body follow — same values as `robot/`) | nothing (pure, portable) |
+| `robot.js` | Sign-in (silent first), auto-connect, video, `setHead()`, measured head pose | Pollen SDK |
+| `scene.js` | WebXR rendering: video window at the measured robot head pose, floor grid, status panel | three.js |
+| `app.js` | Wires everything together, one-button UI | the three above |
+| `manifest.webmanifest`, `icon*.{svg,png}` | Installable app (PWA) | |
+
+Rules for this code: [docs/xr-client-strategy.md](../docs/xr-client-strategy.md).
