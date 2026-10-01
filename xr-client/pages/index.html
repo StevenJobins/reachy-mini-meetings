@@ -44,7 +44,7 @@ import * as THREE from "three";
 import { ReachyMini, rpyToMatrix, matrixToRpy } from "reachy";
 
 // HF OAuth app (huggingface.co/settings/applications): public client id, redirect = this page's URL.
-const HF_CLIENT_ID = "";   // TODO fill in after registering the app
+const HF_CLIENT_ID = "37472ae1-2bae-4d97-be66-ef7446028c40";
 const params = new URLSearchParams(location.search);
 const SEND_HZ = Number(params.get("hz") || 50);
 const VFOV_DEG = Number(params.get("vfov") || 80);   // MuJoCo eye_camera fovy; TODO real Lite camera
