@@ -92,6 +92,11 @@ reachy.addEventListener("state", (e) => {
   haveRobotPose = true;
 });
 video.onplaying = () => { status.video = `${video.videoWidth}x${video.videoHeight}`; };
+reachy.attachVideo(video);   // before connecting: the videoTrack event fires during session setup
+reachy.addEventListener("videoTrack", () => {
+  status.video = "track";
+  video.play().catch((e) => log("video.play:", e?.message ?? e));
+});
 
 async function init() {
   const signedIn = await reachy.authenticate().catch((e) => { log("auth", e); return false; });
@@ -115,7 +120,6 @@ $("connect").onclick = async () => {
       },
     });
     status.robot = res.robotName ?? res.robotId;
-    reachy.attachVideo(video);
     reachy.subscribePose();
     connected = true;
     log("connected to", status.robot);
