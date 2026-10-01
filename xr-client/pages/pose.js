@@ -46,7 +46,8 @@ export function robotToHeadset(rollDeg, pitchDeg, yawDeg) {
 /** "Straight ahead" of the user. Everything the robot does is relative to this. */
 export class Recenter {
   constructor() { this.q0 = { x: 0, y: 0, z: 0, w: 1 }; this.q0inv = this.q0; }
-  set(q) { this.q0 = { ...q }; this.q0inv = qinv(q); }
+  // Explicit copy: WebXR orientations are DOMPointReadOnly, whose x/y/z/w are getters ({...q} copies nothing).
+  set(q) { this.q0 = { x: q.x, y: q.y, z: q.z, w: q.w }; this.q0inv = qinv(this.q0); }
   toRelative(qWorld) { return qmul(this.q0inv, qWorld); }
   toWorld(qRel) { return qmul(this.q0, qRel); }
 }
