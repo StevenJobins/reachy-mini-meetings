@@ -24,6 +24,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: actions/configure-pages@v5
+      # Cache busting: every deploy gets new module URLs, so headsets never run a stale mix of files.
+      - name: Stamp module URLs with the commit
+        run: |
+          v=${GITHUB_SHA::7}
+          cd xr-client/pages
+          sed -i -E "s#(from \"\./[a-z-]+\.js)\"#\1?v=$v\"#g" *.js
+          sed -i -E "s#src=\"app\.js\"#src=\"app.js?v=$v\"#" index.html
+          grep -n "?v=$v" *.js index.html
       - uses: actions/upload-pages-artifact@v3
         with:
           path: xr-client/pages
