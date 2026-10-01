@@ -6,6 +6,7 @@
 import { createRobot } from "./robot.js";
 import { createScene } from "./scene.js";
 import { HeadMirror, Recenter, headsetToRobot, robotToHeadset } from "./pose.js";
+import { captionsUrl, createCaptions, setCaptionsUrl } from "./captions.js";
 
 // HF OAuth app (huggingface.co/settings/applications), redirect URL = this page's URL.
 const HF_CLIENT_ID = "37472ae1-2bae-4d97-be66-ef7446028c40";
@@ -28,7 +29,7 @@ function log(...a) {
 }
 
 // ---------------------------------------------------------------- status
-const status = { user: "-", robot: "-", ice: "-", video: "-", xr: "off", send: 0, cmd: [0, 0, 0], body: 0, meas: [0, 0, 0] };
+const status = { user: "-", robot: "-", ice: "-", video: "-", xr: "off", send: 0, cmd: [0, 0, 0], body: 0, meas: [0, 0, 0], captions: "-" };
 let sentCount = 0;
 setInterval(() => { status.send = sentCount; sentCount = 0; }, 1000);
 function statusText() {
@@ -36,7 +37,7 @@ function statusText() {
   return [
     `robot ${status.robot}   ice ${status.ice}   video ${status.video}   send ${status.send} Hz`,
     `cmd  r/p/y ${f(status.cmd)}   body ${status.body.toFixed(1)}`,
-    `meas r/p/y ${f(status.meas)}`,
+    `meas r/p/y ${f(status.meas)}   captions ${status.captions}`,
   ].join("\n");
 }
 setInterval(() => { $("debug-text").textContent = `user ${status.user}   xr ${status.xr}\n` + statusText(); }, 200);
@@ -70,7 +71,7 @@ const scene = createScene({
   distM: cfg.distM,
   statusText,
   onHeadsetPose: (q, now) => {
-    if (wantRecenter) { recenter.set(q); wantRecenter = false; log("recentered"); }
+    if (wantRecenter) { recenter.set(q); wantRecenter = false; captions.layout(); log("recentered"); }
     if (!robot.connected || now - lastSend < 1000 / cfg.sendHz) return;
     lastSend = now;
     const t = mirror.step(headsetToRobot(recenter.toRelative(q)));
@@ -81,6 +82,18 @@ const scene = createScene({
   onSelect: () => { wantRecenter = true; },
   onEnd: () => { status.xr = "off"; show("ready", "Connected. Tap Start to look around again."); },
 });
+
+const captions = createCaptions({
+  three: scene.three,
+  recenter,
+  distM: cfg.distM,
+  vfovDeg: cfg.vfovDeg,
+  listEl: $("captions"),
+  log,
+  onStatus: (s) => Object.assign(status, s),
+});
+$("captions-url").value = captionsUrl();
+$("captions-url").onchange = (e) => { setCaptionsUrl(e.target.value.trim()); captions.reconnect(); };
 
 video.onplaying = () => { status.video = `${video.videoWidth}x${video.videoHeight}`; };
 robot.attachVideo(video);

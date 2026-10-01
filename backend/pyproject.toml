@@ -1,0 +1,33 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "reachy-meetings-backend"
+version = "0.1.0"
+description = "Live speech bubbles for Reachy Mini Meetings: room audio -> Whisper -> translation -> captions"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "numpy",
+    "mlx-whisper; sys_platform == 'darwin' and platform_machine == 'arm64'",  # Apple GPU
+    "faster-whisper>=1.1; sys_platform != 'darwin' or platform_machine != 'arm64'",  # CPU
+    "sounddevice",           # mic capture (Reachy Mini USB audio or any input device)
+    "websockets>=12",        # caption server + robot bridge client
+    "anthropic>=1.0",        # optional: translation to any language with Claude
+]
+
+[project.optional-dependencies]
+dev = ["pytest", "ruff"]
+
+[project.scripts]
+reachy-captions = "reachy_meetings_backend.captions:cli"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100

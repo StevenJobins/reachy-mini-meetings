@@ -70,7 +70,21 @@ Start is the only tap needed, because browsers allow entering VR only from a use
 | `pose.js` | Headset ↔ robot maths, recenter, `HeadMirror` (EMA, limits, body follow — same values as `robot/`) | nothing (pure, portable) |
 | `robot.js` | Sign-in (silent first), auto-connect, video, `setHead()`, measured head pose | Pollen SDK |
 | `scene.js` | WebXR rendering: video window at the measured robot head pose, floor grid, status panel | three.js |
-| `app.js` | Wires everything together, one-button UI | the three above |
+| `captions.js` | Speech bubbles from `backend/` captions: in VR + as a list under the video | three.js |
+| `app.js` | Wires everything together, one-button UI | the four above |
 | `manifest.webmanifest`, `icon*.{svg,png}` | Installable app (PWA) | |
 
 Rules for this code: [docs/xr-client-strategy.md](../docs/xr-client-strategy.md).
+
+### Speech bubbles
+
+The page connects to the caption server from `backend/` (`reachy-captions`, see [backend/README.md](../backend/README.md)). It reconnects on its own, and the status line shows `captions on/off`.
+
+- **Placement:**
+  - With a speaker direction (`azimuth_deg`), the bubble floats in the room in that direction, at 0.9 × `dist`. Once the robot looks at the speaker, the bubble lands on them in the video.
+  - Without a direction, the bubble is a subtitle at the bottom of the video window.
+- **Content:** the translation is large, with the original small underneath. Live text (partials) is shown in italic. At most 3 bubbles are visible, and a final bubble disappears after 10 s.
+- **URL:** the default is `ws://localhost:8766`. To change it, use the *Captions* field in the Debug panel; the value is stored in `localStorage`. It is not a query parameter, because of the OAuth redirect.
+- **https:** the page is served over https, so Chrome only allows `ws://localhost`. There are two ways to connect the headset:
+  - **USB:** run `adb reverse tcp:8766 tcp:8766`.
+  - **Wireless:** expose the server via wss, e.g. `cloudflared tunnel --url http://localhost:8766`, then enter `wss://<name>.trycloudflare.com` in the field.
