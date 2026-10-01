@@ -97,13 +97,21 @@ async function connect() {
   }
 }
 
+const xrOk = scene.xrSupported();
 $("start").onclick = async () => {
-  if (!(await scene.xrSupported())) { show("ready", "VR is not available in this browser. Open this page on the headset."); return; }
+  // Synchronously inside the tap: the SDK unmutes the video (robot audio), and browsers only allow
+  // unmuted playback and requestSession() during a user gesture. Awaiting anything first loses it.
+  video.play().catch((e) => log("video.play:", e?.message ?? e));
+  const entering = scene.enterVR();
+  if (!(await xrOk)) {
+    entering.catch(() => {});
+    show("ready", "VR is not available in this browser. Open this page on the headset.");
+    return;
+  }
   try {
-    await scene.enterVR();
+    await entering;
     wantRecenter = true;
     status.xr = "on";
-    video.play().catch(() => {});
   } catch (e) {
     log("enter VR failed:", e?.message ?? e);
   }
