@@ -13,7 +13,7 @@ const HF_CLIENT_ID = "37472ae1-2bae-4d97-be66-ef7446028c40";
 const params = new URLSearchParams(location.search);
 const cfg = {
   sendHz: Number(params.get("hz") || 50),
-  vfovDeg: Number(params.get("vfov") || 80),   // MuJoCo eye_camera fovy; TODO real Lite camera
+  vfovDeg: Number(params.get("vfov") || 54),   // Lite camera at 1920x1080 (estimate from K + crop 1.115, measure!); sim: ?vfov=80
   distM: Number(params.get("dist") || 3),
   smoothing: Number(params.get("smooth") || 0.35),
 };
