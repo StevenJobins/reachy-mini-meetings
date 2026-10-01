@@ -30,7 +30,7 @@ These keep the later conversion cheap.
 | 1 | Local WebXR teleop over USB (`xr-client/web/`, adb reverse) | done |
 | 2 | Hosted teleop (`xr-client/pages/`): HF sign-in, central signalling, world-anchored video at the measured head pose | done (video confirmed 2026-10-01) |
 | 3 | One-tap start: PWA with a launcher icon, silent sign-in, auto-pick the single robot, one "Start" button | in testing |
-| 4 | Real Reachy Mini Lite: verify the axis signs, set the real camera FOV, measure baseline latency (WP1) | |
+| 4 | Real Reachy Mini Lite: verify the axis signs, set the real camera FOV, measure baseline latency (WP1) | axis signs OK on the real robot (2026-10-01); FOV 54° estimated, still to measure; latency open |
 | 5 | Features in the web app: depth reprojection (WP2), speaker attribution (WP3), speech bubbles (WP4) | |
 | 6 | Package as an app: Trusted Web Activity (Bubblewrap). This produces an APK with the same code and Chrome inside, so WebXR still works | |
 | 7 | Only if step 5 hits performance limits: a native app (Unity/OpenXR or Android XR), porting the logic modules | optional |
