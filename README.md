@@ -32,6 +32,11 @@ Out of scope: spatial audio.
 | | |
 | | |
 
+## Decisions
+
+- **XR client: web app first, native app later.** Rules and roadmap: [docs/xr-client-strategy.md](docs/xr-client-strategy.md)
+
 ## Getting started
 
-_TBD once the stack is fixed._
+- Teleop in the headset: open https://stevenjobins.github.io/reachy-mini-meetings/. Details in [xr-client/README.md](xr-client/README.md).
+- Robot side: [robot/README.md](robot/README.md)
