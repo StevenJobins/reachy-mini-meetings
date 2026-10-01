@@ -19,8 +19,12 @@ export function createScene({ video, vfovDeg, distM, statusText, onHeadsetPose, 
   grid.position.y = -1.4;
   scene.add(grid);
 
-  const videoTex = new THREE.VideoTexture(video);
+  // Plain Texture updated every XR frame. THREE.VideoTexture waits for requestVideoFrameCallback,
+  // which can stop firing on Android while an immersive session hides the page.
+  const videoTex = new THREE.Texture(video);
   videoTex.colorSpace = THREE.SRGBColorSpace;
+  videoTex.minFilter = THREE.LinearFilter;
+  videoTex.generateMipmaps = false;
   const screenH = 2 * distM * Math.tan(vfovDeg / 2 * Math.PI / 180);
   const screen = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), new THREE.MeshBasicMaterial({ map: videoTex }));
   screen.scale.set(screenH * 16 / 9, screenH, 1);
@@ -28,6 +32,11 @@ export function createScene({ video, vfovDeg, distM, statusText, onHeadsetPose, 
   video.addEventListener("resize", () => {
     if (video.videoHeight) screen.scale.x = screenH * video.videoWidth / video.videoHeight;
   });
+  // Orange frame: the window stays findable even when no video arrives.
+  const frame = new THREE.LineSegments(
+    new THREE.EdgesGeometry(new THREE.PlaneGeometry(1, 1)),
+    new THREE.LineBasicMaterial({ color: 0xff9500 }));
+  screen.add(frame);
   const robotView = new THREE.Group();
   robotView.add(screen);
   scene.add(robotView);
@@ -56,6 +65,7 @@ export function createScene({ video, vfovDeg, distM, statusText, onHeadsetPose, 
       const pose = frame.getViewerPose(renderer.xr.getReferenceSpace());
       if (pose) onHeadsetPose(pose.transform.orientation, now);
     }
+    if (video.readyState >= video.HAVE_CURRENT_DATA) videoTex.needsUpdate = true;
     if (haveTarget) robotView.quaternion.slerp(target, 0.5);   // pose stream ~30 Hz -> smooth at display rate
     renderer.render(scene, camera);
   });
@@ -75,5 +85,8 @@ export function createScene({ video, vfovDeg, distM, statusText, onHeadsetPose, 
 
     /** Robot head orientation in the XR world, as {x, y, z, w}. */
     setRobotHead(q) { target.set(q.x, q.y, q.z, q.w); haveTarget = true; },
+
+    /** For overlays (speech bubbles): the room, and the group that moves with the video window. */
+    three: { scene, robotView },
   };
 }
