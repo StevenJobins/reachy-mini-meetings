@@ -99,7 +99,10 @@ async function init() {
   $("connect").disabled = !signedIn;
   status.user = signedIn ? "signed in" : "signed out";
 }
-$("signin").onclick = () => reachy.login();
+$("signin").onclick = () => {
+  if (!HF_CLIENT_ID) { log("sign-in not configured: HF_CLIENT_ID is empty (see xr-client/README.md)"); return; }
+  reachy.login().catch((e) => log("sign-in failed:", e?.message ?? e));
+};
 $("signout").onclick = () => { reachy.logout(); location.reload(); };
 $("connect").onclick = async () => {
   $("connect").disabled = true;
