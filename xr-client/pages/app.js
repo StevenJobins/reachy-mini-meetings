@@ -82,9 +82,13 @@ setInterval(async () => {
       if (r.type !== "inbound-rtp" || r.kind !== "audio") return;
       const p = audioPrev ?? r;
       const samples = r.totalSamplesReceived - p.totalSamplesReceived;
-      const concealed = r.concealedSamples - p.concealedSamples;
+      // silentConcealed = gaps the sender left on purpose in silence (DTX): normal. Only the rest is audible.
+      const audible = (r.concealedSamples - p.concealedSamples) - ((r.silentConcealedSamples ?? 0) - (p.silentConcealedSamples ?? 0));
+      const stretch = (r.insertedSamplesForDeceleration ?? 0) - (p.insertedSamplesForDeceleration ?? 0)
+        + (r.removedSamplesForAcceleration ?? 0) - (p.removedSamplesForAcceleration ?? 0);
       const bufMs = (r.jitterBufferDelay - p.jitterBufferDelay) / Math.max(1, r.jitterBufferEmittedCount - p.jitterBufferEmittedCount) * 1000;
-      status.audioIn = `| in: lost ${r.packetsLost} jitter ${(r.jitter * 1000).toFixed(0)}ms buf ${bufMs.toFixed(0)}ms concealed ${samples > 0 ? (100 * concealed / samples).toFixed(0) : "-"}%`;
+      const pct = (n) => (samples > 0 ? (100 * n / samples).toFixed(0) : "-");
+      status.audioIn = `| in: lost ${r.packetsLost} jitter ${(r.jitter * 1000).toFixed(0)}ms buf ${bufMs.toFixed(0)}ms dropouts ${pct(audible)}% stretched ${pct(stretch)}% level ${(r.audioLevel ?? 0).toFixed(2)}`;
       audioPrev = r;
     });
   } catch {}
