@@ -146,6 +146,12 @@ const talk = new WantToTalk();
 // rotation is added ON TOP of that base, so you can always look elsewhere. Straight ahead = the speaker.
 // 5 agreeing mic readings within 1 s for a new direction (3 in 0.6 s let single reflections turn the head)
 const speaker = new SpeakerTracker({ confirmN: 5, confirmWindowS: 1.0 });
+// Follow diagnostics: who moved the target (face / mic / search / talk), logged when it jumps > 4°.
+let lastLoggedYaw = 0, lastLoggedPitch = 0;
+function noteTarget(source) {
+  if (Math.abs(speaker.target - lastLoggedYaw) > 4) { log(`follow yaw ${speaker.target.toFixed(0)} by ${source}`); lastLoggedYaw = speaker.target; }
+  if (typeof targetPitch === "number" && Math.abs(targetPitch - lastLoggedPitch) > 4) { log(`follow pitch ${targetPitch.toFixed(0)} by ${source}`); lastLoggedPitch = targetPitch; }
+}
 let talkCenter = null;   // while waving: turn to the center of all recent speakers (turn_to_speaker.py)
 
 /** Smooth base yaw for this tick (degrees, robot frame). */
@@ -350,6 +356,7 @@ function flushDoa(fromS) {
     speaker.pushDoa(t, a, true);
   }
   doaPushedUntil = performance.now() / 1000;
+  noteTarget("mic");
 }
 
 /** The person Reachy follows is in the picture right now (seen within the last 0.5 s). */
@@ -373,6 +380,7 @@ function onVadEvent(msg) {
     // Someone talks in front of Reachy but no face is in the picture: their head is above it (standing, or
     // close to the robot). Look up step by step (~12 °/s at 4 events/s) until the face shows up.
     targetPitch = Math.max(-PITCH_UP, targetPitch - 3);
+    noteTarget("search up (speech, no face)");
   }
 }
 
@@ -414,6 +422,7 @@ function frameFocus() {
     if (focusLast && t - focusLast.t < 2.5) {
       if (focusLast.top < 0.12) targetPitch = Math.max(-PITCH_UP, targetPitch - 2);
       else if (focusLast.bottom > 0.9) targetPitch = Math.min(PITCH_DOWN, targetPitch + 2);
+      noteTarget("edge search");
     }
     return;
   }
@@ -439,6 +448,7 @@ function frameFocus() {
     const pitch = status.meas[1] - (up - FRAME_UP);                 // pitch + = look down
     targetPitch = Math.max(-PITCH_UP, Math.min(PITCH_DOWN, pitch));
   }
+  noteTarget(`face p${tr.pid} off ${offX.toFixed(0)}°`);
 }
 const faces = createFaces({
   getSource: () => (awake ? scene.videoFrame() : null),
