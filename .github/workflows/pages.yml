@@ -31,6 +31,7 @@ jobs:
           cd xr-client/pages
           sed -i -E "s#(from \"\./[a-z-]+\.js)\"#\1?v=$v\"#g" *.js
           sed -i -E "s#src=\"app\.js\"#src=\"app.js?v=$v\"#" index.html
+          echo "$v" > version.txt   # the page polls this to notice a newer deploy
           grep -n "?v=$v" *.js index.html
       - uses: actions/upload-pages-artifact@v3
         with:

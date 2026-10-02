@@ -15,6 +15,7 @@ dependencies = [
     "sounddevice",           # mic capture (Reachy Mini USB audio or any input device)
     "websockets>=12",        # caption server + robot bridge client
     "deepl",                 # translation (DeepL API)
+    "onnxruntime",           # Silero VAD: speech vs. noise
 ]
 
 [project.optional-dependencies]

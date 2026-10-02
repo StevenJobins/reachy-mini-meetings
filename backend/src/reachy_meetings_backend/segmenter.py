@@ -1,11 +1,13 @@
-"""Energy-based voice activity detection that cuts the mic stream into utterances.
+"""Voice activity detection that cuts the mic stream into utterances.
 
 Feed it 16 kHz mono float32 chunks of any size. It emits:
   Segment(final=False)  after `first_partial_s`, then every `partial_every_s` while someone talks
                         -> live bubble text
   Segment(final=True)   after `silence_s` of silence (or `max_s`) -> final text + translation
 
-The speech threshold follows the room: noise floor (EMA over quiet frames) + `margin_db`.
+With a neural VAD (vad.SileroVad, the default in captions.py) a frame is speech above `speech_prob`
+(and keeps the utterance going above `keep_prob`). Without one, it falls back to loudness: noise floor
+(EMA over quiet frames) + `margin_db`.
 """
 
 from __future__ import annotations
@@ -15,7 +17,7 @@ from dataclasses import dataclass
 import numpy as np
 
 SAMPLE_RATE = 16000
-FRAME = 480  # 30 ms
+FRAME = 512  # 32 ms (the frame size of the Silero VAD)
 
 
 @dataclass
@@ -32,7 +34,9 @@ class SegmenterCfg:
     margin_db: float = 12.0        # speech = this much above the noise floor
     min_level_db: float = -50.0    # never treat quieter frames as speech
     start_frames: int = 3          # consecutive loud frames to start (90 ms)
-    silence_s: float = 0.45        # quiet this long -> utterance ends
+    silence_s: float = 0.7         # no speech this long -> utterance ends (shorter cuts sentences apart)
+    speech_prob: float = 0.5       # neural VAD: speech starts above this probability ...
+    keep_prob: float = 0.35        # ... and continues while above this one
     preroll_s: float = 0.3
     min_s: float = 0.4             # drop shorter blips (coughs, clicks)
     max_s: float = 15.0            # force a cut in monologues
@@ -45,8 +49,9 @@ def frame_db(frame: np.ndarray) -> float:
 
 
 class Segmenter:
-    def __init__(self, cfg: SegmenterCfg | None = None) -> None:
+    def __init__(self, cfg: SegmenterCfg | None = None, vad=None) -> None:
         self.cfg = cfg or SegmenterCfg()
+        self.vad = vad   # callable(frame) -> speech probability, or None for the loudness fallback
         self.noise_db: float | None = None  # set from the first frame
         self._pending = np.zeros(0, np.float32)
         self._preroll: list[np.ndarray] = []
@@ -82,14 +87,18 @@ class Segmenter:
         c = self.cfg
         dt = FRAME / SAMPLE_RATE
         self._t += dt
-        db = frame_db(f)
-        if self.noise_db is None:
-            self.noise_db = db
-        loud = db > max(self.noise_db + c.margin_db, c.min_level_db)
+        if self.vad is not None:
+            loud = self.vad(f) > (c.speech_prob if self._speech is None else c.keep_prob)
+        else:
+            db = frame_db(f)
+            if self.noise_db is None:
+                self.noise_db = db
+            loud = db > max(self.noise_db + c.margin_db, c.min_level_db)
+            if self._speech is None:
+                # follow the room; slowly even when loud, so a steady hum stops counting as speech
+                self.noise_db += (0.01 if loud else 0.05) * (db - self.noise_db)
 
         if self._speech is None:
-            # follow the room; slowly even when loud, so a steady hum stops counting as speech
-            self.noise_db += (0.01 if loud else 0.05) * (db - self.noise_db)
             self._preroll.append(f)
             self._preroll = self._preroll[-int(c.preroll_s / dt) - c.start_frames:]
             self._loud = self._loud + 1 if loud else 0

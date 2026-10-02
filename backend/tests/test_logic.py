@@ -4,6 +4,7 @@ import numpy as np
 
 from reachy_meetings_backend.doa import DoaTracker, circular_mean_deg, doa_to_head_deg
 from reachy_meetings_backend.segmenter import SAMPLE_RATE, Segmenter, SegmenterCfg
+from reachy_meetings_backend.stt import plausible
 from reachy_meetings_backend.summary import parse_summary
 
 rng = np.random.default_rng(0)
@@ -107,3 +108,29 @@ def test_parse_summary_tolerates_shapes_and_rejects_garbage():
     assert parse_summary("no json here") is None
     assert parse_summary('{"summary": [') is None
     assert parse_summary('{"summary": [], "actions": []}') is None
+
+
+# ---------------------------------------------------------------- hallucination filter
+def test_plausible_filters_whisper_hallucinations():
+    assert plausible("Wie heißt deine Mutter?", 0.01, -0.3, 1.2)
+    assert not plausible("Untertitelung des ZDF, 2020", 0.01, -0.2, 1.1)
+    assert not plausible("Vielen Dank.", 0.4, -0.3, 1.0)           # unsure -> fake
+    assert plausible("Vielen Dank.", 0.05, -0.2, 1.0)              # clearly spoken -> keep
+    assert not plausible("1,0, 1,0, 1,0, 1,0, 1,0, 1,0", 0.1, -0.4, 3.1)
+    assert not plausible("irgendwas", 0.7, -0.2, 1.0)
+
+
+def test_segmenter_with_vad_ignores_loud_noise():
+    # fake VAD: speech only where the tone is; a loud click burst before it must not start an utterance
+    audio = np.concatenate([noise(1), np.ones(1600, np.float32) * 0.5, noise(1), tone(1.5), noise(1.2)])
+    marks = np.concatenate([np.zeros(16000 + 1600 + 16000), np.ones(24000), np.zeros(19200)])
+    pos = {"i": 0}
+
+    def vad(frame):
+        p = marks[pos["i"]:pos["i"] + len(frame)].mean()
+        pos["i"] += len(frame)
+        return p
+
+    finals = [s for s in feed(Segmenter(vad=vad), audio) if s.final]
+    assert len(finals) == 1
+    assert finals[0].t_start > 1.7   # tone at 2.1 s minus 0.3 s pre-roll; the click (1.0 s) is ignored

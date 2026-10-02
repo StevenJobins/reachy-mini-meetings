@@ -81,6 +81,19 @@ document.addEventListener("visibilitychange", () => log("page", document.visibil
 const VERSION = new URL(import.meta.url).searchParams.get("v") ?? "local";
 $("version").textContent = `version ${VERSION}`;
 log("page loaded, version", VERSION);
+// New deploy? Browsers may keep an old page for a while (GitHub Pages caches ~10 min, the PWA even longer).
+// Check at start and every minute; reload right away while nobody uses the robot, else just say so.
+async function checkForUpdate() {
+  if (VERSION === "local") return;
+  try {
+    const latest = (await (await fetch(`version.txt?t=${Date.now()}`, { cache: "no-store" })).text()).trim();
+    if (!/^[0-9a-f]{7}$/.test(latest) || latest === VERSION) return;
+    if (!awake && status.xr === "off") { log("new version", latest, "-> reloading"); location.reload(); }
+    else flash(`🔄 New version ${latest}: reload when you are done`);
+  } catch {}
+}
+setTimeout(checkForUpdate, 3000);
+setInterval(checkForUpdate, 60000);
 setInterval(() => { $("debug-text").textContent = `user ${status.user}   xr ${status.xr}   version ${VERSION}\n` + statusText(); }, 200);
 
 function show(state, message) {

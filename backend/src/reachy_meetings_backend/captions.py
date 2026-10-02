@@ -87,7 +87,13 @@ class Pipeline:
         self.finalized: set[int] = set()
         self.partial_tr: dict[int, tuple[float, int]] = {}   # id -> (time, text length) of last partial translation
         self.server = CaptionServer(args.host, args.port, args.target)
-        self.segmenter = Segmenter()
+        try:
+            from .vad import SileroVad
+
+            self.segmenter = Segmenter(vad=SileroVad())
+        except (ImportError, OSError) as e:  # onnxruntime missing / no download: loudness fallback
+            log.warning("Silero VAD unavailable (%s), using the loudness threshold", e)
+            self.segmenter = Segmenter()
         self.translator = None
         try:
             if args.translator == "deepl":

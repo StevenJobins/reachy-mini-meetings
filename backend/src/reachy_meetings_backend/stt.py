@@ -16,7 +16,24 @@ import numpy as np
 
 log = logging.getLogger(__name__)
 
-NO_SPEECH = 0.6  # Whisper invents text on noise ("Thank you.", "Untertitel von ..."), drop those
+# Whisper invents text on noise and silence. Drop segments it is unsure about, and the classic phrases
+# it learned from subtitled TV (German: "Untertitelung des ZDF", "Vielen Dank."; English: "Thank you.").
+NO_SPEECH = 0.6
+MIN_LOGPROB = -1.0
+MAX_COMPRESSION = 2.4   # "1,0, 1,0, 1,0, ..." style repetition
+ALWAYS_FAKE = ("untertitel", "amara.org", "zdf", "swr ", "copyright", "thanks for watching",
+               "fürs zuschauen", "für's zuschauen", "abonnier")
+FAKE_IF_UNSURE = {"vielen dank", "danke", "danke schön", "thank you", "thanks", "pff", "tschüss", "bis bald",
+                  "ja", "okay", "you"}
+
+
+def plausible(text: str, no_speech: float, logprob: float, compression: float) -> bool:
+    t = text.lower().strip().strip(".!?,… ")
+    if not t or no_speech >= NO_SPEECH or logprob < MIN_LOGPROB or compression > MAX_COMPRESSION:
+        return False
+    if any(p in t for p in ALWAYS_FAKE):
+        return False
+    return not (t in FAKE_IF_UNSURE and (no_speech > 0.2 or logprob < -0.5))
 
 
 def has_cuda() -> bool:
@@ -68,11 +85,13 @@ class Transcriber:
         if self.engine == "mlx":
             r = self._mlx.transcribe(audio, path_or_hf_repo=self.repo, language=self.language,
                                      condition_on_previous_text=False, verbose=None)
-            parts = [s["text"] for s in r["segments"] if s["no_speech_prob"] < NO_SPEECH]
+            parts = [s["text"] for s in r["segments"]
+                     if plausible(s["text"], s["no_speech_prob"], s["avg_logprob"], s["compression_ratio"])]
             lang = r["language"]
         else:
             segments, info = self._fw.transcribe(audio, language=self.language, beam_size=1,
                                                   condition_on_previous_text=False)
-            parts = [s.text for s in segments if s.no_speech_prob < NO_SPEECH]
+            parts = [s.text for s in segments
+                     if plausible(s.text, s.no_speech_prob, s.avg_logprob, s.compression_ratio)]
             lang = info.language
         return " ".join(p.strip() for p in parts).strip(), lang
