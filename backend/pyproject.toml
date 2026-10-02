@@ -11,13 +11,14 @@ requires-python = ">=3.10"
 dependencies = [
     "numpy",
     "mlx-whisper; sys_platform == 'darwin' and platform_machine == 'arm64'",  # Apple GPU
-    "faster-whisper>=1.1; sys_platform != 'darwin' or platform_machine != 'arm64'",  # CPU
+    "faster-whisper>=1.1; sys_platform != 'darwin' or platform_machine != 'arm64'",  # NVIDIA GPU or CPU
     "sounddevice",           # mic capture (Reachy Mini USB audio or any input device)
     "websockets>=12",        # caption server + robot bridge client
-    "anthropic>=1.0",        # optional: translation to any language with Claude
+    "deepl",                 # translation (DeepL API)
 ]
 
 [project.optional-dependencies]
+claude = ["anthropic>=1.0"]  # paid alternative to DeepL
 dev = ["pytest", "ruff"]
 
 [project.scripts]

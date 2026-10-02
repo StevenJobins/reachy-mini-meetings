@@ -3,7 +3,8 @@
 Engines:
   mlx             Apple Silicon GPU (mlx-whisper). M1 Pro, 4.5 s German utterance:
                   large-v3-turbo ~1.5 s, small ~0.35 s (+ ~1.3 s if the language is auto-detected)
-  faster-whisper  CPU fallback for everything else (small ~3 s on the same clip, too slow for partials)
+  faster-whisper  everything else: NVIDIA GPU (CUDA) if present, else CPU
+                  (CPU on the same Mac: small ~3 s for that clip -> no partials, small model)
 """
 
 from __future__ import annotations
@@ -16,6 +17,14 @@ import numpy as np
 log = logging.getLogger(__name__)
 
 NO_SPEECH = 0.6  # Whisper invents text on noise ("Thank you.", "Untertitel von ..."), drop those
+
+
+def has_cuda() -> bool:
+    try:
+        import ctranslate2
+        return ctranslate2.get_cuda_device_count() > 0
+    except ImportError:
+        return False
 
 
 def default_engine() -> str:
@@ -49,7 +58,9 @@ class Transcriber:
         else:
             from faster_whisper import WhisperModel
 
-            self._fw = WhisperModel(model, compute_type="int8", cpu_threads=4)
+            cuda = has_cuda()
+            self._fw = WhisperModel(model, device="cuda" if cuda else "cpu",
+                                    compute_type="float16" if cuda else "int8", cpu_threads=4)
         log.info("Whisper %r (%s) ready in %.1fs", model, self.engine, time.time() - t0)
 
     def __call__(self, audio: np.ndarray) -> tuple[str, str]:

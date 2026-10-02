@@ -2,6 +2,7 @@
 
     reachy-captions                              # Mac mic / Reachy mic, captions on ws://0.0.0.0:8766
     reachy-captions --lang de --target en         # fixed spoken language: ~1 s faster per utterance
+    reachy-captions --translator none            # captions only, no DeepL key needed
     reachy-captions --file meeting.wav           # test without a room
 
 Protocol (server -> headset, one JSON per message; keep in sync with xr-client):
@@ -68,8 +69,8 @@ class Pipeline:
         from .stt import Transcriber
 
         self.args = args
-        self.stt = Transcriber(args.model, args.lang)
-        self.stt_partial = (Transcriber(args.partial_model, args.lang)
+        self.stt = Transcriber(args.model, args.lang, args.engine)
+        self.stt_partial = (Transcriber(args.partial_model, args.lang, args.engine)
                             if args.partial_model != "none" else None)
         self.worker = ThreadPoolExecutor(1)  # Whisper runs one job at a time
         self.pending = 0
@@ -77,11 +78,17 @@ class Pipeline:
         self.server = CaptionServer(args.host, args.port, args.target)
         self.segmenter = Segmenter()
         self.translator = None
-        if args.translator == "claude":
-            from .translate import ClaudeTranslator
+        try:
+            if args.translator == "deepl":
+                from .translate import DeepLTranslator
 
-            self.translator = ClaudeTranslator(f"the language with ISO 639-1 code '{args.target}'",
-                                               args.claude_model)
+                self.translator = DeepLTranslator(args.target)
+            elif args.translator == "claude":
+                from .translate import ClaudeTranslator
+
+                self.translator = ClaudeTranslator(args.target, args.claude_model)
+        except (RuntimeError, ImportError) as e:
+            log.warning("No translation: %s", e)
         self.doa = None
         if args.robot:
             from .doa import DoaTracker
@@ -161,14 +168,17 @@ def cli() -> None:
     ap.add_argument("--mic", default="Reachy",
                     help="input device name (substring); falls back to the default mic")
     ap.add_argument("--file", help="WAV file instead of the mic (played in real time)")
-    ap.add_argument("--model", default="large-v3-turbo",
-                    help="Whisper model for final text: tiny/base/small/medium/large-v3/large-v3-turbo")
-    ap.add_argument("--partial-model", default="small",
+    ap.add_argument("--model",
+                    help="Whisper model for final text: tiny/base/small/medium/large-v3/large-v3-turbo"
+                         " (default depends on the hardware, see README)")
+    ap.add_argument("--partial-model",
                     help="faster model for the live text while someone talks; 'none' = finals only")
+    ap.add_argument("--engine", choices=["mlx", "faster-whisper"],
+                    help="Whisper engine; default: mlx on Apple Silicon, faster-whisper elsewhere")
     ap.add_argument("--lang", help="spoken language (ISO code); default: auto-detect per utterance")
     ap.add_argument("--target", default="en", help="bubble language (ISO code)")
-    ap.add_argument("--translator", choices=["claude", "none"], default="claude",
-                    help="claude needs ANTHROPIC_API_KEY (or an `ant auth login` profile)")
+    ap.add_argument("--translator", choices=["deepl", "claude", "none"], default="deepl",
+                    help="deepl needs DEEPL_AUTH_KEY, claude needs ANTHROPIC_API_KEY (paid)")
     ap.add_argument("--claude-model", default="claude-opus-5-5")
     ap.add_argument("--robot", default="ws://localhost:8765",
                     help="robot bridge for speaker direction (DoA); '' to disable")
@@ -176,6 +186,14 @@ def cli() -> None:
     ap.add_argument("--port", type=int, default=8766)
     ap.add_argument("-v", "--verbose", action="store_true")
     args = ap.parse_args()
+
+    from .stt import default_engine, has_cuda
+
+    args.engine = args.engine or default_engine()
+    fast = args.engine == "mlx" or has_cuda()
+    # CPU-only: large models and live partials are too slow
+    args.model = args.model or ("large-v3-turbo" if fast else "small")
+    args.partial_model = args.partial_model or ("small" if fast else "none")
 
     logging.basicConfig(level=logging.DEBUG if args.verbose else logging.INFO,
                         format="%(asctime)s %(levelname)s %(name)s: %(message)s")

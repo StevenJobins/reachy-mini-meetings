@@ -7,18 +7,26 @@ Streaming, speech-to-text, translation, text-to-speech and meeting copilot (note
 Python package `reachy_meetings_backend`. The pipeline:
 
 ```
-room mic ──► Segmenter (VAD) ──► Whisper ──► Claude translation ──► ws://0.0.0.0:8766 ──► headset
+room mic ──► Segmenter (VAD) ──► Whisper ──► DeepL translation ──► ws://0.0.0.0:8766 ──► headset
                                                 ▲
              robot bridge state (DoA) ──────────┘ speaker direction per utterance
 ```
 
-- **Mic:** the Reachy Mini Lite shows up on the Mac as a USB audio device, so the captions read the room audio directly. The robot process doesn't have to forward it. If no device matches `--mic` (default `Reachy`), the default mic is used, which is handy for testing on a laptop.
+- **Where it runs:** once, on the laptop the robot is plugged into (Mac, Windows or Linux). The headsets only open the web page and receive finished captions, so they need nothing installed.
+- **Mic:** the Reachy Mini Lite shows up on the laptop as a USB audio device, so the captions read the room audio directly. The robot process doesn't have to forward it. If no device matches `--mic` (default `Reachy`), the default mic is used, which is handy for testing on a laptop.
 - **Segmenter:** energy-based VAD. The threshold follows the room noise. It emits *partials* every 0.8 s while someone talks, and a *final* after 0.6 s of silence.
-- **Whisper:** runs on the Apple GPU via `mlx-whisper`. Finals use `large-v3-turbo`, and the live partials use `small`. Other platforms fall back to `faster-whisper` on the CPU, which is too slow for partials, so use `--partial-model none` there.
-- **Translation:** Claude (`claude-opus-5-5`, effort `low`) translates each final utterance. It also gets the last 3 utterances as context, which lets it fix ASR errors like "Büdree" → "Budget". If an utterance is already in the target language, it isn't translated.
+- **Whisper:** the engine and models are picked from the hardware (override with `--engine`, `--model`, `--partial-model`):
+
+  | Laptop | Engine | Final text | Live partials |
+  |---|---|---|---|
+  | Mac with Apple Silicon | `mlx-whisper` (GPU) | `large-v3-turbo` | `small` |
+  | NVIDIA GPU (Windows/Linux) | `faster-whisper` (CUDA) | `large-v3-turbo` | `small` |
+  | CPU only (Intel Mac, most Windows laptops) | `faster-whisper` (CPU) | `small` | off (too slow) |
+
+- **Translation:** DeepL translates each final utterance. It gets the last 3 utterances as context. If an utterance is already in the target language, it isn't translated. Claude is an optional, paid alternative (`--translator claude`, install with `pip install -e ".[claude]"`), and it also fixes ASR errors like "Büdree" → "Budget" from context.
 - **Direction:** reads `speaker_doa_rad` from the robot bridge (`ws://localhost:8765`). This only works when the robot runs *with* media, so not with `--no-media`.
 
-Measured on an M1 Pro with a 4.5 s German sentence: the final text arrives about 1.6 s after the speaker stops (with `--lang de`). Auto language detection adds about 1 s.
+Measured on an M1 Pro with a 4.5 s German sentence: the final text arrives about 1.6 s after the speaker stops (with `--lang de`). Auto language detection adds about 1 s. CPU-only path, measured on the same Mac: `small` takes ~3 s per sentence and makes more mistakes ("Budget" → "Büderey").
 
 ### Setup
 
@@ -29,17 +37,26 @@ cd backend
 uv venv ~/.venvs/reachy-backend --python 3.12
 VIRTUAL_ENV=~/.venvs/reachy-backend uv pip install -e ".[dev]"
 source ~/.venvs/reachy-backend/bin/activate
-export ANTHROPIC_API_KEY=...          # for translation; otherwise --translator none
 ```
 
-On the first start, the Whisper models are downloaded (~1.6 GB) into the HF cache.
+On the first start, the Whisper models are downloaded into the HF cache (~1.6 GB on Mac/GPU, ~0.5 GB on CPU).
+
+**DeepL key:**
+
+1. Sign up for the free *Developer* plan at deepl.com/pro-api. Our key reports a limit of 500,000 characters (check yours with `deepl.Translator(key).get_usage()`). A meeting hour is roughly 50,000 characters, so that's about 10 meeting hours. Measured: ~0.4 s per sentence. Once the credit is used up, you need the paid *Growth* plan (from 23.80 € per month, as of 2026-10).
+2. Copy the key from deepl.com/your-account/keys.
+3. Set it in your shell:
+   - macOS / Linux: `echo 'export DEEPL_AUTH_KEY="..."' >> ~/.zshrc` (or `~/.bashrc`), then open a new terminal
+   - Windows (PowerShell): `setx DEEPL_AUTH_KEY "..."`, then open a new terminal
+
+Without a key, `reachy-captions` still runs, but shows untranslated captions.
 
 ### Run
 
 ```bash
 reachy-captions --lang de --target en          # room speaks German, bubbles in English
 reachy-captions                                # auto-detect the spoken language per utterance
-reachy-captions --file test.wav --translator none --robot ""   # without room/robot/API key
+reachy-captions --file test.wav --translator none --robot ""   # without room/robot/DeepL key
 python scripts/print_captions.py               # shows what the headset receives
 ```
 
@@ -77,8 +94,8 @@ src/reachy_meetings_backend/
 ├── captions.py   pipeline + caption WebSocket server + CLI
 ├── segmenter.py  VAD: mic stream -> partial/final utterances (pure logic, tested)
 ├── audio.py      mic (sounddevice) and WAV file sources
-├── stt.py        Whisper: mlx (Apple GPU) or faster-whisper (CPU)
-├── translate.py  Claude translation with context
+├── stt.py        Whisper: mlx (Apple GPU) or faster-whisper (CUDA/CPU)
+├── translate.py  DeepL (default) or Claude translation, with context
 └── doa.py        speaker direction from the robot bridge state
 scripts/print_captions.py
 tests/test_logic.py
@@ -89,4 +106,4 @@ tests/test_logic.py
 - [ ] DoA on the real robot: is it relative to the head or the body, and is there front/back ambiguity? (`doa.py`)
 - [ ] Tune the VAD in a real room (`SegmenterCfg`: `margin_db`, `silence_s`)
 - [x] Bubble rendering in the xr-client (`xr-client/pages/captions.js`)
-- [ ] Translation latency: measure, and switch the model or effort if it's too slow
+- [ ] Windows/Linux: not tested on real hardware yet (the CPU path was tested on the Mac with `--engine faster-whisper`)
