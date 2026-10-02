@@ -72,7 +72,11 @@ setInterval(() => {
     `send ${status.send} Hz`, scene.videoStats());
 }, 5000);
 document.addEventListener("visibilitychange", () => log("page", document.visibilityState));
-setInterval(() => { $("debug-text").textContent = `user ${status.user}   xr ${status.xr}\n` + statusText(); }, 200);
+// Deployed version: the Pages workflow stamps module URLs with the commit (app.js?v=<sha>).
+const VERSION = new URL(import.meta.url).searchParams.get("v") ?? "local";
+$("version").textContent = `version ${VERSION}`;
+log("page loaded, version", VERSION);
+setInterval(() => { $("debug-text").textContent = `user ${status.user}   xr ${status.xr}   version ${VERSION}\n` + statusText(); }, 200);
 
 function show(state, message) {
   $("message").textContent = message;
