@@ -59,14 +59,14 @@ addEventListener("error", (e) => log("ERROR", e.message, `${e.filename}:${e.line
 addEventListener("unhandledrejection", (e) => log("UNHANDLED", e.reason?.message ?? e.reason));
 
 // ---------------------------------------------------------------- status
-const status = { user: "-", robot: "-", motors: "-", ice: "-", video: "-", xr: "off", send: 0, cmd: [0, 0, 0], body: 0, meas: [0, 0, 0], captions: "-", sound: "muted", follow: "on", doa: "none", mic: "off", volume: "-", micKbps: 0 };
+const status = { user: "-", robot: "-", motors: "-", ice: "-", video: "-", xr: "off", send: 0, cmd: [0, 0, 0], body: 0, meas: [0, 0, 0], captions: "-", sound: "muted", doa: "none", mic: "off", volume: "-", micKbps: 0 };
 let sentCount = 0;
 setInterval(() => { status.send = sentCount; sentCount = 0; }, 1000);
 function statusText() {
   const f = (v) => v.map((x) => x.toFixed(1).padStart(6)).join(" ");
   return [
     `robot ${status.robot}   motors ${status.motors}   ice ${status.ice}   video ${status.video}   send ${status.send} Hz   mic ${status.mic} ${status.micKbps.toFixed(0)} kbps   volume ${status.volume}`,
-    `cmd  r/p/y ${f(status.cmd)}   body ${status.body.toFixed(1)}   speaker ${status.follow} target ${speaker.target.toFixed(0)} base ${speaker.base.toFixed(0)}`,
+    `cmd  r/p/y ${f(status.cmd)}   body ${status.body.toFixed(1)}   speaker target ${speaker.target.toFixed(0)} base ${speaker.base.toFixed(0)}`,
     `meas r/p/y ${f(status.meas)}   captions ${status.captions}   ${faces.stats()}   robot sound ${status.sound}   doa ${status.doa}`,
   ].join("\n");
 }
@@ -92,7 +92,6 @@ function show(state, message) {
   $("mute").hidden = state !== "awake";
   $("mic").hidden = state !== "awake";
   $("volume-box").hidden = state !== "awake";
-  $("follow").hidden = state !== "awake";
   $("signin").hidden = state !== "signed-out";
   $("retry").hidden = state !== "failed";
 }
@@ -105,25 +104,15 @@ let wantRecenter = true;
 let lastSend = 0;
 const talk = new WantToTalk();
 
-// Speaker following has priority: the robot slowly turns to whoever speaks (DoA), and the headset
-// rotation is added ON TOP of that base. Looking straight ahead in VR = looking at the speaker.
+// Speaker following is always on: the robot slowly turns to whoever speaks (DoA), and the headset
+// rotation is added ON TOP of that base, so you can always look elsewhere. Straight ahead = the speaker.
 const speaker = new SpeakerTracker();
-let follow = true;
-let frozenBase = null;   // follow off: keep the base where it was
 let talkCenter = null;   // while waving: turn to the center of all recent speakers (turn_to_speaker.py)
-
-function setFollow(on) {
-  follow = on;
-  frozenBase = on ? null : speaker.base;
-  status.follow = on ? "on" : "off";
-  $("follow").textContent = on ? "🎯 Following speaker: tap to stop" : "🎯 Follow speaker";
-  log("follow speaker", status.follow);
-}
 
 /** Smooth base yaw for this tick (degrees, robot frame). */
 function stepBase(dt, nowS) {
   if (!talk.active(nowS)) talkCenter = null;
-  speaker.override = talkCenter ?? frozenBase;
+  speaker.override = talkCenter;
   const base = speaker.step(dt);
   return base;
 }
@@ -264,7 +253,6 @@ const scene = createScene({
   vrButtons: [
     { kind: "mic", muted: () => mic.muted || status.mic !== "on", label: () => (mic.muted ? "Muted" : status.mic === "on" ? "Mic on" : "Mic off"), onClick: toggleMic },
     { icon: "🙋", label: "Talk", onClick: wantToTalk },
-    { icon: "🎯", label: "Follow", active: () => follow, onClick: () => setFollow(!follow) },
     { icon: "💬", label: () => ({ both: "Both", translation: "Translated", original: "Original" })[captions?.mode ?? "both"],
       onClick: () => captions.cycleMode() },
     { icon: "📝", label: "Notes", active: () => !!notes?.visible, onClick: () => notes.toggle() },
@@ -365,7 +353,6 @@ $("wake").onclick = async () => {
   await robot.wake();
   mirror = new HeadMirror({ smoothing: cfg.smoothing });   // start from neutral, where the wake-up motion ends
   speaker.reset();
-  setFollow(follow);
   lastSend = performance.now();
   awake = true;
   video.hidden = false;
@@ -393,8 +380,6 @@ $("volume").oninput = (e) => { $("volume-val").textContent = `${e.target.value}%
 $("volume").onchange = (e) => applyVolume(Number(e.target.value), "slider");
 addEventListener("keydown", (e) => { if ((e.key === "m" || e.key === "M") && !e.target.closest?.("input, select, textarea")) toggleMic(); });
 renderMicButton();
-$("follow").onclick = () => setFollow(!follow);
-setFollow(true);
 setRobotMuted(true);
 $("signin").onclick = () => robot.signIn();
 $("retry").onclick = connect;
