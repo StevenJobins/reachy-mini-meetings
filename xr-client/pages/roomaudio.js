@@ -1,18 +1,22 @@
-// Room sound from the caption backend (binary WebSocket frames: int16 PCM, 16 kHz mono), played with a small
-// jitter buffer. Replaces the robot's WebRTC audio, which drops ~55 % of the sound (daemon-side, 0 packets
-// lost, measured with the status-line diagnostics). DOM/media only, no three.js.
+// Room sound from the caption backend (binary WebSocket frames: int16 PCM, 16 kHz mono), played with a jitter
+// buffer and a speech filter. Replaces the robot's WebRTC audio, which drops ~55 % of the sound (daemon-side,
+// 0 packets lost, measured with the status-line diagnostics). DOM/media only, no three.js.
+//
+// Quality notes (measured on the robot mic): it is natively 16 kHz (nothing above 8 kHz exists), and ~90 % of
+// the energy is room hum below 1 kHz. So: the AudioContext runs at 16 kHz and the browser's own resampler does
+// the upsampling; a high-pass removes the hum, a presence boost and a compressor make voices clear and even.
 
 const SRC_RATE = 16000;
 
-// AudioWorklet: ring buffer + linear resampling 16 kHz -> device rate. Starts playing at TARGET of buffered
-// audio, re-buffers after an underrun, and skips ahead when the buffer grows (clock drift) so latency stays low.
+// AudioWorklet at 16 kHz: plain ring buffer, no resampling. Starts at TARGET, refills after an underrun (with a
+// short fade, no click), and corrects clock drift by dropping single samples (inaudible) when above SLACK.
 const WORKLET = `
-const TARGET = ${0.08 * SRC_RATE}, MAX = ${0.3 * SRC_RATE};
+const TARGET = ${0.12 * SRC_RATE}, SLACK = ${0.2 * SRC_RATE}, HARD = ${0.6 * SRC_RATE};
 class RoomAudio extends AudioWorkletProcessor {
   constructor() {
     super();
     this.buf = new Float32Array(${SRC_RATE * 4}); this.r = 0; this.w = 0; this.n = 0;
-    this.playing = false; this.pos = 0; this.step = ${SRC_RATE} / sampleRate; this.underruns = 0; this.frames = 0;
+    this.playing = false; this.last = 0; this.underruns = 0; this.frames = 0; this.skip = 0;
     this.port.onmessage = ({ data }) => {
       for (let i = 0; i < data.length; i++) { this.buf[this.w] = data[i]; this.w = (this.w + 1) % this.buf.length; }
       this.n = Math.min(this.buf.length, this.n + data.length);
@@ -20,20 +24,20 @@ class RoomAudio extends AudioWorkletProcessor {
   }
   process(inputs, outputs) {
     const out = outputs[0][0], L = this.buf.length;
+    if (this.n > HARD) { const drop = this.n - TARGET; this.r = (this.r + drop) % L; this.n -= drop; }   // after a stall
     if (!this.playing && this.n >= TARGET) this.playing = true;
     for (let i = 0; i < out.length; i++) {
-      if (!this.playing || this.n < 2) {
-        out[i] = 0;
+      if (!this.playing || this.n < 1) {
         if (this.playing) { this.playing = false; this.underruns++; }
+        this.last *= 0.97;   // fade out instead of a click
+        out[i] = this.last;
         continue;
       }
-      const a = this.buf[this.r], b = this.buf[(this.r + 1) % L];
-      out[i] = a + (b - a) * this.pos;
-      this.pos += this.step;
-      while (this.pos >= 1) { this.pos -= 1; this.r = (this.r + 1) % L; this.n--; }
+      if (this.n > SLACK && ++this.skip >= 100) { this.skip = 0; this.r = (this.r + 1) % L; this.n--; }   // drift
+      this.last = out[i] = this.buf[this.r];
+      this.r = (this.r + 1) % L; this.n--;
     }
-    if (this.n > MAX) { const drop = this.n - TARGET; this.r = (this.r + drop) % L; this.n -= drop; }
-    if (++this.frames % 50 === 0) this.port.postMessage({ bufMs: this.n / ${SRC_RATE / 1000}, underruns: this.underruns });
+    if (++this.frames % 25 === 0) this.port.postMessage({ bufMs: this.n / ${SRC_RATE / 1000}, underruns: this.underruns });
     return true;
   }
 }
@@ -41,19 +45,23 @@ registerProcessor("room-audio", RoomAudio);
 `;
 
 export function createRoomAudio({ log }) {
-  let ctx = null, node = null, gain = null, enabled = false, lastPush = 0, bufMs = 0, underruns = 0, starting = null;
+  let ctx = null, node = null, out = null, enabled = false, lastPush = 0, bufMs = 0, underruns = 0, starting = null;
 
   async function ensure() {
     if (node) return;
     if (starting) return starting;
     starting = (async () => {
-      ctx = new AudioContext({ latencyHint: "interactive" });
+      ctx = new AudioContext({ sampleRate: SRC_RATE, latencyHint: "interactive" });
       await ctx.audioWorklet.addModule(URL.createObjectURL(new Blob([WORKLET], { type: "text/javascript" })));
       node = new AudioWorkletNode(ctx, "room-audio", { outputChannelCount: [1] });
       node.port.onmessage = ({ data }) => { bufMs = data.bufMs; underruns = data.underruns; };
-      gain = ctx.createGain();
-      gain.gain.value = enabled ? 1 : 0;
-      node.connect(gain).connect(ctx.destination);
+      // speech chain: hum out, presence up, levels even
+      const highpass = new BiquadFilterNode(ctx, { type: "highpass", frequency: 120, Q: 0.7 });
+      const presence = new BiquadFilterNode(ctx, { type: "peaking", frequency: 3000, Q: 0.9, gain: 4 });
+      const comp = new DynamicsCompressorNode(ctx, { threshold: -28, knee: 10, ratio: 3.5, attack: 0.005, release: 0.15 });
+      out = new GainNode(ctx, { gain: 0 });
+      node.connect(highpass).connect(presence).connect(comp).connect(out).connect(ctx.destination);
+      out.gain.setTargetAtTime(enabled ? 1.8 : 0, ctx.currentTime, 0.02);   // 1.8: make-up gain after the compressor
       log("room audio: ready at", ctx.sampleRate, "Hz");
     })();
     return starting;
@@ -73,8 +81,9 @@ export function createRoomAudio({ log }) {
     },
 
     setEnabled(on) {
+      if (on === enabled) return;
       enabled = on;
-      if (gain) gain.gain.setTargetAtTime(on ? 1 : 0, ctx.currentTime, 0.02);
+      if (out) out.gain.setTargetAtTime(on ? 1.8 : 0, ctx.currentTime, 0.02);
       if (on) this.resume();
     },
 
