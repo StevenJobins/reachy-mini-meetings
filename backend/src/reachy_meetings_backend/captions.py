@@ -14,6 +14,8 @@ Protocol (server -> headset, one JSON per message; keep in sync with xr-client):
   summary  {"summary": [str], "actions": [{"who": str, "what": str}], "t": s}
   vad      {"speaking": bool, "t": s}   instantly from the neural VAD (~0.1 s), long before any text:
            sent when speech starts/ends and every 0.25 s while it lasts (speaker following uses it)
+  binary   the room audio itself: int16 little-endian PCM, 16 kHz mono, ~40 ms per frame. The robot's own
+           WebRTC audio drops ~55 % of the sound (daemon bug, 0 packets lost); the page plays this instead.
 
 The same `id` is sent several times: partials (final=false) while the person talks, then the
 final text, then once more with the translation. Clients upsert by `id`. A final with empty
@@ -32,6 +34,7 @@ import time
 from collections import deque
 from concurrent.futures import ThreadPoolExecutor
 
+import numpy as np
 import websockets
 
 from .segmenter import Segment, Segmenter
@@ -71,6 +74,11 @@ class CaptionServer:
         if caption["final"]:
             self.recent.append(msg)
         websockets.broadcast(self.clients, msg)
+
+    def send_audio(self, chunk) -> None:
+        if self.clients:
+            pcm = (np.clip(chunk, -1, 1) * 32767).astype("<i2").tobytes()
+            websockets.broadcast(self.clients, pcm)
 
     def send_vad(self, speaking: bool) -> None:
         websockets.broadcast(self.clients, json.dumps({"type": "vad", "speaking": speaking,
@@ -206,6 +214,7 @@ class Pipeline:
                 chunk = await asyncio.wait_for(chunks.get(), 0.5)
             except asyncio.TimeoutError:
                 continue
+            self.server.send_audio(chunk)
             segs = self.segmenter.push(chunk)
             now = time.time()
             if self.segmenter.active != vad_on or (vad_on and now - vad_sent > 0.25):

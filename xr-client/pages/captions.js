@@ -87,7 +87,7 @@ function draw(ctx, b, mode) {
   for (const l of subLines) { ctx.fillText(l, x, y); y += 40; }
 }
 
-export function createCaptions({ three, distM, vfovDeg, speakers, listEl, overlayEl, onSummary, onFinal, onSpeech, onVad, log, onStatus }) {
+export function createCaptions({ three, distM, vfovDeg, speakers, listEl, overlayEl, onSummary, onFinal, onSpeech, onVad, onAudio, log, onStatus }) {
   const bubbles = new Map();                // id -> { msg, mesh, ctx, tex, until, trackId, pid, color, label, last }
   const screenH = 2 * distM * Math.tan(vfovDeg / 2 * Math.PI / 180);
   const screenW = screenH * 16 / 9;
@@ -269,7 +269,9 @@ export function createCaptions({ three, distM, vfovDeg, speakers, listEl, overla
       return;
     }
     ws.onopen = () => { onStatus({ captions: "on" }); log("captions connected", url); };
+    ws.binaryType = "arraybuffer";   // binary frames = room audio (see backend/README.md)
     ws.onmessage = (e) => {
+      if (typeof e.data !== "string") { onAudio?.(e.data); return; }
       const msg = JSON.parse(e.data);
       if (msg.type === "caption") onCaption(msg);
       else if (msg.type === "summary") onSummary?.(msg);

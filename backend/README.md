@@ -69,6 +69,10 @@ Headset over USB: `adb reverse tcp:8766 tcp:8766`
 
 Tests, without models, mic or network: `pytest -q`
 
+### Room audio stream
+
+The robot's own WebRTC audio drops ~55 % of the sound (measured on the page: 0 packets lost, low jitter, but more than half of the audio concealed, with and without this backend running, so it is the daemon's sender). This backend already reads the same microphone cleanly, so it also streams it to the page: binary WebSocket frames, int16 PCM, 16 kHz mono, 40 ms each (~32 KB/s per client). The page plays it with a small jitter buffer and mutes the WebRTC audio while the stream arrives.
+
 ### Meeting notes (summary + action items)
 
 Every 45–60 s (`--summary-every`), if something new was said, the transcript goes to **Google Gemini** (free tier, `gemini-flash-lite-latest`; `gemini-flash-latest` ran out of free quota) and comes back as summary bullets + action items, in the target language. It takes ~10 s and runs in the background.

@@ -14,6 +14,7 @@ import { captionsUrl, createCaptions, setCaptionsUrl } from "./captions.js";
 import { createFaces } from "./faces.js";
 import { FaceSpeakers } from "./speakers.js";
 import { createNotes } from "./notes.js";
+import { createRoomAudio } from "./roomaudio.js";
 import { createMic } from "./mic.js";
 import { explainVolume, volumeCommand } from "./voicecmd.js";
 
@@ -67,7 +68,7 @@ function statusText() {
   return [
     `robot ${status.robot}   motors ${status.motors}   ice ${status.ice}   video ${status.video}   send ${status.send} Hz   mic ${status.mic} ${status.micKbps.toFixed(0)} kbps   volume ${status.volume}`,
     `cmd  r/p/y ${f(status.cmd)}   body ${status.body.toFixed(1)}   speaker target ${speaker.target.toFixed(0)} base ${speaker.base.toFixed(0)}`,
-    `meas r/p/y ${f(status.meas)}   captions ${status.captions}   ${faces.stats()}   robot sound ${status.sound} ${status.audioIn}   doa ${status.doa}`,
+    `meas r/p/y ${f(status.meas)}   captions ${status.captions}   ${faces.stats()}   robot sound ${status.sound} ${roomAudio.stats()} ${status.audioIn}   doa ${status.doa}`,
   ].join("\n");
 }
 // Robot sound diagnostics (why is it choppy?): packets lost, jitter, playout buffer, and how much audio
@@ -168,9 +169,21 @@ function send(t, nowS) {
 // Robot sound (its microphone, i.e. the room) is muted by default: otherwise you hear yourself twice,
 // once directly and once through the robot. Unmuting must happen inside a tap / VR select.
 let robotMuted = true;
+// Room sound comes from the caption backend's audio stream when it is available (the robot's own WebRTC audio
+// drops ~55 % of the sound, daemon-side); the WebRTC audio is only the fallback when no stream arrives.
+const roomAudio = createRoomAudio({ log });
+let webrtcAudioOn = false;
+function applyRobotAudio() {
+  roomAudio.setEnabled(awake && !robotMuted);
+  const want = awake && !robotMuted && !roomAudio.live;
+  if (want !== webrtcAudioOn) { robot.setAudio(want); webrtcAudioOn = want; log("robot sound via", want ? "WebRTC (no stream)" : roomAudio.live ? "audio stream" : "-"); }
+}
+setInterval(applyRobotAudio, 1000);
+
 function setRobotMuted(m) {
   robotMuted = m;
-  if (awake) robot.setAudio(!m);
+  roomAudio.resume();   // usually called from a tap: lets the browser start audio
+  applyRobotAudio();
   status.sound = m ? "muted" : "on";
   $("mute").textContent = m ? "🔇 Robot muted: tap to unmute" : "🔊 Mute robot";
 }
@@ -395,6 +408,7 @@ captions = createCaptions({
   onFinal: onFinalCaption,
   onSpeech: onSpeechCaption,
   onVad: onVadEvent,
+  onAudio: (buf) => roomAudio.push(buf),
   log,
   onStatus: (s) => Object.assign(status, s),
 });
@@ -457,7 +471,7 @@ $("start").onclick = async () => {
 $("wake").onclick = async () => {
   mic.start();   // right in the tap: the first time the browser asks for microphone permission
   // Inside the tap: browsers allow unmuted playback (robot microphone) only during a user gesture.
-  robot.setAudio(!robotMuted);
+  roomAudio.resume();   // inside the tap: browsers start audio only from a user gesture
   video.play().catch((e) => log("video.play:", e?.message ?? e));
   show("busy", "Reachy is waking up…");
   await robot.wake();
@@ -466,6 +480,7 @@ $("wake").onclick = async () => {
   focusPid = null; basePitch = 0; targetPitch = 0;
   lastSend = performance.now();
   awake = true;
+  applyRobotAudio();
   video.hidden = false;
   robot.getVolume().then((v) => {
     if (v == null) return;

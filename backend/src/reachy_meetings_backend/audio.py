@@ -30,7 +30,7 @@ def find_input_device(name: str | None) -> int | None:
 
 
 class MicSource:
-    def __init__(self, device: str | None, block_s: float = 0.1) -> None:
+    def __init__(self, device: str | None, block_s: float = 0.04) -> None:   # small blocks: low audio latency
         self.device = find_input_device(device)
         if device and self.device is None:
             log.warning("No input device matching %r, using the default mic", device)
@@ -52,7 +52,7 @@ class MicSource:
 
 
 class FileSource:
-    def __init__(self, path: str, block_s: float = 0.1) -> None:
+    def __init__(self, path: str, block_s: float = 0.04) -> None:
         with wave.open(path) as w:
             sr, ch, width = w.getframerate(), w.getnchannels(), w.getsampwidth()
             raw = w.readframes(w.getnframes())
