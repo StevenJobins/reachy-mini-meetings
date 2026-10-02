@@ -16,6 +16,7 @@ dependencies = [
     "websockets>=12",        # caption server + robot bridge client
     "deepl",                 # translation (DeepL API)
     "onnxruntime",           # Silero VAD: speech vs. noise
+    "pyusb", "libusb-package",   # directional mic: XVF3800 settings over USB
 ]
 
 [project.optional-dependencies]

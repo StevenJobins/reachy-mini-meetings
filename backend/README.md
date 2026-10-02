@@ -73,6 +73,12 @@ Tests, without models, mic or network: `pytest -q`
 
 The robot's own WebRTC audio drops ~55 % of the sound (measured on the page: 0 packets lost, low jitter, but more than half of the audio concealed, with and without this backend running, so it is the daemon's sender). This backend already reads the same microphone cleanly, so it also streams it to the page: binary WebSocket frames, int16 PCM, 16 kHz mono, 40 ms each (~32 KB/s per client). The page plays it with a small jitter buffer and mutes the WebRTC audio while the stream arrives. Between utterances the stream is turned down by 14 dB (`--pause-db`, noise gate driven by the neural VAD; 0 = off), so hum and fans stay out of the headset; voices of other people in the room count as speech and stay audible.
 
+### Directional mic
+
+On start the backend sets the robot's mic array (XMOS XVF3800) over USB: a **fixed beam straight ahead** (where Reachy looks; it turns to the speaker and keeps them centred) and **stronger noise suppression** (`PP_MIN_NS` 0.15 → 0.05, `PP_MIN_NN` 0.51 → 0.30). On exit (Ctrl-C or `kill`) the chip goes back to its defaults. `--no-focus-mic` leaves it alone. Measured: room background −8 dB; the robot's DoA (speaker following) keeps working with the fixed beam.
+
+Direct USB (`micarray.py`, `pyusb` + `libusb-package`) because the daemon's `/api/audio/config/apply` cannot write integer parameters: values arrive as floats and `struct.pack("i", 1.0)` fails (reachy_mini 1.11). On Windows USB access may need a driver; then a warning and the defaults stay.
+
 ### Meeting notes (summary + action items)
 
 Every 45–60 s (`--summary-every`), if something new was said, the transcript goes to **Google Gemini** (free tier, `gemini-flash-lite-latest`; `gemini-flash-latest` ran out of free quota) and comes back as summary bullets + action items, in the target language. It takes ~10 s and runs in the background.

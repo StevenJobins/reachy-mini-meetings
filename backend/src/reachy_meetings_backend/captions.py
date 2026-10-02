@@ -31,6 +31,7 @@ import argparse
 import asyncio
 import json
 import logging
+import signal
 import time
 from collections import deque
 from concurrent.futures import ThreadPoolExecutor
@@ -283,6 +284,9 @@ def cli() -> None:
     ap.add_argument("--summary-every", type=float, default=60, help="seconds between summaries")
     ap.add_argument("--pause-db", type=float, default=-14,
                     help="room sound level between utterances (noise gate, needs the neural VAD); 0 = off")
+    ap.add_argument("--no-focus-mic", dest="focus_mic", action="store_false",
+                    help="leave the robot's mic array as it is (default: beam straight ahead + stronger noise "
+                         "suppression, restored on exit)")
     ap.add_argument("--host", default="0.0.0.0")
     ap.add_argument("--port", type=int, default=8766)
     ap.add_argument("-v", "--verbose", action="store_true")
@@ -300,10 +304,22 @@ def cli() -> None:
                         format="%(asctime)s %(levelname)s %(name)s: %(message)s")
     for noisy in ("websockets", "faster_whisper", "httpx", "httpx2", "huggingface_hub", "deepl"):
         logging.getLogger(noisy).setLevel(logging.WARNING)
+    signal.signal(signal.SIGTERM, signal.default_int_handler)   # pkill / kill = Ctrl-C: still restore the mic array
+    restore_mic = None
+    if args.focus_mic and not args.file:
+        try:
+            from .micarray import focus_on
+
+            restore_mic = focus_on()
+        except (ImportError, OSError, ValueError) as e:
+            log.warning("Directional mic not set (%s)", e)
     try:
         asyncio.run(Pipeline(args).run())
     except KeyboardInterrupt:
         pass
+    finally:
+        if restore_mic:
+            restore_mic()
 
 
 if __name__ == "__main__":
