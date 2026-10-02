@@ -1,8 +1,9 @@
-"""Directional listening on the robot's mic array (XMOS XVF3800), set directly over USB.
+"""Mic array tuning (XMOS XVF3800), set directly over USB: stronger noise suppression; the chip's own adaptive
+beam stays on (it steers to whoever speaks). On exit the chip goes back to its defaults.
 
-Reachy turns to whoever speaks and keeps them centred, so a fixed beam pointing straight ahead (where the head
-looks, slightly up towards faces) picks up that person and less of the rest of the room. Stronger noise
-suppression on top. On exit the chip goes back to its defaults.
+A fixed beam straight ahead was tried and dropped (A/B with a fixed sound source at the side, 2026-10-02):
+with it, side voices were damped so much that the VAD no longer heard speech, so Reachy never turned to a new
+speaker; with the adaptive beam it turned within ~5 s. Noise suppression alone gave the measured -8 dB.
 
 Direct USB because the daemon's REST endpoint (/api/audio/config/apply) cannot write integer parameters such as
 AEC_FIXEDBEAMSONOFF: it receives the values as floats and struct.pack("i", 1.0) fails (checked in
@@ -13,7 +14,6 @@ XVF3800 control command reference. The robot's DoA keeps working with the fixed 
 from __future__ import annotations
 
 import logging
-import math
 import struct
 import time
 
@@ -28,13 +28,10 @@ PARAMS = {
     "PP_MIN_NN": (17, 22, 1, "float"),
 }
 
-# Order matters: aim the beams before switching them on.
 FOCUS = {
-    "AEC_FIXEDBEAMSAZIMUTH_VALUES": [math.pi / 2, math.pi / 2],   # straight ahead (0 = left, pi = right)
-    "AEC_FIXEDBEAMSELEVATION_VALUES": [0.1, 0.1],                # slightly up: faces are above the robot
-    "AEC_FIXEDBEAMSONOFF": [1],
-    "PP_MIN_NS": [0.05],   # stationary noise gain floor, default 0.15 (lower = stronger)
-    "PP_MIN_NN": [0.30],   # non-stationary noise gain floor, default 0.51
+    "AEC_FIXEDBEAMSONOFF": [0],   # adaptive beam (see above)
+    "PP_MIN_NS": [0.05],          # stationary noise gain floor, default 0.15 (lower = stronger)
+    "PP_MIN_NN": [0.30],          # non-stationary noise gain floor, default 0.51
 }
 
 IDS = [(0x38FB, 0x1001), (0x2886, 0x001A)]   # Reachy Mini Audio, plain ReSpeaker XVF3800
@@ -92,7 +89,7 @@ def focus_on():
     mic = MicArray()
     for name, values in FOCUS.items():
         mic.write(name, values)
-    log.info("Mic array: fixed beam straight ahead, stronger noise suppression")
+    log.info("Mic array: stronger noise suppression (adaptive beam)")
 
     def restore() -> None:
         try:

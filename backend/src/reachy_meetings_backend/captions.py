@@ -31,6 +31,7 @@ import argparse
 import asyncio
 import json
 import logging
+import os
 import signal
 import time
 from collections import deque
@@ -285,8 +286,8 @@ def cli() -> None:
     ap.add_argument("--pause-db", type=float, default=-14,
                     help="room sound level between utterances (noise gate, needs the neural VAD); 0 = off")
     ap.add_argument("--no-focus-mic", dest="focus_mic", action="store_false",
-                    help="leave the robot's mic array as it is (default: beam straight ahead + stronger noise "
-                         "suppression, restored on exit)")
+                    help="leave the robot's mic array as it is (default: stronger noise suppression, "
+                         "restored on exit)")
     ap.add_argument("--host", default="0.0.0.0")
     ap.add_argument("--port", type=int, default=8766)
     ap.add_argument("-v", "--verbose", action="store_true")
@@ -320,6 +321,10 @@ def cli() -> None:
     finally:
         if restore_mic:
             restore_mic()
+        logging.shutdown()
+        # don't wait for the Whisper worker / audio threads at interpreter exit: a stuck one kept old
+        # instances alive (holding the mic) after kill
+        os._exit(0)
 
 
 if __name__ == "__main__":

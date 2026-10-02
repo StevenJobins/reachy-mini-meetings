@@ -348,11 +348,16 @@ function onVadEvent(msg) {
   lastSpeechS = performance.now() / 1000;
   flushDoa(lastSpeechS - 0.6);
   const last = doaBuf[doaBuf.length - 1];
-  const tr = faceSpeakers.pick(last ? 90 - last[1] * 180 / Math.PI : null);   // mouth movement + mic direction
+  const doaRel = last ? 90 - last[1] * 180 / Math.PI : null;   // relative to the head, + = left
+  const tr = faceSpeakers.pick(doaRel);   // mouth movement + mic direction
   if (tr && tr.seen === faceSpeakers.lastT) {
     if (tr.pid !== focusPid) speaker.speakers.push([lastSpeechS, speaker.target]);
     focusPid = tr.pid;
     frameFocus();
+  } else if (!faceSpeakers.tracks.some((t) => t.seen === faceSpeakers.lastT) && (doaRel == null || Math.abs(doaRel) < 35)) {
+    // Someone talks in front of Reachy but no face is in the picture: their head is above it (standing, or
+    // close to the robot). Look up step by step (~12 °/s at 4 events/s) until the face shows up.
+    targetPitch = Math.max(-PITCH_UP, targetPitch - 3);
   }
 }
 
