@@ -116,8 +116,10 @@ const scene = createScene({
   vrButtons: [
     { label: "I want to talk", onClick: wantToTalk },
     { label: "Recenter", onClick: () => { wantRecenter = true; } },
+    { label: "Switch video", onClick: () => scene.cycleVideo() },   // camera path test, see videosource.js
     { label: "Exit VR", onClick: () => scene.exitVR() },
   ],
+  log,
   onSelect: () => { wantRecenter = true; },
   onEnd: () => { status.xr = "off"; show("awake", "Reachy is awake. Tap Start to look around again, or Sleep."); },
 });

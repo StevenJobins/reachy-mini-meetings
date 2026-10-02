@@ -57,7 +57,11 @@ URL: https://stevenjobins.github.io/reachy-mini-meetings/. It is deployed by `.g
 2. Start the app. The first time, sign in with Hugging Face. After that, sign-in is silent (OAuth `prompt=none`).
 3. The app connects to the robot automatically. When exactly one free robot is visible, it is picked without asking. The robot stays asleep.
 4. Tap **Wake up**. Reachy plays its wake-up motion (~2 s), and its camera and microphone switch on (video on the page, room audio audible).
-5. Look straight ahead and tap **Start**. You are in VR and Reachy follows your head. To recenter, pinch. Leaving VR keeps Reachy awake, so you can tap Start again.
+5. Look straight ahead and tap **Start**. You are in VR and Reachy follows your head. Leaving VR keeps Reachy awake, so you can tap Start again.
+   - **VR buttons** (head-locked, below the view): *I want to talk*, *Recenter*, *Switch video*, *Exit VR*. Point at them with the controller or hand ray and pinch / pull the trigger. Pinching anywhere else recenters.
+   - **I want to talk** (also on the page): the right antenna waves and the body swings ±27° for 3 s, like `robot/turn_to_speaker.py`. The head keeps following you.
+   - If no camera frame arrives, the video window says *No camera image yet*. Then check the camera permission on the robot Mac.
+   - *Switch video* cycles how camera frames reach the VR window (`track` → `canvas` → `direct`, remembered per device). The last HUD line shows the mode and frame rates. Background in `videosource.js`: the old path uploaded the `<video>` as a plain texture whose GPU storage was fixed at the first (small, black) WebRTC frame, so VR stayed black while the page video worked.
 6. Tap **Sleep** to send Reachy back to its sleep pose: motors off, camera and microphone off.
 
 Wake up and Start are taps because browsers allow unmuted audio and entering VR only from a user gesture.
@@ -74,6 +78,8 @@ Wake up and Start are taps because browsers allow unmuted audio and entering VR 
 | `robot.js` | Sign-in (silent first), auto-connect, video, `setHead()`, measured head pose | Pollen SDK |
 | `scene.js` | WebXR rendering: video window at the measured robot head pose, floor grid, status panel | three.js |
 | `captions.js` | Speech bubbles from `backend/` captions: in VR + as a list under the video | three.js |
+| `videosource.js` | Camera frames for the VR window: WebRTC track → fixed-size canvas (modes track/canvas/direct) | DOM + media only |
+| `gestures.js` | "I want to talk" gesture (antenna wave + body swing), layered on the mirrored pose | nothing (pure, portable) |
 | `app.js` | Wires everything together, one-button UI | the four above |
 | `manifest.webmanifest`, `icon*.{svg,png}` | Installable app (PWA) | |
 

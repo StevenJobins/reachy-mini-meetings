@@ -5,8 +5,9 @@
 // The window has the camera's field of view, so a flat plane matches the pinhole image exactly.
 
 import * as THREE from "three";
+import { createVideoSource } from "./videosource.js";
 
-export function createScene({ video, vfovDeg, distM, statusText, onHeadsetPose, onSelect, onEnd, vrButtons = [] }) {
+export function createScene({ video, vfovDeg, distM, statusText, onHeadsetPose, onSelect, onEnd, vrButtons = [], log = console.log }) {
   const renderer = new THREE.WebGLRenderer({ antialias: true });
   renderer.xr.enabled = true;
   renderer.xr.setReferenceSpaceType("local");
@@ -19,9 +20,16 @@ export function createScene({ video, vfovDeg, distM, statusText, onHeadsetPose, 
   grid.position.y = -1.4;
   scene.add(grid);
 
-  // Plain Texture updated every XR frame. THREE.VideoTexture waits for requestVideoFrameCallback,
-  // which can stop firing on Android while an immersive session hides the page.
-  const videoTex = new THREE.Texture(video);
+  // Camera frames: see videosource.js for why the VR window does not simply use the <video> element.
+  const source = createVideoSource(video, log);
+  const canvasTex = new THREE.CanvasTexture(source.canvas);   // fixed size, so texStorage2D is fine
+  canvasTex.colorSpace = THREE.SRGBColorSpace;
+  canvasTex.minFilter = THREE.LinearFilter;
+  canvasTex.generateMipmaps = false;
+  // "direct" mode only: VideoTexture is re-allocated with texImage2D on every upload (no texStorage2D),
+  // so resolution changes are fine. needsUpdate is set per XR frame below, because its
+  // requestVideoFrameCallback can stop firing on Android while an immersive session hides the page.
+  const videoTex = new THREE.VideoTexture(video);
   videoTex.colorSpace = THREE.SRGBColorSpace;
   videoTex.minFilter = THREE.LinearFilter;
   videoTex.generateMipmaps = false;
@@ -63,7 +71,7 @@ export function createScene({ video, vfovDeg, distM, statusText, onHeadsetPose, 
     hudCtx.fillStyle = "rgba(0,0,0,0.6)";
     hudCtx.fillRect(0, 0, hudCanvas.width, hudCanvas.height);
     hudCtx.fillStyle = "#7f7"; hudCtx.font = "24px monospace";
-    statusText().split("\n").forEach((l, i) => hudCtx.fillText(l, 12, 32 + i * 34));
+    [...statusText().split("\n"), source.stats()].forEach((l, i) => hudCtx.fillText(l, 12, 32 + i * 34));
     hudTex.needsUpdate = true;
   }, 200);
 
@@ -76,8 +84,8 @@ export function createScene({ video, vfovDeg, distM, statusText, onHeadsetPose, 
       ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.fillText(b.label, w / 2, h / 2);
     };
     const tex = [canvasTexture(512, 128, draw(false)), canvasTexture(512, 128, draw(true))];
-    const mesh = new THREE.Mesh(new THREE.PlaneGeometry(0.24, 0.06), new THREE.MeshBasicMaterial({ map: tex[0], transparent: true }));
-    const w = 0.26;
+    const mesh = new THREE.Mesh(new THREE.PlaneGeometry(0.2, 0.05), new THREE.MeshBasicMaterial({ map: tex[0], transparent: true }));
+    const w = 0.215;
     mesh.position.set((i - (vrButtons.length - 1) / 2) * w, -0.3, -1.2);
     mesh.userData = { onClick: b.onClick, tex };
     camera.add(mesh);
@@ -139,9 +147,14 @@ export function createScene({ video, vfovDeg, distM, statusText, onHeadsetPose, 
       const pose = frame.getViewerPose(renderer.xr.getReferenceSpace());
       if (pose) onHeadsetPose(pose.transform.orientation, now);
     }
-    const hasVideo = video.readyState >= video.HAVE_CURRENT_DATA && video.videoWidth > 0;
-    if (hasVideo) videoTex.needsUpdate = true;
-    const map = hasVideo ? videoTex : noVideoTex;
+    let map = noVideoTex;
+    if (source.mode === "direct") {
+      if (video.readyState >= video.HAVE_CURRENT_DATA && video.videoWidth > 0) { videoTex.needsUpdate = true; map = videoTex; }
+      source.update();
+    } else {
+      if (source.update()) canvasTex.needsUpdate = true;
+      if (source.hasFrame) map = canvasTex;
+    }
     if (screenMat.map !== map) { screenMat.map = map; screenMat.needsUpdate = true; }
     if (frame) updatePointers(frame);
     if (haveTarget) robotView.quaternion.slerp(target, 0.5);   // pose stream ~30 Hz -> smooth at display rate
@@ -160,6 +173,9 @@ export function createScene({ video, vfovDeg, distM, statusText, onHeadsetPose, 
       session.addEventListener("end", onEnd);
       await renderer.xr.setSession(session);
     },
+
+    /** Switch how camera frames reach the VR window (track -> canvas -> direct). Returns the new mode. */
+    cycleVideo() { return source.cycle(); },
 
     exitVR() { renderer.xr.getSession()?.end(); },
 
