@@ -242,7 +242,8 @@ const robot = createRobot({
   },
   onDoa: (angle, speech) => {
     status.doa = `${(90 - angle * 180 / Math.PI).toFixed(0)}° ${speech ? "SPEECH" : "quiet"}`;   // relative to the head, + = left
-    if (awake) speaker.pushDoa(performance.now() / 1000, angle, speech);
+    // only while the backend confirms real speech (neural VAD + text), so noise doesn't turn the robot
+    if (awake && performance.now() / 1000 - lastSpeechS < 1.5) speaker.pushDoa(performance.now() / 1000, angle, speech);
   },
 });
 
@@ -283,9 +284,22 @@ const scene = createScene({
 // Speech bubbles over the speaker's head: faces in the camera image + mouth movement + mic direction.
 const hfovDeg = 2 * Math.atan(Math.tan(cfg.vfovDeg / 2 * Math.PI / 180) * 16 / 9) * 180 / Math.PI;
 const faceSpeakers = new FaceSpeakers({ hfovDeg });
+// Someone is speaking (a caption arrived). If we know their face, the robot turns exactly there; the mic
+// direction alone is only used while speech is confirmed. In silence the target stays: Reachy keeps
+// looking at the last person who spoke.
+let lastSpeechS = 0;
+function onSpeechCaption(msg, track) {
+  lastSpeechS = performance.now() / 1000;
+  if (!track || !awake) return;
+  const yaw = Math.max(-150, Math.min(150, status.meas[2] + faceSpeakers.angleDeg(track)));
+  if (Math.abs(yaw - speaker.target) > 8) {
+    speaker.target = yaw;
+    speaker.speakers.push([lastSpeechS, yaw]);   // for "I want to talk" (center of recent speakers)
+  }
+}
 const faces = createFaces({
   getSource: () => (awake ? scene.videoFrame() : null),
-  onFaces: (list, t) => faceSpeakers.update(list, t),
+  onFaces: (list, t) => faceSpeakers.update(list, t, status.meas[2]),
   log,
 });
 notes = createNotes({ three: scene.three, recenter, distM: cfg.distM, cardEl: $("notes") });
@@ -298,6 +312,7 @@ captions = createCaptions({
   overlayEl: $("live-caption"),
   onSummary: (msg) => notes.update(msg),
   onFinal: onFinalCaption,
+  onSpeech: onSpeechCaption,
   log,
   onStatus: (s) => Object.assign(status, s),
 });

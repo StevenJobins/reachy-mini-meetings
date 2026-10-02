@@ -34,9 +34,9 @@ class SegmenterCfg:
     margin_db: float = 12.0        # speech = this much above the noise floor
     min_level_db: float = -50.0    # never treat quieter frames as speech
     start_frames: int = 3          # consecutive loud frames to start (90 ms)
-    silence_s: float = 0.7         # no speech this long -> utterance ends (shorter cuts sentences apart)
+    silence_s: float = 0.8         # no speech this long -> utterance ends (shorter cuts sentences apart)
     speech_prob: float = 0.5       # neural VAD: speech starts above this probability ...
-    keep_prob: float = 0.35        # ... and continues while above this one
+    keep_prob: float = 0.2         # ... and continues while above this one (distant voices dip between words)
     preroll_s: float = 0.3
     min_s: float = 0.4             # drop shorter blips (coughs, clicks)
     max_s: float = 15.0            # force a cut in monologues

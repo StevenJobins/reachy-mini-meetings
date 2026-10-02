@@ -56,7 +56,8 @@ Without a key, `reachy-captions` still runs, but shows untranslated captions.
 ### Run
 
 ```bash
-reachy-captions --lang de --target en          # room speaks German, bubbles in English
+reachy-captions --target en                    # any spoken language, bubbles in English
+reachy-captions --lang de --target en          # force German
 reachy-captions                                # auto-detect the spoken language per utterance
 reachy-captions --file test.wav --translator none --robot ""   # without room/robot/DeepL key
 python scripts/print_captions.py               # shows what the headset receives
@@ -70,7 +71,7 @@ Tests, without models, mic or network: `pytest -q`
 
 ### Meeting notes (summary + action items)
 
-Every 45–60 s (`--summary-every`), if something new was said, the transcript goes to **Google Gemini** (free tier, `gemini-flash-latest`) and comes back as summary bullets + action items, in the target language. It takes ~10 s and runs in the background.
+Every 45–60 s (`--summary-every`), if something new was said, the transcript goes to **Google Gemini** (free tier, `gemini-flash-lite-latest`; `gemini-flash-latest` ran out of free quota) and comes back as summary bullets + action items, in the target language. It takes ~10 s and runs in the background.
 
 Key from https://aistudio.google.com/apikey → `export GEMINI_API_KEY="..."` (macOS/Linux, e.g. in `~/.zshrc`) or `setx GEMINI_API_KEY "..."` (Windows). Without a key the captions run as before, just without notes. Note: on the free tier Google may use the content to improve its products — fine for the course project, not for confidential meetings.
 

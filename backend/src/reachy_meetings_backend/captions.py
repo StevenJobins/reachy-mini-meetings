@@ -1,7 +1,8 @@
 """Live captions for the speech bubbles: room audio -> Whisper -> translation -> WebSocket.
 
     reachy-captions                              # Mac mic / Reachy mic, captions on ws://0.0.0.0:8766
-    reachy-captions --lang de --target en         # fixed spoken language: ~1 s faster per utterance
+    reachy-captions --target en                  # any spoken language (detected per utterance)
+    reachy-captions --lang de --target en         # force one spoken language
     reachy-captions --translator none            # captions only, no DeepL key needed
     reachy-captions --file meeting.wav           # test without a room
 
@@ -86,6 +87,9 @@ class Pipeline:
         self.pending = 0
         self.finalized: set[int] = set()
         self.partial_tr: dict[int, tuple[float, int]] = {}   # id -> (time, text length) of last partial translation
+        # Language per utterance, detected by the fast partial model, so the big model needn't detect it
+        # again (that costs ~1 s): auto language at no extra delay.
+        self.seg_lang: dict[int, str] = {}
         self.server = CaptionServer(args.host, args.port, args.target)
         try:
             from .vad import SileroVad
@@ -120,10 +124,10 @@ class Pipeline:
             except RuntimeError as e:
                 log.warning("No summary: %s", e)
 
-    async def _stt(self, model, audio) -> tuple[str, str]:
+    async def _stt(self, model, audio, language=None) -> tuple[str, str]:
         self.pending += 1
         try:
-            return await asyncio.get_running_loop().run_in_executor(self.worker, model, audio)
+            return await asyncio.get_running_loop().run_in_executor(self.worker, model, audio, language)
         finally:
             self.pending -= 1
 
@@ -142,6 +146,7 @@ class Pipeline:
         text, lang = await self._stt(self.stt_partial, seg.audio)
         if not text or seg.id in self.finalized:
             return
+        self.seg_lang[seg.id] = lang
         cap = self._caption(seg, wall_end, text, lang)
         self.server.send(cap)
         # Translate live text too, so the bubble is readable while the person still talks. Throttled
@@ -156,7 +161,7 @@ class Pipeline:
                 self.server.send({**cap, "translation": translation})
 
     async def _final(self, seg: Segment, wall_end: float) -> None:
-        text, lang = await self._stt(self.stt, seg.audio)
+        text, lang = await self._stt(self.stt, seg.audio, self.seg_lang.pop(seg.id, None))
         self.finalized.add(seg.id)
         self.partial_tr.pop(seg.id, None)
         cap = self._caption(seg, wall_end, text, lang)
@@ -227,7 +232,8 @@ def cli() -> None:
                     help="Reachy Mini daemon for the speaker direction (DoA); '' to disable")
     ap.add_argument("--summary", choices=["gemini", "none"], default="gemini",
                     help="live summary + action items; gemini needs GEMINI_API_KEY (free tier)")
-    ap.add_argument("--summary-model", default="gemini-flash-latest")
+    ap.add_argument("--summary-model", default="gemini-flash-lite-latest",
+                    help="has free quota for new accounts (gemini-flash-latest ran into 429)")
     ap.add_argument("--summary-every", type=float, default=60, help="seconds between summaries")
     ap.add_argument("--host", default="0.0.0.0")
     ap.add_argument("--port", type=int, default=8766)

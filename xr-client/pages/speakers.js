@@ -3,19 +3,30 @@
 //
 // Faces come in normalized image coordinates (0..1, origin top left) from faces.js, several times a second.
 // Angles: degrees, + = left of the camera axis, like doa_deg from backend/ (see backend/README.md).
+//
+// Identity: a track only lives while the face is in view. Who it IS (`pid`, "Speaker 1") is decided by the
+// direction in the room (robot head yaw + face angle): people sit still in a meeting, so a face that shows up
+// again where someone was before is that person again, also after the robot looked elsewhere.
 
 export class FaceSpeakers {
-  constructor({ hfovDeg, windowS = 1.5, maxJump = 0.15, ttlS = 1.0 } = {}) {
+  constructor({ hfovDeg, windowS = 1.5, maxJump = 0.15, ttlS = 1.0, reIdDeg = 15, memoryS = 900 } = {}) {
     this.tanHalf = Math.tan((hfovDeg / 2) * Math.PI / 180);
     this.windowS = windowS;   // mouth movement is judged over this window
     this.maxJump = maxJump;   // max face movement between two detections (fraction of the image)
     this.ttlS = ttlS;         // a face not seen for this long is dropped
     this.tracks = [];
     this.nextId = 1;
+    this.reIdDeg = reIdDeg;   // same person if within this many degrees of where they were
+    this.memoryS = memoryS;   // forget people not seen for this long
+    this.people = [];         // [{pid, yaw (room direction, degrees), seen}]
+    this.nextPid = 1;
   }
 
-  /** faces = [{cx, cy, top, w, h, mouth}] (head boxes, mouth may be null), t = seconds. Nearest-centre matching. */
-  update(faces, t) {
+  /**
+   * faces = [{cx, cy, top, w, h, mouth}] (head boxes, mouth may be null), t = seconds, headYawDeg = robot head yaw
+   * in the room when the frame was taken (null if unknown). Nearest-centre matching, then identity by direction.
+   */
+  update(faces, t, headYawDeg = null) {
     const free = new Set(this.tracks);
     for (const f of faces) {
       let best = null, bestD = this.maxJump;
@@ -33,6 +44,31 @@ export class FaceSpeakers {
       while (best.mouth.length && best.mouth[0][0] < t - this.windowS) best.mouth.shift();
     }
     this.tracks = this.tracks.filter((tr) => t - tr.seen < this.ttlS);
+    this.identify(t, headYawDeg);
+  }
+
+  /** Give every track a person id: the known person at that room direction, else a new one. */
+  identify(t, headYawDeg) {
+    this.people = this.people.filter((p) => t - p.seen < this.memoryS);
+    const taken = new Set(this.tracks.filter((tr) => tr.pid != null && tr.seen === t).map((tr) => tr.pid));
+    for (const tr of this.tracks) {
+      if (tr.seen !== t) continue;   // not in this frame
+      const yaw = headYawDeg == null ? null : headYawDeg + this.angleDeg(tr);
+      if (tr.pid == null) {
+        let best = null;
+        if (yaw != null) {
+          for (const p of this.people) {
+            const d = Math.abs(p.yaw - yaw);
+            if (!taken.has(p.pid) && d < this.reIdDeg && (!best || d < Math.abs(best.yaw - yaw))) best = p;
+          }
+        }
+        if (!best) { best = { pid: this.nextPid++, yaw: yaw ?? 0, seen: t }; this.people.push(best); }
+        tr.pid = best.pid;
+        taken.add(best.pid);
+      }
+      const p = this.people.find((q) => q.pid === tr.pid);
+      if (p) { if (yaw != null) p.yaw += 0.2 * (yaw - p.yaw); p.seen = t; }
+    }
   }
 
   get(id) { return this.tracks.find((tr) => tr.id === id); }

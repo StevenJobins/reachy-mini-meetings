@@ -87,8 +87,8 @@ function draw(ctx, b, mode) {
   for (const l of subLines) { ctx.fillText(l, x, y); y += 40; }
 }
 
-export function createCaptions({ three, distM, vfovDeg, speakers, listEl, overlayEl, onSummary, onFinal, log, onStatus }) {
-  const bubbles = new Map();                // id -> { msg, mesh, ctx, tex, until, trackId, color, label, last }
+export function createCaptions({ three, distM, vfovDeg, speakers, listEl, overlayEl, onSummary, onFinal, onSpeech, log, onStatus }) {
+  const bubbles = new Map();                // id -> { msg, mesh, ctx, tex, until, trackId, pid, color, label, last }
   const screenH = 2 * distM * Math.tan(vfovDeg / 2 * Math.PI / 180);
   const screenW = screenH * 16 / 9;
   const planeH = PLANE_W * H / W;
@@ -105,7 +105,7 @@ export function createCaptions({ three, distM, vfovDeg, speakers, listEl, overla
     const mesh = new THREE.Mesh(new THREE.PlaneGeometry(PLANE_W, planeH),
       new THREE.MeshBasicMaterial({ map: tex, transparent: true, depthTest: false }));
     mesh.renderOrder = 10;
-    b = { mesh, ctx: canvas.getContext("2d"), tex, trackId: null, color: "#9ca3af", label: "", last: null };
+    b = { mesh, ctx: canvas.getContext("2d"), tex, trackId: null, pid: null, color: "#9ca3af", label: "", last: null };
     bubbles.set(id, b);
     return b;
   }
@@ -125,8 +125,9 @@ export function createCaptions({ three, distM, vfovDeg, speakers, listEl, overla
 
   function setSpeaker(b, tr) {
     b.trackId = tr.id;
-    b.color = COLORS[(tr.id - 1) % COLORS.length];
-    b.label = `Speaker ${tr.id}`;
+    b.pid = tr.pid ?? tr.id;
+    b.color = COLORS[(b.pid - 1) % COLORS.length];
+    b.label = `Speaker ${b.pid}`;
     b.msg.meta = { color: b.color, label: b.label };
     redraw(b);
     renderPage();
@@ -135,10 +136,12 @@ export function createCaptions({ three, distM, vfovDeg, speakers, listEl, overla
   /** The head this bubble belongs to, as {cx, top} in the image (0..1). Never "nowhere". */
   function anchor(b) {
     let tr = b.trackId != null ? speakers?.get(b.trackId) : null;
-    if (!tr && b.trackId != null && b.last) {
-      // person lost for a moment (blur, head turn, robot turning): back with a new track id -> nearest one
-      const near = speakers.tracks.reduce((best, t) => (!best || Math.abs(t.cx - b.last.cx) < Math.abs(best.cx - b.last.cx) ? t : best), null);
-      if (near && Math.abs(near.cx - b.last.cx) < 0.3) { tr = near; b.trackId = near.id; }
+    if (!tr && b.trackId != null) {
+      // face lost for a moment (blur, head turn, robot turning): back with a new track -> same person, else nearest
+      const same = speakers.tracks.find((t) => t.pid === b.pid);
+      const near = b.last && speakers.tracks.reduce((best, t) => (!best || Math.abs(t.cx - b.last.cx) < Math.abs(best.cx - b.last.cx) ? t : best), null);
+      tr = same ?? (near && Math.abs(near.cx - b.last.cx) < 0.3 ? near : null);
+      if (tr) b.trackId = tr.id;
     }
     if (!tr && b.trackId == null && speakers) {
       tr = speakers.pick(b.msg.doa_deg);   // first time someone is visible for this utterance
@@ -180,7 +183,7 @@ export function createCaptions({ three, distM, vfovDeg, speakers, listEl, overla
       if (!tr) return;
       box.position.set((tr.cx - 0.5) * screenW, (0.5 - tr.cy) * screenH, -distM + 0.04);
       box.scale.set(tr.w * screenW, tr.h * screenH, 1);
-      box.material.color.set(COLORS[(tr.id - 1) % COLORS.length]);
+      box.material.color.set(COLORS[((tr.pid ?? tr.id) - 1) % COLORS.length]);
     });
   }
 
@@ -191,8 +194,8 @@ export function createCaptions({ three, distM, vfovDeg, speakers, listEl, overla
     const owners = new Set();
     for (const b of newestFirst) {
       place(b, false);
-      if (b.trackId == null) continue;
-      if (owners.has(b.trackId)) remove(b.msg.id); else owners.add(b.trackId);
+      if (b.pid == null) continue;
+      if (owners.has(b.pid)) remove(b.msg.id); else owners.add(b.pid);
     }
   }
 
@@ -242,10 +245,11 @@ export function createCaptions({ three, distM, vfovDeg, speakers, listEl, overla
     const isNew = !b.mesh.parent;
     place(b, isNew);   // picks the speaker on first sight
     // One bubble per speaker (and one not yet on a person): the new utterance replaces the old one.
-    for (const [id, o] of bubbles) if (id < msg.id && o.trackId === b.trackId) remove(id);
+    for (const [id, o] of bubbles) if (id < msg.id && o.pid === b.pid) remove(id);
     for (const id of [...bubbles.keys()].sort((x, y) => y - x).slice(MAX_BUBBLES)) remove(id);
     redraw(b);
     renderPage();
+    onSpeech?.(msg, b.trackId != null ? speakers?.get(b.trackId) ?? null : null);
   }
 
   setInterval(() => {

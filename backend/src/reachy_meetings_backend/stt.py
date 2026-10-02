@@ -29,7 +29,9 @@ FAKE_IF_UNSURE = {"vielen dank", "danke", "danke schön", "thank you", "thanks",
 
 def plausible(text: str, no_speech: float, logprob: float, compression: float) -> bool:
     t = text.lower().strip().strip(".!?,… ")
-    if not t or no_speech >= NO_SPEECH or logprob < MIN_LOGPROB or compression > MAX_COMPRESSION:
+    # like Whisper's own rule: silence only if BOTH no-speech is likely and the text is unsure
+    silent = no_speech >= NO_SPEECH and logprob < MIN_LOGPROB
+    if not t or silent or logprob < 2 * MIN_LOGPROB or compression > MAX_COMPRESSION:
         return False
     if any(p in t for p in ALWAYS_FAKE):
         return False
@@ -80,16 +82,17 @@ class Transcriber:
                                     compute_type="float16" if cuda else "int8", cpu_threads=4)
         log.info("Whisper %r (%s) ready in %.1fs", model, self.engine, time.time() - t0)
 
-    def __call__(self, audio: np.ndarray) -> tuple[str, str]:
-        """Returns (text, language)."""
+    def __call__(self, audio: np.ndarray, language: str | None = None) -> tuple[str, str]:
+        """Returns (text, language). `language` overrides the fixed one (e.g. detected by the partials)."""
+        language = language or self.language
         if self.engine == "mlx":
-            r = self._mlx.transcribe(audio, path_or_hf_repo=self.repo, language=self.language,
+            r = self._mlx.transcribe(audio, path_or_hf_repo=self.repo, language=language,
                                      condition_on_previous_text=False, verbose=None)
             parts = [s["text"] for s in r["segments"]
                      if plausible(s["text"], s["no_speech_prob"], s["avg_logprob"], s["compression_ratio"])]
             lang = r["language"]
         else:
-            segments, info = self._fw.transcribe(audio, language=self.language, beam_size=1,
+            segments, info = self._fw.transcribe(audio, language=language, beam_size=1,
                                                   condition_on_previous_text=False)
             parts = [s.text for s in segments
                      if plausible(s.text, s.no_speech_prob, s.avg_logprob, s.compression_ratio)]

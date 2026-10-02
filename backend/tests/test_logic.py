@@ -117,7 +117,9 @@ def test_plausible_filters_whisper_hallucinations():
     assert not plausible("Vielen Dank.", 0.4, -0.3, 1.0)           # unsure -> fake
     assert plausible("Vielen Dank.", 0.05, -0.2, 1.0)              # clearly spoken -> keep
     assert not plausible("1,0, 1,0, 1,0, 1,0, 1,0, 1,0", 0.1, -0.4, 3.1)
-    assert not plausible("irgendwas", 0.7, -0.2, 1.0)
+    assert plausible("irgendwas", 0.7, -0.2, 1.0)                  # confident text despite no-speech: keep
+    assert not plausible("irgendwas", 0.7, -1.2, 1.0)              # unsure AND likely silence: drop
+    assert not plausible("Gemurmel", 0.1, -2.5, 1.0)               # very unsure: drop
 
 
 def test_segmenter_with_vad_ignores_loud_noise():

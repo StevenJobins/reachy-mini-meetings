@@ -1,4 +1,4 @@
-"""Live meeting notes: summary bullets + action items, with Google Gemini (free tier).
+"""Live meeting notes: summary bullets + action items, with Google Gemini (free tier, gemini-flash-lite-latest).
 
 Every `every_s` seconds, if new final utterances arrived, the transcript goes to Gemini's
 OpenAI-compatible endpoint and comes back as JSON. Key from aistudio.google.com in GEMINI_API_KEY.
