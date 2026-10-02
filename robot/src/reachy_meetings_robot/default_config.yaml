@@ -10,7 +10,7 @@ robot:                     # start the daemon first: `reachy-mini-daemon` (USB) 
 limits:                     # Reachy Mini safety limits (SDK clamps too; we clamp first so state stays consistent)
   # Meeting limits, tighter than the hardware (pitch/roll ±40), same as xr-client/pages/pose.js:
   # the meeting is at the table, not on the ceiling.
-  head_pitch_up_deg: 20     # faces at ~1 m are at most ~15-20° above the robot
+  head_pitch_up_deg: 35     # someone standing or close by is up to ~30° above the robot (20 cut heads off)
   head_pitch_down_deg: 20   # table, papers, laptop (pitch + = look down)
   head_roll_deg: 15         # conversational head tilts
   head_yaw_deg: 180

@@ -20,7 +20,7 @@ class RobotCfg:
 
 @dataclass
 class LimitsCfg:
-    head_pitch_up_deg: float = 20     # meeting limits, see default_config.yaml
+    head_pitch_up_deg: float = 35     # meeting limits, see default_config.yaml
     head_pitch_down_deg: float = 20
     head_roll_deg: float = 15
     head_yaw_deg: float = 180

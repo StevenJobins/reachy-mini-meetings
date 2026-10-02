@@ -381,15 +381,27 @@ function headYawAt(t, latencyS = 0.12) {
   return h.length ? h[0][1] : status.meas[2];
 }
 
+const PITCH_UP = 35, PITCH_DOWN = 20;   // same as HeadMirror's limits in pose.js
+let focusLast = null;                   // {top, bottom, t} of the focus face when last seen
 function frameFocus() {
   if (!awake || focusPid == null) return;
   const tr = faceSpeakers.tracks.find((t) => t.pid === focusPid && t.seen === faceSpeakers.lastT);
-  if (!tr) return;
+  if (!tr) {
+    // A face cut off at the image edge is no longer detected: if the focus person left at the top (or
+    // bottom), keep tilting that way for a moment until their face is back in the picture.
+    const t = faceSpeakers.lastT ?? 0;
+    if (focusLast && t - focusLast.t < 2.5) {
+      if (focusLast.top < 0.12) targetPitch = Math.max(-PITCH_UP, targetPitch - 2);
+      else if (focusLast.bottom > 0.9) targetPitch = Math.min(PITCH_DOWN, targetPitch + 2);
+    }
+    return;
+  }
+  focusLast = { top: tr.top, bottom: tr.top + tr.h, t: faceSpeakers.lastT };
   const yaw = Math.max(-150, Math.min(150, headYawAt(faceSpeakers.lastT) + faceSpeakers.angleDeg(tr)));
   if (Math.abs(yaw - speaker.target) > 3) speaker.target = yaw;   // small deadband: no jitter
   const up = Math.atan((0.5 - tr.cy) * 2 * tanV) * 180 / Math.PI;   // face above the image centre (deg)
   const pitch = status.meas[1] - (up - FRAME_UP);                   // pitch + = look down
-  if (Math.abs(pitch - targetPitch) > 2) targetPitch = Math.max(-20, Math.min(20, pitch));
+  if (Math.abs(pitch - targetPitch) > 2) targetPitch = Math.max(-PITCH_UP, Math.min(PITCH_DOWN, pitch));
 }
 const faces = createFaces({
   getSource: () => (awake ? scene.videoFrame() : null),
