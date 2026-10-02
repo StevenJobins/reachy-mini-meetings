@@ -54,6 +54,7 @@ export function createScene({ video, vfovDeg, distM, statusText, onHeadsetPose, 
   canvasTex.colorSpace = THREE.SRGBColorSpace;
   canvasTex.minFilter = THREE.LinearFilter;
   canvasTex.generateMipmaps = false;
+  canvasTex.anisotropy = renderer.capabilities.getMaxAnisotropy();   // sharper when the window is seen at an angle
   // "direct" mode only: VideoTexture is re-allocated with texImage2D on every upload (no texStorage2D),
   // so resolution changes are fine. needsUpdate is set per XR frame below, because its
   // requestVideoFrameCallback can stop firing on Android while an immersive session hides the page.
@@ -61,6 +62,7 @@ export function createScene({ video, vfovDeg, distM, statusText, onHeadsetPose, 
   videoTex.colorSpace = THREE.SRGBColorSpace;
   videoTex.minFilter = THREE.LinearFilter;
   videoTex.generateMipmaps = false;
+  videoTex.anisotropy = renderer.capabilities.getMaxAnisotropy();
   const screenH = 2 * distM * Math.tan(vfovDeg / 2 * Math.PI / 180);
   // Shown instead of the video while no camera frame has arrived, so "black" is never ambiguous.
   const noVideoTex = canvasTexture(1024, 576, (ctx, w, h) => {

@@ -387,7 +387,8 @@ function headYawAt(t, latencyS = 0.12) {
 }
 
 const PITCH_UP = 35, PITCH_DOWN = 20;   // same as HeadMirror's limits in pose.js
-let focusLast = null;                   // {top, bottom, t} of the focus face when last seen
+let focusLast = null;                   // {pid, top, bottom, t, yaw} of the focus face when last seen
+let focusVel = 0;                       // its speed through the room, deg/s (smoothed)
 function frameFocus() {
   if (!awake || focusPid == null) return;
   const tr = faceSpeakers.tracks.find((t) => t.pid === focusPid && t.seen === faceSpeakers.lastT);
@@ -401,9 +402,18 @@ function frameFocus() {
     }
     return;
   }
-  focusLast = { top: tr.top, bottom: tr.top + tr.h, t: faceSpeakers.lastT };
-  const yaw = Math.max(-150, Math.min(150, headYawAt(faceSpeakers.lastT) + faceSpeakers.angleDeg(tr)));
-  if (Math.abs(yaw - speaker.target) > 3) speaker.target = yaw;   // small deadband: no jitter
+  const t = faceSpeakers.lastT;
+  const yawNow = headYawAt(t) + faceSpeakers.angleDeg(tr);   // where the face is in the room
+  // Lead a moving person: the target only updates ~8x/s and the motion limiter brakes at every target, so
+  // without a lead Reachy lags behind and the face drifts off-centre. Room speed of the face (smoothed)
+  // x 0.3 s ahead, at most 15°.
+  if (focusLast?.pid === focusPid && t > focusLast.t && t - focusLast.t < 0.5) {
+    focusVel += 0.4 * ((yawNow - focusLast.yaw) / (t - focusLast.t) - focusVel);
+  } else focusVel = 0;
+  focusLast = { pid: focusPid, top: tr.top, bottom: tr.top + tr.h, t, yaw: yawNow };
+  const lead = Math.max(-15, Math.min(15, focusVel * 0.3));
+  const yaw = Math.max(-150, Math.min(150, yawNow + lead));
+  if (Math.abs(yaw - speaker.target) > 2) speaker.target = yaw;   // small deadband: no jitter
   const up = Math.atan((0.5 - tr.cy) * 2 * tanV) * 180 / Math.PI;   // face above the image centre (deg)
   const pitch = status.meas[1] - (up - FRAME_UP);                   // pitch + = look down
   if (Math.abs(pitch - targetPitch) > 2) targetPitch = Math.max(-PITCH_UP, Math.min(PITCH_DOWN, pitch));

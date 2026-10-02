@@ -12,7 +12,7 @@
 //   canvas - draw the <video> element into the canvas.
 //   direct - upload the <video> element itself (THREE.VideoTexture in scene.js). Old path, for comparison.
 
-const W = 1280, H = 720;   // the camera is 16:9; fixed so the GPU texture never changes size
+const W = 1920, H = 1080;  // the camera's full resolution (1280x720 looked soft); fixed so the GPU texture never changes size
 const MODE_KEY = "reachy-xr-video-mode";
 
 export function createVideoSource(video, log) {

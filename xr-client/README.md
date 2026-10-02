@@ -89,7 +89,7 @@ Wake up and Start are taps because browsers allow unmuted audio and entering VR 
 | `speakers.js` | Which face is speaking (face tracks + mouth movement + DoA) and who it is: a person keeps their id ("Speaker 1", colour) by their direction in the room, also after the robot looked away; the person Reachy follows keeps their id when they walk to a new place (a lone new face within 4 s is still them) (`FaceSpeakers`) | nothing (pure, portable) |
 | `roomaudio.js` | Room sound from the caption backend (binary WebSocket frames, 16 kHz PCM) via an AudioWorklet (AudioContext at 16 kHz, browser resampling) with a ~120 ms jitter buffer and a speech chain: high-pass 120 Hz against room hum, +4 dB presence at 3 kHz, compressor. Used instead of the robot's WebRTC audio, which drops ~55 % of the sound (daemon-side: 0 packets lost, measured); WebRTC audio is only the fallback when no stream arrives | DOM + media only |
 | `notes.js` | Meeting notes (summary + action items from `backend/`): VR panel right of the video, card on the page | three.js |
-| `videosource.js` | Camera frames for the VR window: WebRTC track → fixed-size canvas (modes track/canvas/direct) | DOM + media only |
+| `videosource.js` | Camera frames for the VR window: WebRTC track → fixed-size 1920×1080 canvas (modes track/canvas/direct) | DOM + media only |
 | `speaker.js` | Speaker following: DoA → confirmed speaker direction → slow base yaw; speakers' center | `pose.js` (pure) |
 | `mic.js` | Your mic → robot speaker (replaceTrack on the SDK's audio sender), mute, re-attach after reconnects | DOM + media only |
 | `voicecmd.js` | "Reachy, volume N" in any language → percent | nothing (pure, portable) |
