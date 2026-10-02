@@ -11,6 +11,9 @@ import { HeadMirror, Recenter, headsetToRobot, robotToHeadset } from "./pose.js"
 import { WantToTalk } from "./gestures.js";
 import { SpeakerTracker } from "./speaker.js";
 import { captionsUrl, createCaptions, setCaptionsUrl } from "./captions.js";
+import { createFaces } from "./faces.js";
+import { FaceSpeakers } from "./speakers.js";
+import { createNotes } from "./notes.js";
 
 // HF OAuth app (huggingface.co/settings/applications), redirect URL = this page's URL.
 const HF_CLIENT_ID = "37472ae1-2bae-4d97-be66-ef7446028c40";
@@ -62,7 +65,7 @@ function statusText() {
   return [
     `robot ${status.robot}   motors ${status.motors}   ice ${status.ice}   video ${status.video}   send ${status.send} Hz`,
     `cmd  r/p/y ${f(status.cmd)}   body ${status.body.toFixed(1)}   speaker ${status.follow} target ${speaker.target.toFixed(0)} base ${speaker.base.toFixed(0)}`,
-    `meas r/p/y ${f(status.meas)}   captions ${status.captions}   robot sound ${status.sound}   doa ${status.doa}`,
+    `meas r/p/y ${f(status.meas)}   captions ${status.captions}   ${faces.stats()}   robot sound ${status.sound}   doa ${status.doa}`,
   ].join("\n");
 }
 // Heartbeat every 5 s: if the page dies, the last lines show memory, video and connection state.
@@ -118,7 +121,7 @@ function stepBase(dt, nowS) {
   if (!talk.active(nowS)) talkCenter = null;
   speaker.override = talkCenter ?? frozenBase;
   const base = speaker.step(dt);
-  captions.setYawOffset(base);
+  captions?.setYawOffset(base);
   return base;
 }
 
@@ -175,13 +178,14 @@ const robot = createRobot({
   },
 });
 
+let captions = null, notes = null;   // created after the scene (they need its three.js groups)
 const scene = createScene({
   video,
   vfovDeg: cfg.vfovDeg,
   distM: cfg.distM,
   statusText,
   onHeadsetPose: (q, now) => {
-    if (wantRecenter) { recenter.set(q); wantRecenter = false; captions.layout(); log("recentered"); }
+    if (wantRecenter) { recenter.set(q); wantRecenter = false; captions.layout(); notes.layout(); log("recentered"); }
     if (!awake || status.xr === "off" || !robot.connected || now - lastSend < 1000 / cfg.sendHz) return;
     const dt = (now - lastSend) / 1000;
     lastSend = now;
@@ -195,25 +199,52 @@ const scene = createScene({
     { label: () => (follow ? "Stop following" : "Follow speaker"), onClick: () => setFollow(!follow) },
     { label: () => (robotMuted ? "Unmute robot" : "Mute robot"), onClick: () => setRobotMuted(!robotMuted) },
     { label: "Recenter", onClick: () => { wantRecenter = true; } },
+    { label: () => `Bubbles: ${captions?.mode ?? "both"}`, onClick: () => captions.cycleMode() },
+    { label: () => (notes?.visible ? "Hide notes" : "Notes"), onClick: () => notes.toggle() },
     { label: "Switch video", onClick: () => scene.cycleVideo() },   // camera path test, see videosource.js
     { label: "Exit VR", onClick: () => scene.exitVR() },
   ],
+  onFrame: () => captions?.follow(),
   log,
   onSelect: () => { wantRecenter = true; },
   onEnd: () => { log("VR session ended"); status.xr = "off"; show("awake", "Reachy is awake. Tap Start to look around again, or Sleep."); },
 });
 
-const captions = createCaptions({
+// Speech bubbles over the speaker's head: faces in the camera image + mouth movement + mic direction.
+const hfovDeg = 2 * Math.atan(Math.tan(cfg.vfovDeg / 2 * Math.PI / 180) * 16 / 9) * 180 / Math.PI;
+const faceSpeakers = new FaceSpeakers({ hfovDeg });
+const faces = createFaces({
+  getSource: () => (awake ? scene.videoFrame() : null),
+  onFaces: (list, t) => faceSpeakers.update(list, t),
+  log,
+});
+notes = createNotes({ three: scene.three, recenter, distM: cfg.distM, cardEl: $("notes") });
+captions = createCaptions({
   three: scene.three,
   recenter,
   distM: cfg.distM,
   vfovDeg: cfg.vfovDeg,
+  speakers: faceSpeakers,
   listEl: $("captions"),
+  overlayEl: $("live-caption"),
+  onSummary: (msg) => notes.update(msg),
   log,
   onStatus: (s) => Object.assign(status, s),
 });
 $("captions-url").value = captionsUrl();
 $("captions-url").onchange = (e) => { setCaptionsUrl(e.target.value.trim()); captions.reconnect(); };
+$("caption-mode").value = captions.mode;
+$("caption-mode").onchange = (e) => captions.setMode(e.target.value);
+
+// Status chips in the page header.
+setInterval(() => {
+  const chip = (id, state, text) => { const el = $(id); el.dataset.state = state; el.lastChild.textContent = text; };
+  const robotOn = status.ice === "connected";
+  chip("chip-robot", robotOn ? "ok" : status.robot === "-" ? "off" : "wait", robotOn ? `Robot · ${awake ? "awake" : "asleep"}` : "Robot");
+  chip("chip-camera", awake && status.video !== "-" ? "ok" : "off", "Camera");
+  chip("chip-captions", status.captions === "on" ? "ok" : status.captions === "connecting" ? "wait" : "off", "Captions");
+  chip("chip-xr", status.xr === "off" ? "off" : "ok", status.xr === "desktop" ? "Preview" : "VR");
+}, 500);
 
 video.onplaying = () => { status.video = `${video.videoWidth}x${video.videoHeight}`; };
 video.hidden = true;   // camera "off" while the robot sleeps

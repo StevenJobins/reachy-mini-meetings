@@ -1,29 +1,38 @@
 // Speech bubbles: live captions from backend/ (`reachy-captions`, WebSocket port 8766), shown in VR
-// and as a list on the page. Protocol: backend/README.md. Same id = update (partial -> final -> + translation).
+// and on the page. Protocol: backend/README.md. Same id = update (partial -> final -> + translation).
 //
-// Placement: with a speaker direction (azimuth_deg, robot base frame, + = left) the bubble floats in the
-// room in that direction, so it lands on the speaker in the video once the robot looks there. Without one
-// it is a subtitle at the bottom of the video window.
+// Placement, in this order:
+//   1. above the speaker's face in the video window (faces.js + speakers.js pick the face; the bubble
+//      follows it every frame and points at the head),
+//   2. in the room in the speaker direction (azimuth_deg, robot base frame, + = left),
+//   3. as a subtitle at the bottom of the video window.
 //
 // The page is served over https, so Chrome only allows ws://localhost (headset: adb reverse tcp:8766 tcp:8766).
-// Wireless: expose the caption server over wss (e.g. cloudflared) and paste the URL in the Debug panel.
+// Wireless: expose the caption server over wss (e.g. cloudflared) and paste the URL in Settings.
 
 import * as THREE from "three";
 
 const URL_KEY = "reachy-xr-captions-url";
+const MODE_KEY = "reachy-xr-caption-mode";
 const DEFAULT_URL = "ws://localhost:8766";
-const SHOW_S = 10;          // a final bubble stays this long after its last update
+export const MODES = ["both", "translation", "original"];
+const SHOW_S = 8;           // a final bubble stays this long after its last update
 const PARTIAL_S = 5;        // a partial without updates disappears after this
 const MAX_BUBBLES = 3;
-const W = 1024, H = 384;    // bubble canvas, drawn bottom-anchored
+const W = 1024, H = 448, TAIL = 36;   // bubble canvas, drawn bottom-anchored, tail below
 const PLANE_W = 1.2;        // metres
+const COLORS = ["#ff9500", "#38bdf8", "#4ade80", "#f472b6", "#a78bfa", "#facc15"];
 
-export function captionsUrl() {
-  try { return localStorage.getItem(URL_KEY) || DEFAULT_URL; } catch { return DEFAULT_URL; }
-}
+function load(key, fallback) { try { return localStorage.getItem(key) || fallback; } catch { return fallback; } }
+function save(key, value) { try { value ? localStorage.setItem(key, value) : localStorage.removeItem(key); } catch {} }
 
-export function setCaptionsUrl(url) {
-  try { url ? localStorage.setItem(URL_KEY, url) : localStorage.removeItem(URL_KEY); } catch {}
+export function captionsUrl() { return load(URL_KEY, DEFAULT_URL); }
+export function setCaptionsUrl(url) { save(URL_KEY, url); }
+
+/** What a bubble shows in the given mode: {main, sub}. */
+export function bubbleText(msg, mode) {
+  if (mode === "original" || !msg.translation) return { main: msg.text, sub: "" };
+  return { main: msg.translation, sub: mode === "both" ? `${msg.lang}: ${msg.text}` : "" };
 }
 
 function wrap(ctx, text, maxW) {
@@ -37,49 +46,56 @@ function wrap(ctx, text, maxW) {
   return lines;
 }
 
-function draw(ctx, msg) {
-  const main = msg.translation || msg.text;
-  const sub = msg.translation ? `${msg.lang}: ${msg.text}` : "";
-  const pad = 28, maxW = W - 2 * pad;
+function draw(ctx, b, mode) {
+  const { msg } = b;
+  const { main, sub } = bubbleText(msg, mode);
+  const pad = 30, maxW = W - 2 * pad - 24;
+  const mainFont = `${msg.final ? "600" : "italic 500"} 52px system-ui, sans-serif`;
+  const subFont = "32px system-ui, sans-serif", labelFont = "600 26px system-ui, sans-serif";
   ctx.clearRect(0, 0, W, H);
 
-  ctx.font = `${msg.final ? "" : "italic "}52px system-ui, sans-serif`;
-  let mainLines = wrap(ctx, main, maxW);
-  ctx.font = "30px system-ui, sans-serif";
-  let subLines = sub ? wrap(ctx, sub, maxW) : [];
-  // keep the end of long utterances: that's what is being said right now
-  mainLines = mainLines.slice(-3);
-  subLines = subLines.slice(-2);
+  ctx.font = mainFont;
+  const mainLines = wrap(ctx, main, maxW).slice(-3);   // keep the end: that's what is being said now
+  ctx.font = subFont;
+  const subLines = sub ? wrap(ctx, sub, maxW).slice(-2) : [];
+  const label = b.label ? [b.label] : [];
 
-  const h = pad * 2 + mainLines.length * 62 + subLines.length * 38;
-  const top = H - h;
-  ctx.font = `${msg.final ? "" : "italic "}52px system-ui, sans-serif`;
-  let w = Math.max(...mainLines.map((l) => ctx.measureText(l).width));
-  ctx.font = "30px system-ui, sans-serif";
-  w = Math.max(w, ...subLines.map((l) => ctx.measureText(l).width)) + 2 * pad;
-  const left = (W - w) / 2;   // centred, so short bubbles sit right on the speaker
-  ctx.fillStyle = msg.final ? "rgba(255,255,255,0.92)" : "rgba(255,255,255,0.7)";
+  const h = pad * 2 + label.length * 38 + mainLines.length * 62 + subLines.length * 40;
+  ctx.font = mainFont;
+  let w = Math.max(220, ...mainLines.map((l) => ctx.measureText(l).width));
+  ctx.font = subFont;
+  w = Math.min(W, Math.max(w, ...subLines.map((l) => ctx.measureText(l).width)) + 2 * pad + 24);
+  const left = (W - w) / 2, top = H - TAIL - h;
+
+  ctx.fillStyle = msg.final ? "rgba(255,255,255,0.95)" : "rgba(255,255,255,0.78)";
   ctx.beginPath();
-  ctx.roundRect(left, top, w, h, 36);
+  ctx.roundRect(left, top, w, h, 34);
+  if (b.onFace) {   // tail pointing down at the head
+    ctx.moveTo(W / 2 - 26, H - TAIL - 1); ctx.lineTo(W / 2, H - 4); ctx.lineTo(W / 2 + 26, H - TAIL - 1);
+  }
   ctx.fill();
+  ctx.fillStyle = b.color;   // speaker colour strip
+  ctx.beginPath(); ctx.roundRect(left + 12, top + 18, 10, h - 36, 5); ctx.fill();
 
   let y = top + pad;
+  const x = left + pad + 18;
   ctx.textBaseline = "top";
-  ctx.fillStyle = msg.final ? "#111" : "#444";
-  ctx.font = `${msg.final ? "" : "italic "}52px system-ui, sans-serif`;
-  for (const l of mainLines) { ctx.fillText(l, left + pad, y); y += 62; }
-  ctx.fillStyle = "#666";
-  ctx.font = "30px system-ui, sans-serif";
-  for (const l of subLines) { ctx.fillText(l, left + pad, y); y += 38; }
+  if (label.length) { ctx.font = labelFont; ctx.fillStyle = b.color; ctx.fillText(b.label, x, y); y += 38; }
+  ctx.font = mainFont; ctx.fillStyle = msg.final ? "#111" : "#444";
+  for (const l of mainLines) { ctx.fillText(l, x, y); y += 62; }
+  ctx.font = subFont; ctx.fillStyle = "#666";
+  for (const l of subLines) { ctx.fillText(l, x, y); y += 40; }
 }
 
-export function createCaptions({ three, recenter, distM, vfovDeg, listEl, log, onStatus }) {
+export function createCaptions({ three, recenter, distM, vfovDeg, speakers, listEl, overlayEl, onSummary, log, onStatus }) {
   const room = new THREE.Group();           // bubbles with a speaker direction
   three.scene.add(room);
-  const bubbles = new Map();                // id -> { msg, mesh, ctx, tex, until }
+  const bubbles = new Map();                // id -> { msg, mesh, ctx, tex, until, trackId, color, label, onFace, target }
   const screenH = 2 * distM * Math.tan(vfovDeg / 2 * Math.PI / 180);
+  const screenW = screenH * 16 / 9;
   const planeH = PLANE_W * H / W;
   const finals = [];                        // for the page list
+  let mode = MODES.includes(load(MODE_KEY)) ? load(MODE_KEY) : "both";
 
   function bubble(id) {
     let b = bubbles.get(id);
@@ -91,7 +107,7 @@ export function createCaptions({ three, recenter, distM, vfovDeg, listEl, log, o
     const mesh = new THREE.Mesh(new THREE.PlaneGeometry(PLANE_W, planeH),
       new THREE.MeshBasicMaterial({ map: tex, transparent: true, depthTest: false }));
     mesh.renderOrder = 10;
-    b = { mesh, ctx: canvas.getContext("2d"), tex };
+    b = { mesh, ctx: canvas.getContext("2d"), tex, trackId: null, color: "#9ca3af", label: "", target: null };
     bubbles.set(id, b);
     return b;
   }
@@ -104,19 +120,47 @@ export function createCaptions({ three, recenter, distM, vfovDeg, listEl, log, o
     bubbles.delete(id);
   }
 
+  function redraw(b) { draw(b.ctx, b, mode); b.tex.needsUpdate = true; }
+
+  /** Pick the speaker's face once per utterance (retried while it is still a partial). */
+  function assignSpeaker(b) {
+    if (b.trackId != null || !speakers) return;
+    const tr = speakers.pick(b.msg.doa_deg);
+    if (!tr) return;
+    b.trackId = tr.id;
+    b.color = COLORS[(tr.id - 1) % COLORS.length];
+    b.label = `Speaker ${tr.id}`;
+  }
+
   function layout() {
     const recenterYaw = new THREE.Euler().setFromQuaternion(
       new THREE.Quaternion(recenter.q0.x, recenter.q0.y, recenter.q0.z, recenter.q0.w), "YXZ").y;
     const newestFirst = [...bubbles.values()].sort((a, b) => b.msg.id - a.msg.id);
+    let subtitles = 0;
     newestFirst.forEach((b, i) => {
+      const tr = b.trackId != null ? speakers.get(b.trackId) : null;
+      if (b.trackId != null) {
+        // on the face; older bubbles of the same speaker stack upwards
+        const stack = newestFirst.slice(0, i).filter((o) => o.trackId === b.trackId).length;
+        if (tr) b.target = new THREE.Vector3((tr.cx - 0.5) * screenW, (0.5 - tr.top) * screenH + planeH / 2 + 0.03,
+          -distM + 0.05 + i * 0.01);
+        if (b.target) {
+          b.onFace = true;
+          if (b.mesh.parent !== three.robotView) { three.robotView.add(b.mesh); b.mesh.position.copy(b.target); }
+          b.mesh.rotation.set(0, 0, 0);
+          b.stackY = stack * planeH * 0.85;
+          return;
+        }
+      }
+      b.onFace = false;
+      b.target = null;
       const az = b.msg.azimuth_deg;
       if (az == null) {
-        // subtitle: bottom of the video window, older ones stacked above
-        three.robotView.add(b.mesh);
-        b.mesh.position.set(0, -screenH / 2 + planeH / 2 + 0.05 + i * planeH, -distM + 0.05);
+        three.robotView.add(b.mesh);   // subtitle: bottom of the video window, older ones stacked above
+        b.mesh.position.set(0, -screenH / 2 + planeH / 2 + 0.05 + subtitles++ * planeH, -distM + 0.05);
         b.mesh.rotation.set(0, 0, 0);
       } else {
-        const stack = newestFirst.slice(0, i).filter((o) => o.msg.azimuth_deg != null &&
+        const stack = newestFirst.slice(0, i).filter((o) => !o.onFace && o.msg.azimuth_deg != null &&
           Math.abs(o.msg.azimuth_deg - az) < 25).length;
         const a = recenterYaw + az * Math.PI / 180, d = distM * 0.9, y = 0.4 + stack * planeH;
         room.add(b.mesh);
@@ -126,15 +170,50 @@ export function createCaptions({ three, recenter, distM, vfovDeg, listEl, log, o
     });
   }
 
-  function renderList() {
-    if (!listEl) return;
-    const live = [...bubbles.values()].filter((b) => !b.msg.final).map((b) => b.msg);
-    listEl.replaceChildren(...[...finals.slice(-5), ...live].map((m) => {
-      const div = document.createElement("div");
-      div.className = m.final ? "final" : "partial";
-      div.textContent = m.translation ? `${m.translation}  (${m.lang}: ${m.text})` : m.text;
-      return div;
-    }));
+  /** Every frame: face bubbles glide after their face. */
+  function follow() {
+    if (!speakers) return;
+    for (const b of bubbles.values()) {
+      if (b.trackId == null || !b.target) continue;
+      let tr = speakers.get(b.trackId);
+      if (!tr) {
+        // face lost for a moment (blur, head turn, robot turning): it comes back with a new track id,
+        // so take over the nearest face to where the bubble is
+        const x = b.target.x / screenW + 0.5;
+        tr = speakers.tracks.reduce((best, t) => (Math.abs(t.cx - x) < Math.abs((best?.cx ?? 9) - x) ? t : best), null);
+        if (tr && Math.abs(tr.cx - x) < 0.3) b.trackId = tr.id; else tr = null;
+      }
+      if (tr) b.target.set((tr.cx - 0.5) * screenW, (0.5 - tr.top) * screenH + planeH / 2 + 0.03, b.target.z);
+      b.mesh.position.lerp(new THREE.Vector3(b.target.x, b.target.y + (b.stackY ?? 0), b.target.z), 0.25);
+    }
+  }
+
+  function renderPage() {
+    const items = [...finals.slice(-6), ...[...bubbles.values()].filter((b) => !b.msg.final).map((b) => b.msg)];
+    if (listEl) {
+      listEl.replaceChildren(...items.map((m) => {
+        const b = bubbles.get(m.id), meta = m.meta ?? b;
+        const div = document.createElement("div");
+        div.className = `line ${m.final ? "final" : "partial"}`;
+        const who = document.createElement("span");
+        who.className = "who";
+        who.style.setProperty("--c", meta?.color ?? "#9ca3af");
+        who.textContent = meta?.label || "Room";
+        const { main, sub } = bubbleText(m, mode);
+        const text = document.createElement("span");
+        text.className = "text";
+        text.textContent = main;
+        div.append(who, text);
+        if (sub) { const s = document.createElement("span"); s.className = "sub"; s.textContent = sub; div.append(s); }
+        return div;
+      }));
+      listEl.scrollTop = listEl.scrollHeight;
+    }
+    if (overlayEl) {
+      const newest = [...bubbles.values()].sort((a, b) => b.msg.id - a.msg.id)[0];
+      overlayEl.textContent = newest ? bubbleText(newest.msg, mode).main : "";
+      overlayEl.hidden = !newest;
+    }
   }
 
   function onCaption(msg) {
@@ -142,26 +221,29 @@ export function createCaptions({ three, recenter, distM, vfovDeg, listEl, log, o
       const i = finals.findIndex((m) => m.id === msg.id);
       if (msg.text) i >= 0 ? (finals[i] = msg) : finals.push(msg);
       else if (i >= 0) finals.splice(i, 1);
-      finals.splice(0, finals.length - 20);
+      finals.splice(0, finals.length - 30);
     }
-    if (!msg.text) { remove(msg.id); layout(); renderList(); return; }
+    if (!msg.text) { remove(msg.id); layout(); renderPage(); return; }
     // replayed history on (re)connect: list only, no bubbles
-    if (msg.final && msg.t_end < Date.now() / 1000 - SHOW_S) { renderList(); return; }
+    if (msg.final && msg.t_end < Date.now() / 1000 - SHOW_S) { renderPage(); return; }
     const b = bubble(msg.id);
     b.msg = msg;
     b.until = performance.now() + 1000 * (msg.final ? SHOW_S : PARTIAL_S);
-    draw(b.ctx, msg);
-    b.tex.needsUpdate = true;
+    assignSpeaker(b);
+    msg.meta = { color: b.color, label: b.label };   // keep the speaker for the page list
+    // One bubble per speaker (and one without a face): the new utterance replaces the old one.
+    for (const [id, o] of bubbles) if (id < msg.id && o.trackId === b.trackId) remove(id);
     for (const id of [...bubbles.keys()].sort((x, y) => y - x).slice(MAX_BUBBLES)) remove(id);
     layout();
-    renderList();
+    redraw(b);
+    renderPage();
   }
 
   setInterval(() => {
     const now = performance.now();
     let changed = false;
     for (const [id, b] of bubbles) if (now > b.until) { remove(id); changed = true; }
-    if (changed) { layout(); renderList(); }
+    if (changed) { layout(); renderPage(); }
   }, 500);
 
   let ws = null;
@@ -177,6 +259,7 @@ export function createCaptions({ three, recenter, distM, vfovDeg, listEl, log, o
     ws.onmessage = (e) => {
       const msg = JSON.parse(e.data);
       if (msg.type === "caption") onCaption(msg);
+      else if (msg.type === "summary") onSummary?.(msg);
     };
     ws.onclose = () => { onStatus({ captions: "off" }); setTimeout(connect, 3000); };
   }
@@ -187,6 +270,16 @@ export function createCaptions({ three, recenter, distM, vfovDeg, listEl, log, o
     reconnect() { if (ws) { ws.onclose = null; ws.close(); } connect(); },
     /** After recenter: re-place the room bubbles. */
     layout,
+    follow,
+    get mode() { return mode; },
+    setMode(m) {
+      if (!MODES.includes(m)) return;
+      mode = m;
+      save(MODE_KEY, m);
+      for (const b of bubbles.values()) redraw(b);
+      renderPage();
+    },
+    cycleMode() { this.setMode(MODES[(MODES.indexOf(mode) + 1) % MODES.length]); return mode; },
     /** The VR room is turned by the speaker-following base yaw (degrees, + = left): turn the bubbles along. */
     setYawOffset(deg) { room.rotation.y = -deg * Math.PI / 180; },
   };

@@ -4,55 +4,166 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Reachy Meetings XR</title>
-<meta name="theme-color" content="#111111">
+<meta name="theme-color" content="#0b0d12">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="icon-192.png">
 <style>
-  :root { --bg: #111; --fg: #eee; --muted: #999; --accent: #ff9500; }
-  body { margin: 0; font: 18px/1.5 system-ui, sans-serif; background: var(--bg); color: var(--fg); padding: 16px; }
-  main { max-width: 720px; margin: 0 auto; text-align: center; }
-  img.logo { width: 96px; height: 96px; margin-top: 24px; }
-  h1 { font-size: 28px; margin: 8px 0; }
-  #message { color: var(--muted); min-height: 3em; margin: 8px 0 24px; }
-  button { font-size: 20px; padding: 14px 28px; border: 0; border-radius: 12px; cursor: pointer; margin: 4px; }
-  button.primary { background: var(--accent); color: #000; font-size: 28px; padding: 20px 64px; }
-  button.secondary { background: #2a2a2a; color: var(--fg); font-size: 16px; padding: 10px 18px; }
-  video { width: 100%; background: #000; border-radius: 12px; margin: 24px 0 8px; }
-  details { text-align: left; color: var(--muted); font-size: 14px; }
-  #debug-text, #log { font: 12px ui-monospace, monospace; white-space: pre-wrap; }
-  #debug-text { color: #7f7; }
-  #log { max-height: 180px; overflow: auto; }
-  #captions { text-align: left; margin: 0 0 16px; }
-  #captions .partial { color: var(--muted); font-style: italic; }
-  #captions-url { width: 22em; font: 14px ui-monospace, monospace; background: #222; color: var(--fg); border: 1px solid #444; border-radius: 6px; padding: 6px; }
+  :root {
+    --bg: #0b0d12; --panel: rgba(255,255,255,0.045); --line: rgba(255,255,255,0.09);
+    --fg: #eef0f4; --muted: #9aa1ad; --accent: #ff9500; --ok: #4ade80; --wait: #fbbf24; --off: #5b616e;
+    --radius: 20px;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; min-height: 100%; }
+  body {
+    font: 16px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; color: var(--fg); background: var(--bg);
+    background-image:
+      radial-gradient(900px 500px at 10% -10%, rgba(255,149,0,0.16), transparent 60%),
+      radial-gradient(800px 600px at 110% 10%, rgba(99,102,241,0.14), transparent 60%);
+    background-attachment: fixed;
+  }
+  button, select, input { font: inherit; color: inherit; }
+
+  /* header */
+  header { display: flex; align-items: center; gap: 14px; padding: 16px 24px; flex-wrap: wrap; }
+  header img { width: 40px; height: 40px; }
+  header h1 { font-size: 20px; margin: 0; letter-spacing: 0.2px; }
+  header h1 span { color: var(--muted); font-weight: 400; }
+  .chips { margin-left: auto; display: flex; gap: 8px; flex-wrap: wrap; }
+  .chip { display: inline-flex; align-items: center; gap: 7px; padding: 5px 12px; border-radius: 999px;
+    background: var(--panel); border: 1px solid var(--line); font-size: 13px; color: var(--muted); }
+  .chip::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--off); }
+  .chip[data-state="ok"] { color: var(--fg); }
+  .chip[data-state="ok"]::before { background: var(--ok); box-shadow: 0 0 10px var(--ok); }
+  .chip[data-state="wait"]::before { background: var(--wait); animation: pulse 1.2s infinite; }
+  @keyframes pulse { 50% { opacity: 0.3; } }
+
+  /* layout */
+  main { display: grid; gap: 20px; padding: 0 24px 24px; max-width: 1400px; margin: 0 auto; }
+  @media (min-width: 1000px) { main { grid-template-columns: minmax(0, 1fr) 380px; align-items: start; } }
+  @media (max-width: 600px) { header, main { padding-left: 16px; padding-right: 16px; } }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius);
+    backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px); }
+
+  /* stage: video + controls */
+  .stage { padding: 14px; display: flex; flex-direction: column; gap: 14px; }
+  .screen { position: relative; aspect-ratio: 16 / 9; border-radius: 14px; overflow: hidden; background: #05060a; }
+  .screen video { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .screen .idle { position: absolute; inset: 0; display: none; flex-direction: column; align-items: center;
+    justify-content: center; gap: 10px; color: var(--muted); text-align: center; padding: 20px; }
+  .screen .idle img { width: 84px; height: 84px; opacity: 0.85; }
+  .screen:has(video[hidden]) .idle { display: flex; }
+  #live-caption { position: absolute; left: 50%; bottom: 18px; transform: translateX(-50%); max-width: 86%;
+    padding: 10px 18px; border-radius: 14px; background: rgba(10,12,18,0.72); backdrop-filter: blur(8px);
+    font-size: clamp(15px, 2vw, 22px); text-align: center; border: 1px solid var(--line); }
+  #live-caption[hidden] { display: none; }
+  #message { color: var(--muted); min-height: 1.5em; margin: 0 4px; }
+  .actions { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+  .actions button { border: 1px solid var(--line); border-radius: 999px; cursor: pointer; padding: 11px 20px;
+    background: rgba(255,255,255,0.06); transition: transform .08s, background .15s; }
+  .actions button:hover { background: rgba(255,255,255,0.12); }
+  .actions button:active { transform: scale(0.97); }
+  .actions button.primary { background: var(--accent); color: #111; border-color: transparent; font-weight: 650;
+    padding: 13px 34px; font-size: 18px; box-shadow: 0 8px 28px rgba(255,149,0,0.28); }
+  .actions button.primary:hover { background: #ffa92e; }
+  [hidden] { display: none !important; }
+
+  /* side column */
+  aside { display: flex; flex-direction: column; gap: 20px; }
+  aside .card { padding: 16px 18px; }
+  .card-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 10px; }
+  .card-head h2 { font-size: 13px; margin: 0; text-transform: uppercase; letter-spacing: 1.2px; color: var(--muted); }
+  select, input { background: rgba(0,0,0,0.3); border: 1px solid var(--line); border-radius: 10px; padding: 6px 10px; }
+  #captions { max-height: 340px; overflow: auto; display: flex; flex-direction: column; gap: 10px; }
+  #captions:empty::before { content: "Captions appear here when someone speaks."; color: var(--muted); font-size: 14px; }
+  .line { display: grid; gap: 2px; }
+  .line .who { font-size: 12px; font-weight: 650; color: var(--c); }
+  .line .who::before { content: "● "; }
+  .line.partial .text { color: var(--muted); font-style: italic; }
+  .line .sub { font-size: 13px; color: var(--muted); }
+  #notes h3 { font-size: 14px; margin: 6px 0; color: var(--accent); }
+  #notes ul { margin: 0 0 8px; padding-left: 18px; }
+  #notes li { margin: 3px 0; }
+  .muted { color: var(--muted); font-size: 13px; margin: 0; }
+
+  /* settings */
+  details.card > summary { cursor: pointer; color: var(--muted); list-style: none; }
+  details.card > summary::before { content: "⚙  "; }
+  .settings-body { display: grid; gap: 12px; margin-top: 12px; font-size: 14px; }
+  .settings-body label { display: grid; gap: 4px; color: var(--muted); }
+  .settings-body .row { display: flex; gap: 8px; flex-wrap: wrap; }
+  .settings-body button { border: 1px solid var(--line); background: rgba(255,255,255,0.06); border-radius: 10px; padding: 6px 12px; cursor: pointer; }
+  #debug-text, #log, #prev-log { font: 12px ui-monospace, monospace; white-space: pre-wrap; overflow-wrap: anywhere; }
+  #debug-text { color: #86efac; }
+  #log, #prev-log { max-height: 200px; overflow: auto; color: var(--muted); }
 </style>
 </head>
 <body>
+<header>
+  <img src="icon.svg" alt="">
+  <h1>Reachy Meetings <span>XR</span></h1>
+  <span id="version" class="muted"></span>
+  <div class="chips">
+    <span class="chip" id="chip-robot"><span>Robot</span></span>
+    <span class="chip" id="chip-camera"><span>Camera</span></span>
+    <span class="chip" id="chip-captions"><span>Captions</span></span>
+    <span class="chip" id="chip-xr"><span>VR</span></span>
+  </div>
+</header>
+
 <main>
-  <img class="logo" src="icon.svg" alt="">
-  <h1>Reachy Meetings XR</h1>
-  <div id="message">Loading…</div>
-  <div id="version" style="color: var(--muted); font-size: 12px;"></div>
-  <button id="wake" class="primary" hidden>Wake up</button>
-  <button id="start" class="primary" hidden>Start</button>
-  <button id="talk" class="secondary" hidden>🙋 I want to talk</button>
-  <button id="follow" class="secondary" hidden>🎯 Following speaker: tap to stop</button>
-  <button id="mute" class="secondary" hidden>🔇 Robot muted: tap to unmute</button>
-  <button id="sleep" class="secondary" hidden>Sleep</button>
-  <button id="signin" class="primary" hidden>Sign in with Hugging Face</button>
-  <button id="retry" class="primary" hidden>Try again</button>
-  <video id="video" autoplay playsinline muted></video>
-  <div id="captions"></div>
-  <details>
-    <summary>Debug</summary>
-    <button id="recenter" class="secondary">Recenter</button>
-    <button id="signout" class="secondary">Sign out</button>
-    <label>Captions <input id="captions-url" placeholder="ws://localhost:8766"></label>
-    <div id="debug-text"></div>
-    <div id="log"></div>
-    <details><summary>Previous session log (survives a crash)</summary><div id="prev-log" style="font: 12px ui-monospace, monospace; white-space: pre-wrap; max-height: 240px; overflow: auto;"></div></details>
-  </details>
+  <section class="card stage">
+    <div class="screen">
+      <video id="video" autoplay playsinline muted></video>
+      <div class="idle"><img src="icon.svg" alt=""><div>Camera is off while Reachy sleeps</div></div>
+      <div id="live-caption" hidden></div>
+    </div>
+    <div id="message">Loading…</div>
+    <div class="actions">
+      <button id="wake" class="primary" hidden>Wake up</button>
+      <button id="start" class="primary" hidden>Start</button>
+      <button id="talk" hidden>🙋 I want to talk</button>
+      <button id="follow" hidden>🎯 Following speaker: tap to stop</button>
+      <button id="mute" hidden>🔇 Robot muted: tap to unmute</button>
+      <button id="sleep" hidden>Sleep</button>
+      <button id="signin" class="primary" hidden>Sign in with Hugging Face</button>
+      <button id="retry" class="primary" hidden>Try again</button>
+    </div>
+  </section>
+
+  <aside>
+    <section class="card">
+      <div class="card-head">
+        <h2>Live transcript</h2>
+        <select id="caption-mode" title="What the speech bubbles show">
+          <option value="both">Translation + original</option>
+          <option value="translation">Translation only</option>
+          <option value="original">Original only</option>
+        </select>
+      </div>
+      <div id="captions"></div>
+    </section>
+
+    <section class="card">
+      <div class="card-head"><h2>Meeting notes</h2></div>
+      <div id="notes"><p class="muted">The summary and action items appear after the first minute of talking.</p></div>
+    </section>
+
+    <details class="card">
+      <summary>Settings &amp; debug</summary>
+      <div class="settings-body">
+        <label>Caption server <input id="captions-url" placeholder="ws://localhost:8766"></label>
+        <div class="row">
+          <button id="recenter">Recenter</button>
+          <button id="signout">Sign out</button>
+        </div>
+        <div id="debug-text"></div>
+        <div id="log"></div>
+        <details><summary>Previous session log (survives a crash)</summary><div id="prev-log"></div></details>
+      </div>
+    </details>
+  </aside>
 </main>
 
 <script type="importmap">

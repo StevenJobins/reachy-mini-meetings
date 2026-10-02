@@ -66,6 +66,14 @@ Headset over USB: `adb reverse tcp:8766 tcp:8766`
 
 Tests, without models, mic or network: `pytest -q`
 
+### Meeting notes (summary + action items)
+
+Every 45–60 s (`--summary-every`), if something new was said, the transcript goes to **Google Gemini** (free tier, `gemini-flash-latest`) and comes back as summary bullets + action items, in the target language. It takes ~10 s and runs in the background.
+
+Key from https://aistudio.google.com/apikey → `export GEMINI_API_KEY="..."` (macOS/Linux, e.g. in `~/.zshrc`) or `setx GEMINI_API_KEY "..."` (Windows). Without a key the captions run as before, just without notes. Note: on the free tier Google may use the content to improve its products — fine for the course project, not for confidential meetings.
+
+**Speaker direction:** read from the daemon (`--daemon http://localhost:8000`, `GET /api/state/doa` + head yaw), no robot bridge needed.
+
 ### Protocol (port 8766, server → headset, one JSON per message)
 
 ```jsonc

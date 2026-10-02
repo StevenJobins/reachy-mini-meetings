@@ -8,12 +8,15 @@
 Protocol (server -> headset, one JSON per message; keep in sync with xr-client):
   hello    {"version": str, "target": str}
   caption  {"id": int, "final": bool, "text": str, "lang": str, "translation": str | null,
-            "target": str, "azimuth_deg": float | null, "t_start": s, "t_end": s}
+            "target": str, "doa_deg": float | null, "azimuth_deg": float | null,
+            "t_start": s, "t_end": s}
+  summary  {"summary": [str], "actions": [{"who": str, "what": str}], "t": s}
 
 The same `id` is sent several times: partials (final=false) while the person talks, then the
 final text, then once more with the translation. Clients upsert by `id`. A final with empty
 text means "nothing was said" -> remove the bubble. Times are wall clock (time.time()).
-azimuth_deg: speaker direction in the robot base frame, + = left, 0 = robot forward.
+Speaker direction (+ = left): doa_deg relative to the head/camera (to pick the face in the video),
+azimuth_deg in the robot base frame. A new client gets the latest summary right after hello.
 """
 
 from __future__ import annotations
@@ -32,7 +35,7 @@ from .segmenter import Segment, Segmenter
 
 log = logging.getLogger("reachy_captions")
 
-PROTOCOL_VERSION = "0.1"
+PROTOCOL_VERSION = "0.2"
 
 
 class CaptionServer:
@@ -40,6 +43,7 @@ class CaptionServer:
         self.host, self.port, self.target = host, port, target
         self.clients: set = set()
         self.recent: deque[str] = deque(maxlen=20)  # last finals, replayed to new clients
+        self.summary: str | None = None
 
     async def run(self) -> None:
         async with websockets.serve(self._handle, self.host, self.port):
@@ -53,6 +57,8 @@ class CaptionServer:
                                       "target": self.target}))
             for msg in list(self.recent):
                 await ws.send(msg)
+            if self.summary:
+                await ws.send(self.summary)
             await ws.wait_closed()
         finally:
             self.clients.discard(ws)
@@ -62,6 +68,10 @@ class CaptionServer:
         if caption["final"]:
             self.recent.append(msg)
         websockets.broadcast(self.clients, msg)
+
+    def send_summary(self, notes: dict) -> None:
+        self.summary = json.dumps({"type": "summary", **notes})
+        websockets.broadcast(self.clients, self.summary)
 
 
 class Pipeline:
@@ -90,10 +100,18 @@ class Pipeline:
         except (RuntimeError, ImportError) as e:
             log.warning("No translation: %s", e)
         self.doa = None
-        if args.robot:
+        if args.daemon:
             from .doa import DoaTracker
 
-            self.doa = DoaTracker(args.robot)
+            self.doa = DoaTracker(args.daemon)
+        self.summarizer = None
+        if args.summary == "gemini":
+            from .summary import Summarizer
+
+            try:
+                self.summarizer = Summarizer(args.target, args.summary_model, args.summary_every)
+            except RuntimeError as e:
+                log.warning("No summary: %s", e)
 
     async def _stt(self, model, audio) -> tuple[str, str]:
         self.pending += 1
@@ -105,10 +123,11 @@ class Pipeline:
     def _caption(self, seg: Segment, wall_end: float, text: str, lang: str,
                  translation: str | None = None) -> dict:
         t_start = wall_end - (seg.t_end - seg.t_start)
+        doa_deg, azimuth_deg = self.doa.direction(t_start, wall_end) if self.doa else (None, None)
         return {
             "id": seg.id, "final": seg.final, "text": text, "lang": lang,
             "translation": translation, "target": self.args.target,
-            "azimuth_deg": self.doa.azimuth(t_start, wall_end) if self.doa else None,
+            "doa_deg": doa_deg, "azimuth_deg": azimuth_deg,
             "t_start": round(t_start, 3), "t_end": round(wall_end, 3),
         }
 
@@ -123,12 +142,14 @@ class Pipeline:
         cap = self._caption(seg, wall_end, text, lang)
         self.server.send(cap)
         log.info("[%d %s] %s", seg.id, lang, text)
-        if not text or lang == self.args.target or not self.translator:
-            return
-        translation = await self.translator(text)
-        if translation:
-            log.info("[%d %s] %s", seg.id, self.args.target, translation)
-            self.server.send({**cap, "translation": translation})
+        if text and lang != self.args.target and self.translator:
+            translation = await self.translator(text)
+            if translation:
+                log.info("[%d %s] %s", seg.id, self.args.target, translation)
+                cap = {**cap, "translation": translation}
+                self.server.send(cap)
+        if self.summarizer:
+            self.summarizer.add(cap)
 
     async def run(self) -> None:
         from .audio import FileSource, MicSource
@@ -138,6 +159,8 @@ class Pipeline:
         tasks = [asyncio.create_task(self.server.run())]
         if self.doa:
             tasks.append(asyncio.create_task(self.doa.run()))
+        if self.summarizer:
+            tasks.append(asyncio.create_task(self.summarizer.run(self.server.send_summary)))
         src = asyncio.create_task(source.run(chunks))
         jobs: set[asyncio.Task] = set()
 
@@ -180,8 +203,12 @@ def cli() -> None:
     ap.add_argument("--translator", choices=["deepl", "claude", "none"], default="deepl",
                     help="deepl needs DEEPL_AUTH_KEY, claude needs ANTHROPIC_API_KEY (paid)")
     ap.add_argument("--claude-model", default="claude-opus-5-5")
-    ap.add_argument("--robot", default="ws://localhost:8765",
-                    help="robot bridge for speaker direction (DoA); '' to disable")
+    ap.add_argument("--daemon", default="http://localhost:8000",
+                    help="Reachy Mini daemon for the speaker direction (DoA); '' to disable")
+    ap.add_argument("--summary", choices=["gemini", "none"], default="gemini",
+                    help="live summary + action items; gemini needs GEMINI_API_KEY (free tier)")
+    ap.add_argument("--summary-model", default="gemini-flash-latest")
+    ap.add_argument("--summary-every", type=float, default=60, help="seconds between summaries")
     ap.add_argument("--host", default="0.0.0.0")
     ap.add_argument("--port", type=int, default=8766)
     ap.add_argument("-v", "--verbose", action="store_true")
@@ -197,7 +224,7 @@ def cli() -> None:
 
     logging.basicConfig(level=logging.DEBUG if args.verbose else logging.INFO,
                         format="%(asctime)s %(levelname)s %(name)s: %(message)s")
-    for noisy in ("websockets", "faster_whisper", "httpx", "httpx2", "huggingface_hub"):
+    for noisy in ("websockets", "faster_whisper", "httpx", "httpx2", "huggingface_hub", "deepl"):
         logging.getLogger(noisy).setLevel(logging.WARNING)
     try:
         asyncio.run(Pipeline(args).run())

@@ -2,8 +2,9 @@
 
 import numpy as np
 
-from reachy_meetings_backend.doa import DoaTracker, circular_mean_deg, doa_to_azimuth_deg
+from reachy_meetings_backend.doa import DoaTracker, circular_mean_deg, doa_to_head_deg
 from reachy_meetings_backend.segmenter import SAMPLE_RATE, Segmenter, SegmenterCfg
+from reachy_meetings_backend.summary import parse_summary
 
 rng = np.random.default_rng(0)
 
@@ -66,20 +67,37 @@ def test_threshold_adapts_to_noisy_room():
 
 # ---------------------------------------------------------------- DoA
 def test_doa_mapping():
-    assert doa_to_azimuth_deg(np.pi / 2, 0) == 0        # front
-    assert doa_to_azimuth_deg(0.0, 0) == 90             # left
-    assert doa_to_azimuth_deg(np.pi, 0) == -90          # right
-    assert doa_to_azimuth_deg(np.pi / 2, 30) == 30      # head turned left
+    assert doa_to_head_deg(np.pi / 2) == 0        # front
+    assert doa_to_head_deg(0.0) == 90             # left
+    assert doa_to_head_deg(np.pi) == -90          # right
 
 
 def test_circular_mean_wraps():
     assert abs(abs(circular_mean_deg([170, -170])) - 180) < 1e-6
 
 
-def test_tracker_window_and_speech_flag():
-    tr = DoaTracker("ws://unused")
-    tr.add({"speaker_doa_rad": 0.0, "speech_detected": False, "head_yaw_deg": 0})
-    assert tr.azimuth(0, 1e12) is None
-    tr.add({"speaker_doa_rad": 0.0, "speech_detected": True, "head_yaw_deg": 0})
-    assert tr.azimuth(0, 1e12) == 90
-    assert tr.azimuth(0, 1) is None
+def test_tracker_window_speech_flag_and_head_yaw():
+    tr = DoaTracker("http://unused")
+    tr.add({"angle": 0.0, "speech_detected": False}, 0, now=10)
+    assert tr.direction(0, 100) == (None, None)
+    tr.add({"angle": 0.0, "speech_detected": True}, 30, now=10)   # speaker left, head turned left
+    assert tr.direction(0, 100) == (90, 120)
+    assert tr.direction(11, 100) == (None, None)
+    tr.add({"angle": None, "speech_detected": True}, 0, now=10)   # daemon without a reading yet
+    assert len(tr.samples) == 1
+
+
+# ---------------------------------------------------------------- summary
+def test_parse_summary_plain_and_fenced():
+    raw = '{"summary": ["Budget first"], "actions": [{"who": "Lisa", "what": "show prototype"}]}'
+    want = {"summary": ["Budget first"], "actions": [{"who": "Lisa", "what": "show prototype"}]}
+    assert parse_summary(raw) == want
+    assert parse_summary("Here you go:\n```json\n" + raw + "\n```") == want
+
+
+def test_parse_summary_tolerates_shapes_and_rejects_garbage():
+    assert parse_summary('{"summary": [], "actions": ["call Bob", ""]}') == {
+        "summary": [], "actions": [{"who": "", "what": "call Bob"}]}
+    assert parse_summary("no json here") is None
+    assert parse_summary('{"summary": [') is None
+    assert parse_summary('{"summary": [], "actions": []}') is None

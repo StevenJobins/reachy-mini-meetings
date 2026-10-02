@@ -7,7 +7,7 @@
 import * as THREE from "three";
 import { createVideoSource } from "./videosource.js";
 
-export function createScene({ video, vfovDeg, distM, statusText, onHeadsetPose, onSelect, onEnd, vrButtons = [], log = console.log }) {
+export function createScene({ video, vfovDeg, distM, statusText, onHeadsetPose, onSelect, onEnd, onFrame, vrButtons = [], log = console.log }) {
   const renderer = new THREE.WebGLRenderer({ antialias: true });
   renderer.xr.enabled = true;
   renderer.domElement.addEventListener("webglcontextlost", () => log("ERROR webgl context lost (GPU crash / out of memory)"));
@@ -178,6 +178,7 @@ export function createScene({ video, vfovDeg, distM, statusText, onHeadsetPose, 
   el.addEventListener("pointerdown", (e) => { drag = { x: e.clientX, y: e.clientY, moved: false }; el.setPointerCapture(e.pointerId); });
   el.addEventListener("pointermove", (e) => {
     if (!desktop) return;
+    if (drag && !(e.buttons & 1)) drag = null;   // button released outside / pointerup lost: stop turning
     if (drag) {
       const dx = e.clientX - drag.x, dy = e.clientY - drag.y;
       if (Math.abs(dx) + Math.abs(dy) > 3) drag.moved = true;
@@ -233,6 +234,7 @@ export function createScene({ video, vfovDeg, distM, statusText, onHeadsetPose, 
     for (const b of buttons) b.userData.refresh();
     if (frame) updatePointers(frame);
     if (haveTarget) robotView.quaternion.slerp(target, 0.5);   // pose stream ~30 Hz -> smooth at display rate
+    onFrame?.(now);
     renderer.render(scene, camera);
   });
 
@@ -253,6 +255,9 @@ export function createScene({ video, vfovDeg, distM, statusText, onHeadsetPose, 
     /** One line about the camera path (for the heartbeat log). */
     videoStats() { return source.stats(); },
 
+    /** Current camera frame for image analysis (face detection): the fixed-size frame canvas, else the <video>. */
+    videoFrame() { return source.mode !== "direct" && source.hasFrame ? source.canvas : video; },
+
     /** Switch how camera frames reach the VR window (track -> canvas -> direct). Returns the new mode. */
     cycleVideo() { return source.cycle(); },
 
@@ -262,7 +267,7 @@ export function createScene({ video, vfovDeg, distM, statusText, onHeadsetPose, 
     enterDesktop() {
       desktop = { yaw: 0, pitch: 0 };
       el.style.cssText = "position:fixed;inset:0;z-index:10;cursor:grab;touch-action:none";
-      renderer.setPixelRatio(devicePixelRatio);
+      renderer.setPixelRatio(Math.min(devicePixelRatio, 1.5));   // full retina is costly and not needed here
       resize();
       document.body.appendChild(el);
       addEventListener("resize", resize);
