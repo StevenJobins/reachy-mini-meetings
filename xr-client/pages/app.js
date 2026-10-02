@@ -299,7 +299,9 @@ const doaBuf = [];      // [t, angle, speech] of the last seconds
 let doaPushedUntil = 0;
 /** Feed the buffered mic directions since `fromS` into the speaker tracker (each reading once, in order). */
 function flushDoa(fromS) {
-  for (const [t, a, sp] of doaBuf) if (t > doaPushedUntil && t >= fromS) speaker.pushDoa(t, a, sp);
+  // speech = true: the backend confirmed speech for this time span; the mic array's own speech flag is
+  // false most of the time (measured: 8 of 8 readings while someone talked), the angle is still good
+  for (const [t, a] of doaBuf) if (t > doaPushedUntil && t >= fromS) speaker.pushDoa(t, a, true);
   doaPushedUntil = performance.now() / 1000;
 }
 function onSpeechCaption(msg, track) {
