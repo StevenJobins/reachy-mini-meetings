@@ -27,6 +27,7 @@ export class FaceSpeakers {
    * in the room when the frame was taken (null if unknown). Nearest-centre matching, then identity by direction.
    */
   update(faces, t, headYawDeg = null) {
+    this.lastT = t;   // time of the latest frame: tracks with seen === lastT are in view now
     const free = new Set(this.tracks);
     for (const f of faces) {
       let best = null, bestD = this.maxJump;

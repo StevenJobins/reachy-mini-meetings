@@ -127,6 +127,8 @@ function stepBase(dt, nowS) {
   if (!talk.active(nowS)) talkCenter = null;
   speaker.override = talkCenter;
   const base = speaker.step(dt);
+  // pitch for the framing (see frameFocus), smoothly at ≤ 30 °/s
+  basePitch += Math.max(-30 * dt, Math.min(30 * dt, targetPitch - basePitch));
   return base;
 }
 
@@ -224,7 +226,8 @@ function wantToTalk() {
 setInterval(() => {
   if (!awake || status.xr !== "off" || !robot.connected) return;
   const dt = 1 / 50;
-  send(mirror.step([0, 0, stepBase(dt, performance.now() / 1000)], dt), performance.now() / 1000);
+  const baseYaw = stepBase(dt, performance.now() / 1000);
+  send(mirror.step([0, basePitch, baseYaw], dt), performance.now() / 1000);
 }, 1000 / 50);
 
 const robot = createRobot({
@@ -242,8 +245,11 @@ const robot = createRobot({
   },
   onDoa: (angle, speech) => {
     status.doa = `${(90 - angle * 180 / Math.PI).toFixed(0)}° ${speech ? "SPEECH" : "quiet"}`;   // relative to the head, + = left
-    // only while the backend confirms real speech (neural VAD + text), so noise doesn't turn the robot
-    if (awake && performance.now() / 1000 - lastSpeechS < 1.5) speaker.pushDoa(performance.now() / 1000, angle, speech);
+    // Buffered, and only used for speech the backend confirms (neural VAD + text): noise never turns the robot.
+    const now = performance.now() / 1000;
+    doaBuf.push([now, angle, speech]);
+    while (doaBuf.length && doaBuf[0][0] < now - 6) doaBuf.shift();
+    if (awake && now - lastSpeechS < 1.5) flushDoa(now - 1.5);
   },
 });
 
@@ -261,6 +267,7 @@ const scene = createScene({
     lastSend = now;
     const raw = headsetToRobot(recenter.toRelative(q));
     raw[2] += stepBase(dt, now / 1000);   // user's head rotation on top of the speaker direction
+    raw[1] += basePitch;                  // ... and on top of the framing pitch
     send(mirror.step(raw, dt), now / 1000);
   },
   // Head-locked buttons in VR: point (controller ray / hand pinch) and select. Select elsewhere = recenter.
@@ -288,18 +295,43 @@ const faceSpeakers = new FaceSpeakers({ hfovDeg });
 // direction alone is only used while speech is confirmed. In silence the target stays: Reachy keeps
 // looking at the last person who spoke.
 let lastSpeechS = 0;
+const doaBuf = [];      // [t, angle, speech] of the last seconds
+let doaPushedUntil = 0;
+/** Feed the buffered mic directions since `fromS` into the speaker tracker (each reading once, in order). */
+function flushDoa(fromS) {
+  for (const [t, a, sp] of doaBuf) if (t > doaPushedUntil && t >= fromS) speaker.pushDoa(t, a, sp);
+  doaPushedUntil = performance.now() / 1000;
+}
 function onSpeechCaption(msg, track) {
   lastSpeechS = performance.now() / 1000;
-  if (!track || !awake) return;
-  const yaw = Math.max(-150, Math.min(150, status.meas[2] + faceSpeakers.angleDeg(track)));
-  if (Math.abs(yaw - speaker.target) > 8) {
-    speaker.target = yaw;
-    speaker.speakers.push([lastSpeechS, yaw]);   // for "I want to talk" (center of recent speakers)
-  }
+  if (!awake) return;
+  // the caption confirms speech for its whole duration: use the mic directions from that time
+  flushDoa(lastSpeechS - (msg.t_end - msg.t_start) - 0.7);
+  if (!track) return;
+  if (track.pid !== focusPid) speaker.speakers.push([lastSpeechS, speaker.target]);   // for "I want to talk"
+  focusPid = track.pid;
+  frameFocus();
+}
+
+// Framing: Reachy keeps the person who spoke last (also while everyone is quiet) in the picture, head
+// centred left/right and 1/3 from the top, like a camera operator. World direction of the face =
+// measured head pose + its angle in the image, so the user's own headset rotation stays on top.
+let focusPid = null, basePitch = 0, targetPitch = 0;
+const tanV = Math.tan(cfg.vfovDeg / 2 * Math.PI / 180);
+const FRAME_UP = Math.atan((0.5 - 1 / 3) * 2 * tanV) * 180 / Math.PI;   // head 1/3 from the top = this far above the axis
+function frameFocus() {
+  if (!awake || focusPid == null) return;
+  const tr = faceSpeakers.tracks.find((t) => t.pid === focusPid && t.seen === faceSpeakers.lastT);
+  if (!tr) return;
+  const yaw = Math.max(-150, Math.min(150, status.meas[2] + faceSpeakers.angleDeg(tr)));
+  if (Math.abs(yaw - speaker.target) > 3) speaker.target = yaw;   // small deadband: no jitter
+  const up = Math.atan((0.5 - tr.cy) * 2 * tanV) * 180 / Math.PI;   // face above the image centre (deg)
+  const pitch = status.meas[1] - (up - FRAME_UP);                   // pitch + = look down
+  if (Math.abs(pitch - targetPitch) > 2) targetPitch = Math.max(-20, Math.min(20, pitch));
 }
 const faces = createFaces({
   getSource: () => (awake ? scene.videoFrame() : null),
-  onFaces: (list, t) => faceSpeakers.update(list, t, status.meas[2]),
+  onFaces: (list, t) => { faceSpeakers.update(list, t, status.meas[2]); frameFocus(); },
   log,
 });
 notes = createNotes({ three: scene.three, recenter, distM: cfg.distM, cardEl: $("notes") });
@@ -381,6 +413,7 @@ $("wake").onclick = async () => {
   await robot.wake();
   mirror = new HeadMirror({ smoothing: cfg.smoothing });   // start from neutral, where the wake-up motion ends
   speaker.reset();
+  focusPid = null; basePitch = 0; targetPitch = 0;
   lastSend = performance.now();
   awake = true;
   video.hidden = false;
