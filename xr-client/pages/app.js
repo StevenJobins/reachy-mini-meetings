@@ -349,19 +349,24 @@ function flushDoa(fromS) {
   // While the followed person is in the picture, the mic direction (±10-20°, plus wall reflections) only
   // counts when it points clearly outside the picture: someone out of view speaks. Inside the picture the
   // face (and mouth movement) is far more precise; letting both steer made the head twitch and turn away.
-  const inView = focusInView();
+  const focus = focusTrack();
+  // The followed person moves their mouth: they are the one talking, the mic direction has nothing to add
+  // (in the test it jumped between -121° and +43° while the face sat still at -20°).
+  const focusTalking = focus && faceSpeakers.activity(focus) > 0.03;
   for (const [t, a] of doaBuf) {
     if (t <= doaPushedUntil || t < fromS) continue;
-    if (inView && Math.abs(90 - a * 180 / Math.PI) < hfovDeg / 2 + 10) continue;
+    if (focusTalking) continue;
+    if (focus && Math.abs(90 - a * 180 / Math.PI) < hfovDeg / 2 + 10) continue;
     speaker.pushDoa(t, a, true);
   }
   doaPushedUntil = performance.now() / 1000;
   noteTarget("mic");
 }
 
-/** The person Reachy follows is in the picture right now (seen within the last 0.5 s). */
-function focusInView() {
-  return focusPid != null && faceSpeakers.tracks.some((t) => t.pid === focusPid && (faceSpeakers.lastT ?? 0) - t.seen < 0.5);
+/** Track of the person Reachy follows if they are in the picture (seen within the last 0.5 s), else null. */
+function focusTrack() {
+  if (focusPid == null) return null;
+  return faceSpeakers.tracks.find((t) => t.pid === focusPid && (faceSpeakers.lastT ?? 0) - t.seen < 0.5) ?? null;
 }
 // Instant "someone is speaking" from the backend's neural VAD (~0.1 s after the first word, no text yet):
 // the mic directions count right away, and the speaking face in view becomes the focus person.
@@ -376,7 +381,10 @@ function onVadEvent(msg) {
     if (tr.pid !== focusPid) speaker.speakers.push([lastSpeechS, speaker.target]);
     focusPid = tr.pid;
     frameFocus();
-  } else if (!faceSpeakers.tracks.some((t) => t.seen === faceSpeakers.lastT) && (doaRel == null || Math.abs(doaRel) < 35)) {
+  } else if (!faceSpeakers.tracks.some((t) => (faceSpeakers.lastT ?? 0) - t.seen < 1.5)
+             && (!focusLast || (faceSpeakers.lastT ?? 0) - focusLast.t > 1.5)
+             && (doaRel == null || Math.abs(doaRel) < 35)) {
+    // (no face for 1.5 s: a detection flicker must not trigger this, it made the pitch twitch)
     // Someone talks in front of Reachy but no face is in the picture: their head is above it (standing, or
     // close to the robot). Look up step by step (~12 °/s at 4 events/s) until the face shows up.
     targetPitch = Math.max(-PITCH_UP, targetPitch - 3);

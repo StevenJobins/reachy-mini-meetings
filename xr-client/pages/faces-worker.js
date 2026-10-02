@@ -13,8 +13,8 @@ const MP = "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@1.0.1";
 const MODELS = "https://storage.googleapis.com/mediapipe-models";
 const FACE_MODEL = `${MODELS}/face_landmarker/face_landmarker/float16/1/face_landmarker.task`;
 const POSE_MODEL = `${MODELS}/pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task`;
-const VIS = 0.7;      // pose landmark counts as seen above this visibility
-const MIN_SIZE = 0.035;   // ignore tiny detections (fraction of the image width)
+const VIS = 0.55;        // pose landmark counts as seen above this visibility (far away it reports less)
+const MIN_SIZE = 0.015;   // ignore tinier detections (fraction of the image width; a face at ~4 m is ~2 %)
 
 let pose = null, face = null, frame = 0;
 

@@ -1,9 +1,9 @@
 // People in the robot camera image, for placing speech bubbles above the speaker's head.
 // The detection (MediaPipe pose + face, see faces-worker.js) runs in a Web Worker on small frames
-// (640x360), so the render loop is never blocked. DOM/media only, no three.js.
+// (960x540), so the render loop is never blocked. DOM/media only, no three.js.
 // If the worker fails, onFaces is simply never called and the bubbles use the mic direction.
 
-const SIZE = { resizeWidth: 640, resizeHeight: 360, resizeQuality: "low" };
+const SIZE = { resizeWidth: 960, resizeHeight: 540, resizeQuality: "medium" };   // 640x360 lost faces beyond ~3 m
 
 /**
  * getSource() -> canvas / video with the current camera frame, or null to pause.
