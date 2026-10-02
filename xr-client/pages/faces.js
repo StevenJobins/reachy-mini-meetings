@@ -14,7 +14,8 @@ export function createFaces({ getSource, onFaces, log, hz = 8 }) {
   let state = "loading", busy = false, n = 0, fps = 0, seen = 0;
   setInterval(() => { fps = n; n = 0; }, 1000);
 
-  const worker = new Worker(new URL("./faces-worker.js", import.meta.url));
+  // same ?v=<commit> as this module (stamped by the Pages workflow), else the browser may run a cached old worker
+  const worker = new Worker(new URL(`./faces-worker.js${new URL(import.meta.url).search}`, import.meta.url));
   worker.onmessage = ({ data }) => {
     if (data.ready) { state = "on"; log("people: detector ready (worker)"); return; }
     if (data.error && !data.people) {
