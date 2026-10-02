@@ -336,11 +336,19 @@ function onSpeechCaption(msg, track) {
 let focusPid = null, basePitch = 0, targetPitch = 0;
 const tanV = Math.tan(cfg.vfovDeg / 2 * Math.PI / 180);
 const FRAME_UP = Math.atan((0.5 - 1 / 3) * 2 * tanV) * 180 / Math.PI;   // head 1/3 from the top = this far above the axis
+/** Robot head yaw when a camera frame was taken (t = capture time, s): frames lag the pose stream by ~0.1-0.2 s,
+ *  and using the current yaw for an old frame overshoots while the robot turns. */
+function headYawAt(t, latencyS = 0.12) {
+  const h = speaker.headHist;
+  for (let i = h.length - 1; i >= 0; i--) if (h[i][0] <= t - latencyS) return h[i][1];
+  return h.length ? h[0][1] : status.meas[2];
+}
+
 function frameFocus() {
   if (!awake || focusPid == null) return;
   const tr = faceSpeakers.tracks.find((t) => t.pid === focusPid && t.seen === faceSpeakers.lastT);
   if (!tr) return;
-  const yaw = Math.max(-150, Math.min(150, status.meas[2] + faceSpeakers.angleDeg(tr)));
+  const yaw = Math.max(-150, Math.min(150, headYawAt(faceSpeakers.lastT) + faceSpeakers.angleDeg(tr)));
   if (Math.abs(yaw - speaker.target) > 3) speaker.target = yaw;   // small deadband: no jitter
   const up = Math.atan((0.5 - tr.cy) * 2 * tanV) * 180 / Math.PI;   // face above the image centre (deg)
   const pitch = status.meas[1] - (up - FRAME_UP);                   // pitch + = look down
@@ -348,7 +356,7 @@ function frameFocus() {
 }
 const faces = createFaces({
   getSource: () => (awake ? scene.videoFrame() : null),
-  onFaces: (list, t) => { faceSpeakers.update(list, t, status.meas[2]); frameFocus(); },
+  onFaces: (list, t) => { faceSpeakers.focusPid = focusPid; faceSpeakers.update(list, t, headYawAt(t)); frameFocus(); },
   log,
 });
 notes = createNotes({ three: scene.three, recenter, distM: cfg.distM, cardEl: $("notes") });
