@@ -74,6 +74,9 @@
   #mic .mic-icon { width: 52px; height: 52px; border-radius: 50%; display: grid; place-items: center; background: rgba(255,255,255,0.14); }
   #mic .mic-icon svg { width: 28px; height: 28px; }
   #mic .slash { display: none; }
+  #mic:not(.muted) .mic-icon { box-shadow: 0 0 0 calc(var(--lvl, 0) * 14px) rgba(74,222,128,0.55); transition: box-shadow .08s; }
+  #volume-box { display: inline-flex; align-items: center; gap: 8px; color: var(--muted); font-size: 14px; }
+  #volume-box input { width: 120px; accent-color: var(--accent); padding: 0; }
   #mic.muted { background: rgba(229,72,77,0.18); border-color: rgba(229,72,77,0.6); color: #ffb4b6; }
   #mic.muted .mic-icon { background: #e5484d; color: #fff; box-shadow: 0 6px 22px rgba(229,72,77,0.45); }
   #mic.muted .slash { display: inline; }
@@ -142,6 +145,8 @@
           <path class="slash" d="M3 3l18 18" stroke-width="2.5"/></svg></span>
         <span class="mic-label">Mute</span>
       </button>
+      <label id="volume-box" hidden title="Robot speaker volume (also by voice: &quot;Reachy, volume 7&quot;)">🔊
+        <input id="volume" type="range" min="0" max="100" step="5" value="50"><span id="volume-val">–</span></label>
       <button id="talk" hidden>🙋 I want to talk</button>
       <button id="follow" hidden>🎯 Following speaker: tap to stop</button>
       <button id="mute" hidden>🔇 Robot muted: tap to unmute</button>

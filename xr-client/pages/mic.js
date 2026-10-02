@@ -7,6 +7,22 @@
 
 export function createMic({ getPeerConnection, onStatus, log }) {
   let stream = null, track = null, muted = false, wanted = false, attachedTo = null;
+  let audioCtx = null, analyser = null, levelBuf = null, lastBytes = 0, kbps = 0, packets = 0, announced = false;
+
+  // Diagnostics: how loud the mic is (0..1) and how much audio actually leaves towards the robot.
+  setInterval(async () => {
+    if (!attachedTo) { kbps = 0; return; }
+    try {
+      const stats = await attachedTo.getStats();
+      stats.forEach((r) => {
+        if (r.type !== "outbound-rtp") return;
+        kbps = Math.max(0, (r.bytesSent - lastBytes) * 8 / 1000);
+        lastBytes = r.bytesSent; packets = r.packetsSent;
+      });
+      if (!announced && packets > 50) { announced = true; log(`mic: audio is flowing to the robot (${packets} packets)`); }
+      onStatus({ micKbps: kbps });
+    } catch {}
+  }, 1000);
 
   const state = () => (!wanted ? "off" : !track ? "starting" : !attachedTo ? "no channel" : muted ? "muted" : "on");
   const report = () => onStatus({ mic: state() });
@@ -57,6 +73,14 @@ export function createMic({ getPeerConnection, onStatus, log }) {
           return false;
         }
         track = stream.getAudioTracks()[0];
+        try {
+          audioCtx = new AudioContext();
+          audioCtx.resume().catch(() => {});   // may start suspended outside a tap
+          analyser = audioCtx.createAnalyser();
+          analyser.fftSize = 512;
+          levelBuf = new Float32Array(analyser.fftSize);
+          audioCtx.createMediaStreamSource(stream).connect(analyser);
+        } catch { analyser = null; }
         track.enabled = !muted;
         track.onended = () => { log("mic: track ended"); track = null; report(); };
         log("mic:", track.label || "default microphone");
@@ -71,12 +95,25 @@ export function createMic({ getPeerConnection, onStatus, log }) {
       attachedTo?.replaceTrack(null).catch(() => {});
       attachedTo = null;
       stream?.getTracks().forEach((t) => t.stop());
-      stream = null; track = null;
+      audioCtx?.close().catch(() => {});
+      stream = null; track = null; audioCtx = null; analyser = null; announced = false; lastBytes = 0;
       report();
     },
 
+    /** Mic level 0..1 (RMS, roughly: 0.05 quiet room, 0.3+ speaking). 0 when muted. */
+    level() {
+      if (!analyser || muted) return 0;
+      analyser.getFloatTimeDomainData(levelBuf);
+      let sum = 0;
+      for (const v of levelBuf) sum += v * v;
+      return Math.min(1, Math.sqrt(sum / levelBuf.length) * 4);
+    },
+
+    get kbps() { return kbps; },
+
     setMuted(m) {
       muted = m;
+      audioCtx?.resume().catch(() => {});
       if (track) track.enabled = !m;   // disabled track = silence, the connection stays up
       log("mic", m ? "muted" : "on");
       report();

@@ -89,6 +89,7 @@ export function createRobot({ clientId, onStatus, onMeasuredHead, onDoa = () => 
 
     /** Robot speaker volume 0-100. Resolves with the volume the daemon reports (or null). */
     setVolume(percent) { return reachy.setVolume(percent); },
+    getVolume() { return reachy.getVolume(); },
 
     /** Robot microphone on/off (the audio track of the video element). Turn on inside a user gesture. */
     setAudio(on) { reachy.setAudioMuted(!on); },

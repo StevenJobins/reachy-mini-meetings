@@ -8,6 +8,8 @@
 // Whisper writes the robot's name in many ways, depending on the language it hears.
 const WAKE = [
   /(?<!\p{L})(?:reachy|reachie|reechy|reachi|richie|ritchie|ritchy|richy|ritschi|ritschie|rici|ricci|richi|rietschi)(?!\p{L})/u,
+  // Fuzzy: r + ea/ee/ie/i/e + (t)(s)ch + vowel: Reechie, Ritchy, Rietschi, Rischi, Reachey, ...
+  /(?<!\p{L})r(?:ea|ee|ie|i|e)t?s?c?h(?:y|ie|i|ey|e)(?!\p{L})/u,
   /(?<!\p{L})(?:ричи|рич|річі)(?!\p{L})/u,
   /リーチー|リーチ|里奇|瑞奇|锐奇|銳奇|리치|리취|ريتشي|ريشي|रीची|रिची/u,
 ];
@@ -84,13 +86,28 @@ function firstNumber(s) {
   return null;
 }
 
+/** Why a text with a volume word is not a command (for the log), or null. */
+export function explainVolume(text) {
+  if (!text) return null;
+  const t = normalize(text);
+  if (volumeEnd(t) < 0) return null;
+  if (parseVolume(text) !== null) return null;
+  if (!WAKE.some((re) => re.test(t)) && !isShortCommand(t)) return "no 'Reachy' heard";
+  return "no number 0-10 after the volume word";
+}
+
+// "Lautstärke 9" alone (no name, at most 4 words) also counts: Whisper sometimes mangles the name.
+function isShortCommand(t) {
+  return t.split(/[^\p{L}\p{N}%]+/u).filter(Boolean).length <= 4;
+}
+
 /** One text -> volume percent (0-100) if it is "Reachy, volume N", else null. */
 export function parseVolume(text) {
   if (!text) return null;
   const t = normalize(text);
-  if (!WAKE.some((re) => re.test(t))) return null;
   const end = volumeEnd(t);
   if (end < 0) return null;
+  if (!WAKE.some((re) => re.test(t)) && !isShortCommand(t)) return null;
   return firstNumber(t.slice(end));
 }
 

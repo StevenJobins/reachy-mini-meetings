@@ -15,7 +15,7 @@ import { createFaces } from "./faces.js";
 import { FaceSpeakers } from "./speakers.js";
 import { createNotes } from "./notes.js";
 import { createMic } from "./mic.js";
-import { volumeCommand } from "./voicecmd.js";
+import { explainVolume, volumeCommand } from "./voicecmd.js";
 
 // HF OAuth app (huggingface.co/settings/applications), redirect URL = this page's URL.
 const HF_CLIENT_ID = "37472ae1-2bae-4d97-be66-ef7446028c40";
@@ -59,13 +59,13 @@ addEventListener("error", (e) => log("ERROR", e.message, `${e.filename}:${e.line
 addEventListener("unhandledrejection", (e) => log("UNHANDLED", e.reason?.message ?? e.reason));
 
 // ---------------------------------------------------------------- status
-const status = { user: "-", robot: "-", motors: "-", ice: "-", video: "-", xr: "off", send: 0, cmd: [0, 0, 0], body: 0, meas: [0, 0, 0], captions: "-", sound: "muted", follow: "on", doa: "none", mic: "off", volume: "-" };
+const status = { user: "-", robot: "-", motors: "-", ice: "-", video: "-", xr: "off", send: 0, cmd: [0, 0, 0], body: 0, meas: [0, 0, 0], captions: "-", sound: "muted", follow: "on", doa: "none", mic: "off", volume: "-", micKbps: 0 };
 let sentCount = 0;
 setInterval(() => { status.send = sentCount; sentCount = 0; }, 1000);
 function statusText() {
   const f = (v) => v.map((x) => x.toFixed(1).padStart(6)).join(" ");
   return [
-    `robot ${status.robot}   motors ${status.motors}   ice ${status.ice}   video ${status.video}   send ${status.send} Hz   mic ${status.mic}   volume ${status.volume}`,
+    `robot ${status.robot}   motors ${status.motors}   ice ${status.ice}   video ${status.video}   send ${status.send} Hz   mic ${status.mic} ${status.micKbps.toFixed(0)} kbps   volume ${status.volume}`,
     `cmd  r/p/y ${f(status.cmd)}   body ${status.body.toFixed(1)}   speaker ${status.follow} target ${speaker.target.toFixed(0)} base ${speaker.base.toFixed(0)}`,
     `meas r/p/y ${f(status.meas)}   captions ${status.captions}   ${faces.stats()}   robot sound ${status.sound}   doa ${status.doa}`,
   ].join("\n");
@@ -91,6 +91,7 @@ function show(state, message) {
   $("talk").hidden = state !== "awake";
   $("mute").hidden = state !== "awake";
   $("mic").hidden = state !== "awake";
+  $("volume-box").hidden = state !== "awake";
   $("follow").hidden = state !== "awake";
   $("signin").hidden = state !== "signed-out";
   $("retry").hidden = state !== "failed";
@@ -157,9 +158,29 @@ function renderMicButton() {
   const el = $("mic");
   el.classList.toggle("muted", mic.muted || status.mic !== "on");
   el.querySelector(".mic-label").textContent =
-    status.mic === "blocked" ? "Mic blocked" : status.mic === "no channel" ? "No audio channel" : mic.muted ? "Unmute" : "Mute";
+    status.mic === "blocked" ? "Mic blocked: tap to retry" : status.mic === "no channel" ? "No audio channel"
+      : status.mic === "off" ? "Mic off" : status.mic === "starting" ? "Allow mic…" : mic.muted ? "Unmute" : "Mute";
   el.title = mic.muted ? "You are muted. Tap (or press M) to talk to the room." : "The room hears you. Tap (or press M) to mute.";
 }
+// Live level ring on the mic button: you see that the mic hears you, like in a call app.
+setInterval(() => {
+  const lvl = mic.level();
+  $("mic").style.setProperty("--lvl", lvl.toFixed(2));
+}, 80);
+
+/** Robot speaker volume 0-100 (voice command, slider). */
+function applyVolume(v, source) {
+  return robot.setVolume(v)
+    .then((got) => {
+      const val = got ?? v;
+      status.volume = `${val}%`;
+      $("volume").value = val; $("volume-val").textContent = `${val}%`;
+      log(`robot volume ${val}% (${source})`);
+      return val;
+    })
+    .catch((e) => { log("set volume failed:", e?.message ?? e); return null; });
+}
+
 function toggleMic() {
   if (!awake) return;
   if (status.mic === "blocked" || status.mic === "off") { mic.start(); return; }   // retry permission inside the tap
@@ -171,12 +192,15 @@ const volumeDone = new Set();
 function onFinalCaption(msg) {
   if (volumeDone.has(msg.id)) return;
   const v = volumeCommand(msg);
-  if (v === null) return;
+  if (v === null) {
+    // A volume word without a command: say why, so a failed "Reachy, volume 9" can be diagnosed.
+    const why = explainVolume(msg.text) ?? explainVolume(msg.translation);
+    if (why) log(`volume word heard, no command (${why}): "${msg.text}"`);
+    return;
+  }
   volumeDone.add(msg.id);
   log(`voice command: volume ${v}% ("${msg.text}")`);
-  robot.setVolume(v)
-    .then((got) => { status.volume = `${got ?? v}%`; flash(`🔊 Reachy volume ${got ?? v}%`); })
-    .catch((e) => log("set volume failed:", e?.message ?? e));
+  applyVolume(v, "voice").then((val) => { if (val !== null) flash(`🔊 Reachy volume ${val}%`); });
 }
 let flashTimer = 0;
 function flash(text) {
@@ -345,6 +369,12 @@ $("wake").onclick = async () => {
   lastSend = performance.now();
   awake = true;
   video.hidden = false;
+  robot.getVolume().then((v) => {
+    if (v == null) return;
+    status.volume = `${v}%`; $("volume").value = v; $("volume-val").textContent = `${v}%`;
+    log(`robot speaker volume ${v}%`);
+    if (v < 10) flash(`🔈 Reachy speaker is at ${v}% – turn it up with the slider or "Reachy, volume 7"`);
+  }).catch(() => {});
   show("awake", `Reachy is awake: camera is on, robot sound ${robotMuted ? "muted" : "on"}. Put on the headset, look straight ahead and tap Start.`);
 };
 $("sleep").onclick = async () => {
@@ -359,6 +389,8 @@ $("sleep").onclick = async () => {
 $("talk").onclick = wantToTalk;
 $("mute").onclick = () => setRobotMuted(!robotMuted);
 $("mic").onclick = toggleMic;
+$("volume").oninput = (e) => { $("volume-val").textContent = `${e.target.value}%`; };
+$("volume").onchange = (e) => applyVolume(Number(e.target.value), "slider");
 addEventListener("keydown", (e) => { if ((e.key === "m" || e.key === "M") && !e.target.closest?.("input, select, textarea")) toggleMic(); });
 renderMicButton();
 $("follow").onclick = () => setFollow(!follow);
