@@ -7,7 +7,7 @@
 import * as THREE from "three";
 import { createVideoSource } from "./videosource.js";
 
-export function createScene({ video, vfovDeg, distM, statusText, onHeadsetPose, onSelect, onEnd, onFrame, vrButtons = [], log = console.log }) {
+export function createScene({ video, vfovDeg, distM, statusText, onHeadsetPose, onSelect, onEnd, onFrame, vrButtons = [], windowMode = "head", log = console.log }) {
   const renderer = new THREE.WebGLRenderer({ antialias: true });
   renderer.xr.enabled = true;
   renderer.domElement.addEventListener("webglcontextlost", () => log("ERROR webgl context lost (GPU crash / out of memory)"));
@@ -214,10 +214,46 @@ export function createScene({ video, vfovDeg, distM, statusText, onHeadsetPose, 
   }
 
   function handleSelect(e) {
+    if (justDragged) { justDragged = false; return; }   // the end of a drag is not a click
     const pose = e.frame.getPose(e.inputSource.targetRaySpace, renderer.xr.getReferenceSpace());
     const hit = pose && hitButton(pose);
     if (hit) hit.object.userData.onClick();
     else onSelect();
+  }
+
+  // ---- draggable panels (meeting notes): grab with the ray + pinch/trigger (VR) or the mouse (desktop)
+  const draggables = [];   // {mesh, onMoved}
+  let dragging = null;     // {item, source: XRInputSource | "mouse", dist}
+  let justDragged = false;
+  const tmpO = new THREE.Vector3(), tmpD = new THREE.Vector3(), headPos = new THREE.Vector3();
+  function hitDraggable(origin, dir) {
+    raycaster.set(origin, dir);
+    const meshes = draggables.filter((d) => d.mesh.visible).map((d) => d.mesh);
+    const hit = raycaster.intersectObjects(meshes, false)[0];
+    return hit ? { item: draggables.find((d) => d.mesh === hit.object), dist: hit.distance } : null;
+  }
+  function moveDragged(origin, dir) {
+    const m = dragging.item.mesh;
+    m.position.copy(origin).addScaledVector(dir, dragging.dist);
+    m.lookAt(headPos);
+  }
+  function rayOf(pose) {
+    m4.fromArray(pose.transform.matrix);
+    tmpO.setFromMatrixPosition(m4);
+    tmpD.set(0, 0, -1).transformDirection(m4);
+  }
+  function onSelectStart(e) {
+    const pose = e.frame.getPose(e.inputSource.targetRaySpace, renderer.xr.getReferenceSpace());
+    if (!pose || hitButton(pose)) return;
+    rayOf(pose);
+    const hit = hitDraggable(tmpO, tmpD);
+    if (hit) dragging = { ...hit, source: e.inputSource };
+  }
+  function onSelectEnd(e) {
+    if (dragging?.source !== e.inputSource) return;
+    dragging.item.onMoved?.();
+    dragging = null;
+    justDragged = true;
   }
 
   // ---- desktop preview (no headset): same scene in the browser window, mouse drag = head turn
@@ -241,9 +277,29 @@ export function createScene({ video, vfovDeg, distM, statusText, onHeadsetPose, 
 
   let drag = null;
   const el = renderer.domElement;
-  el.addEventListener("pointerdown", (e) => { drag = { x: e.clientX, y: e.clientY, moved: false }; el.setPointerCapture(e.pointerId); });
+  function mouseRay(e) {
+    const r = renderer.domElement.getBoundingClientRect();
+    mouse.set(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
+    camera.updateMatrixWorld(true);
+    raycaster.setFromCamera(mouse, camera);
+    tmpO.copy(raycaster.ray.origin); tmpD.copy(raycaster.ray.direction);
+  }
+  el.addEventListener("pointerdown", (e) => {
+    el.setPointerCapture(e.pointerId);
+    if (desktop) {
+      mouseRay(e);
+      const hit = hitDraggable(tmpO, tmpD);
+      if (hit && !desktopHit(e)) { dragging = { ...hit, source: "mouse" }; return; }
+    }
+    drag = { x: e.clientX, y: e.clientY, moved: false };
+  });
   el.addEventListener("pointermove", (e) => {
     if (!desktop) return;
+    if (dragging?.source === "mouse") {
+      if (!(e.buttons & 1)) { dragging.item.onMoved?.(); dragging = null; return; }
+      mouseRay(e); headPos.copy(camera.position); moveDragged(tmpO, tmpD);
+      return;
+    }
     if (drag && !(e.buttons & 1)) drag = null;   // button released outside / pointerup lost: stop turning
     if (drag) {
       const dx = e.clientX - drag.x, dy = e.clientY - drag.y;
@@ -256,6 +312,7 @@ export function createScene({ video, vfovDeg, distM, statusText, onHeadsetPose, 
     el.style.cursor = hoveredDesktop ? "pointer" : drag ? "grabbing" : "grab";
   });
   el.addEventListener("pointerup", (e) => {
+    if (dragging?.source === "mouse") { dragging.item.onMoved?.(); dragging = null; return; }
     const click = drag && !drag.moved;
     drag = null;
     if (click) desktopHit(e)?.userData.onClick();
@@ -276,12 +333,24 @@ export function createScene({ video, vfovDeg, distM, statusText, onHeadsetPose, 
 
   const target = new THREE.Quaternion();
   let haveTarget = false;
+  // windowMode "head": the video window stays centred in front of your eyes and follows head turns (smoothed,
+  // no roll). "robot" (?window=robot): it sits where the robot looks (latency-hiding reprojection).
+  const headQ = new THREE.Quaternion(), followQ = new THREE.Quaternion(), followE = new THREE.Euler(0, 0, 0, "YXZ");
   renderer.setAnimationLoop((now, frame) => {
     if (frame) {
       const pose = frame.getViewerPose(renderer.xr.getReferenceSpace());
-      if (pose) onHeadsetPose(pose.transform.orientation, now);
+      if (pose) {
+        const o = pose.transform.orientation, p = pose.transform.position;
+        headQ.set(o.x, o.y, o.z, o.w); headPos.set(p.x, p.y, p.z);
+        onHeadsetPose(o, now);
+      }
+      if (dragging && dragging.source !== "mouse") {
+        const rp = frame.getPose(dragging.source.targetRaySpace, renderer.xr.getReferenceSpace());
+        if (rp) { rayOf(rp); moveDragged(tmpO, tmpD); }
+      }
     } else if (desktop) {
       camera.quaternion.setFromEuler(new THREE.Euler(desktop.pitch, desktop.yaw, 0, "YXZ"));
+      headQ.copy(camera.quaternion);
       const q = camera.quaternion;
       onHeadsetPose({ x: q.x, y: q.y, z: q.z, w: q.w }, now);
       for (const b of buttons) {
@@ -301,7 +370,10 @@ export function createScene({ video, vfovDeg, distM, statusText, onHeadsetPose, 
     for (const b of buttons) b.userData.refresh();
     layoutDock();
     if (frame) updatePointers(frame);
-    if (haveTarget) robotView.quaternion.slerp(target, 0.5);   // pose stream ~30 Hz -> smooth at display rate
+    if (windowMode === "head") {
+      followE.setFromQuaternion(headQ, "YXZ"); followE.z = 0;
+      robotView.quaternion.slerp(followQ.setFromEuler(followE), 0.15);   // calm, but always back in the centre
+    } else if (haveTarget) robotView.quaternion.slerp(target, 0.5);   // pose stream ~30 Hz -> smooth at display rate
     onFrame?.(now);
     renderer.render(scene, camera);
   });
@@ -316,6 +388,8 @@ export function createScene({ video, vfovDeg, distM, statusText, onHeadsetPose, 
       log("entering VR, video mode", source.mode);
       const session = await navigator.xr.requestSession("immersive-vr", { optionalFeatures: ["local"] });
       session.addEventListener("select", handleSelect);   // pinch / trigger: button under the ray, else recenter
+      session.addEventListener("selectstart", onSelectStart);   // grab a panel
+      session.addEventListener("selectend", onSelectEnd);
       session.addEventListener("end", onEnd);
       await renderer.xr.setSession(session);
     },
@@ -350,6 +424,9 @@ export function createScene({ video, vfovDeg, distM, statusText, onHeadsetPose, 
 
     /** For overlays (speech bubbles): the room, and the group that moves with the video window. */
     three: { scene, robotView },
+
+    /** Make a mesh in the room draggable (ray + pinch in VR, mouse on the desktop); onMoved after each drag. */
+    addDraggable(mesh, onMoved) { draggables.push({ mesh, onMoved }); },
   };
 }
 

@@ -9,7 +9,7 @@
 // again where someone was before is that person again, also after the robot looked elsewhere.
 
 export class FaceSpeakers {
-  constructor({ hfovDeg, windowS = 1.5, maxJump = 0.25, ttlS = 1.0, reIdDeg = 15, lostS = 4, memoryS = 900 } = {}) {
+  constructor({ hfovDeg, windowS = 1.5, maxJump = 0.25, ttlS = 1.0, reIdDeg = 25, lostS = 4, focusS = 60, focusDeg = 60, memoryS = 900 } = {}) {
     this.tanHalf = Math.tan((hfovDeg / 2) * Math.PI / 180);
     this.windowS = windowS;   // mouth movement is judged over this window
     this.maxJump = maxJump;   // max face movement between two detections (fraction of the image)
@@ -19,6 +19,8 @@ export class FaceSpeakers {
     this.reIdDeg = reIdDeg;   // same person if within this many degrees of where they were
     this.memoryS = memoryS;   // forget people not seen for this long
     this.lostS = lostS;       // someone who walked off: a lone new face within this time is still them
+    this.focusS = focusS;     // the followed person is recognised again this long after leaving the picture ...
+    this.focusDeg = focusDeg; // ... within this many degrees of where they were (Reachy looked away and back)
     this.people = [];         // [{pid, yaw (room direction, degrees), seen}]
     this.nextPid = 1;
     this.focusPid = null;     // set by the app: the person Reachy follows; kept when they move around
@@ -65,7 +67,7 @@ export class FaceSpeakers {
             if (!taken.has(p.pid) && d < this.reIdDeg && (!best || d < Math.abs(best.yaw - yaw))) best = p;
           }
         }
-        if (!best) best = this.walkedOff(t, taken);
+        if (!best) best = this.walkedOff(t, taken, yaw);
         if (!best) { best = { pid: this.nextPid++, yaw: yaw ?? 0, seen: t }; this.people.push(best); }
         tr.pid = best.pid;
         taken.add(best.pid);
@@ -81,9 +83,11 @@ export class FaceSpeakers {
    * A face shows up far from where anyone sat: if the person Reachy follows (or exactly one person) was
    * lost only seconds ago and is not in view, it is them, having walked to a new place.
    */
-  walkedOff(t, taken) {
+  walkedOff(t, taken, yaw) {
+    const focus = this.people.find((p) => p.pid === this.focusPid && !taken.has(p.pid) && p.seen < t);
+    if (focus && t - focus.seen < this.focusS && (yaw == null || Math.abs(focus.yaw - yaw) < this.focusDeg)) return focus;
     const lost = this.people.filter((p) => !taken.has(p.pid) && t - p.seen < this.lostS && p.seen < t);
-    return lost.find((p) => p.pid === this.focusPid) ?? (lost.length === 1 ? lost[0] : null);
+    return lost.length === 1 ? lost[0] : null;
   }
 
   /** Mouth movement: standard deviation of jaw opening over the window (talking ~0.05-0.2, silent ~0.01). */

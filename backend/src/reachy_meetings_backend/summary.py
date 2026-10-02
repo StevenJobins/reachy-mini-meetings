@@ -1,4 +1,4 @@
-"""Live meeting notes: summary bullets + action items, with Google Gemini (free tier, gemini-flash-lite-latest).
+"""Live meeting notes: summary bullets, action items and next steps, with Google Gemini (free tier, gemini-flash-lite-latest).
 
 Every `every_s` seconds, if new final utterances arrived, the transcript goes to Gemini's
 OpenAI-compatible endpoint and comes back as JSON. Key from aistudio.google.com in GEMINI_API_KEY.
@@ -25,14 +25,17 @@ MAX_LINES = 400  # newest utterances sent per request
 SYSTEM = (
     "You write live notes for a meeting from its speech-recognition transcript, for a remote "
     "participant. Write in the language with ISO 639-1 code '{target}'. Reply with JSON only: "
-    '{{"summary": ["short bullet", ...], "actions": [{{"who": "name or empty", "what": "task"}}, ...]}}. '
-    "At most 6 summary bullets covering the whole meeting so far, newest topics last. Actions only "
-    "for concrete tasks someone agreed to do. The transcript may contain recognition errors."
+    '{{"summary": ["short bullet", ...], "actions": [{{"who": "name or empty", "what": "task", '
+    '"when": "deadline or empty"}}, ...], "next_steps": ["short bullet", ...]}}. '
+    "At most 5 summary bullets covering the whole meeting so far, newest topics last. Actions only "
+    "for concrete tasks someone agreed to do. Next steps: at most 4 open questions, decisions still to "
+    "take or topics for the next meeting, not repeating the actions. The transcript may contain "
+    "recognition errors."
 )
 
 
 def parse_summary(text: str) -> dict | None:
-    """Model reply -> {"summary": [str], "actions": [{"who", "what"}]}, None if unusable."""
+    """Model reply -> {"summary": [str], "actions": [{"who", "what", "when"}], "next_steps": [str]}, None if unusable."""
     m = re.search(r"\{.*\}", text, re.DOTALL)  # tolerate ```json fences and chatter around the object
     if not m:
         return None
@@ -44,12 +47,14 @@ def parse_summary(text: str) -> dict | None:
     actions = []
     for a in data.get("actions") or []:
         if isinstance(a, dict) and str(a.get("what", "")).strip():
-            actions.append({"who": str(a.get("who") or "").strip(), "what": str(a["what"]).strip()})
+            actions.append({"who": str(a.get("who") or "").strip(), "what": str(a["what"]).strip(),
+                            "when": str(a.get("when") or "").strip()})
         elif isinstance(a, str) and a.strip():
-            actions.append({"who": "", "what": a.strip()})
-    if not summary and not actions:
+            actions.append({"who": "", "what": a.strip(), "when": ""})
+    next_steps = [str(s).strip() for s in data.get("next_steps") or [] if str(s).strip()]
+    if not summary and not actions and not next_steps:
         return None
-    return {"summary": summary, "actions": actions}
+    return {"summary": summary, "actions": actions, "next_steps": next_steps}
 
 
 class Summarizer:
@@ -104,5 +109,6 @@ class Summarizer:
                 log.warning("summary: unusable reply %r", reply[:200])
                 continue
             self.latest = {**notes, "t": round(time.time(), 3)}
-            log.info("summary: %d bullets, %d actions", len(notes["summary"]), len(notes["actions"]))
+            log.info("summary: %d bullets, %d actions, %d next steps",
+                     len(notes["summary"]), len(notes["actions"]), len(notes["next_steps"]))
             publish(self.latest)

@@ -11,7 +11,7 @@ Protocol (server -> headset, one JSON per message; keep in sync with xr-client):
   caption  {"id": int, "final": bool, "text": str, "lang": str, "translation": str | null,
             "target": str, "doa_deg": float | null, "azimuth_deg": float | null,
             "t_start": s, "t_end": s}
-  summary  {"summary": [str], "actions": [{"who": str, "what": str}], "t": s}
+  summary  {"summary": [str], "actions": [{"who": str, "what": str, "when": str}], "next_steps": [str], "t": s}
   vad      {"speaking": bool, "t": s}   instantly from the neural VAD (~0.1 s), long before any text:
            sent when speech starts/ends and every 0.25 s while it lasts (speaker following uses it)
   binary   the room audio itself: int16 little-endian PCM, 16 kHz mono, ~40 ms per frame. The robot's own
@@ -279,7 +279,7 @@ def cli() -> None:
     ap.add_argument("--daemon", default="http://localhost:8000",
                     help="Reachy Mini daemon for the speaker direction (DoA); '' to disable")
     ap.add_argument("--summary", choices=["gemini", "none"], default="gemini",
-                    help="live summary + action items; gemini needs GEMINI_API_KEY (free tier)")
+                    help="live summary, action items, next steps; gemini needs GEMINI_API_KEY (free tier)")
     ap.add_argument("--summary-model", default="gemini-flash-lite-latest",
                     help="has free quota for new accounts (gemini-flash-latest ran into 429)")
     ap.add_argument("--summary-every", type=float, default=60, help="seconds between summaries")

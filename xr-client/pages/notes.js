@@ -3,7 +3,7 @@
 
 import * as THREE from "three";
 
-const W = 1024, H = 1152, PANEL_W = 1.3;   // canvas px, metres
+const W = 1024, H = 1408, PANEL_W = 1.3;   // canvas px, metres
 const SIDE_DEG = 42;                       // panel direction, right of "straight ahead"
 
 function wrap(ctx, text, maxW) {
@@ -41,9 +41,16 @@ function draw(ctx, notes) {
   if (notes.actions.length) {
     y += 16;
     heading("Action items");
-    for (const a of notes.actions) item("☐", a.who ? `${a.who}: ${a.what}` : a.what);
+    for (const a of notes.actions) item("☐", actionText(a));
+  }
+  if (notes.next_steps.length) {
+    y += 16;
+    heading("Next steps");
+    for (const s of notes.next_steps) item("→", s);
   }
 }
+
+const actionText = (a) => (a.who ? `${a.who}: ${a.what}` : a.what) + (a.when ? ` (${a.when})` : "");
 
 export function createNotes({ three, recenter, distM, cardEl }) {
   const canvas = document.createElement("canvas");
@@ -73,11 +80,14 @@ export function createNotes({ three, recenter, distM, cardEl }) {
     updated.textContent = `Updated ${new Date(notes.t * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`;
     cardEl.replaceChildren(
       ...section("Summary", notes.summary),
-      ...(notes.actions.length ? section("Action items", notes.actions.map((a) => (a.who ? `${a.who}: ${a.what}` : a.what))) : []),
+      ...(notes.actions.length ? section("Action items", notes.actions.map(actionText)) : []),
+      ...(notes.next_steps.length ? section("Next steps", notes.next_steps) : []),
       updated);
   }
 
+  let movedByUser = false;   // once dragged, the panel stays where the user put it
   function layout() {
+    if (movedByUser) return;
     const yaw = new THREE.Euler().setFromQuaternion(
       new THREE.Quaternion(recenter.q0.x, recenter.q0.y, recenter.q0.z, recenter.q0.w), "YXZ").y;
     const a = yaw - SIDE_DEG * Math.PI / 180, d = distM * 0.8, y = 0.1;
@@ -88,9 +98,12 @@ export function createNotes({ three, recenter, distM, cardEl }) {
   render();
   layout();
   return {
-    update(msg) { notes = { summary: msg.summary ?? [], actions: msg.actions ?? [], t: msg.t }; render(); },
+    update(msg) { notes = { summary: msg.summary ?? [], actions: msg.actions ?? [], next_steps: msg.next_steps ?? [], t: msg.t }; render(); },
     layout,
     get visible() { return panel.visible; },
     toggle() { panel.visible = !panel.visible; layout(); return panel.visible; },
+    /** The VR panel, for the scene to make it draggable. */
+    panel,
+    moved() { movedByUser = true; },
   };
 }

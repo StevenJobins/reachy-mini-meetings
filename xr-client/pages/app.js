@@ -316,6 +316,7 @@ const scene = createScene({
     send(mirror.step(raw, dt), now / 1000);
   },
   // Head-locked buttons in VR: point (controller ray / hand pinch) and select. Select elsewhere = recenter.
+  windowMode: params.get("window") === "robot" ? "robot" : "head",   // video window follows your head
   vrButtons: [
     { kind: "mic", muted: () => mic.muted || status.mic !== "on", label: () => (mic.muted ? "Muted" : status.mic === "on" ? "Mic on" : "Mic off"), onClick: toggleMic },
     { icon: "🙋", label: "Talk", onClick: wantToTalk },
@@ -464,6 +465,7 @@ const faces = createFaces({
   log,
 });
 notes = createNotes({ three: scene.three, recenter, distM: cfg.distM, cardEl: $("notes") });
+scene.addDraggable(notes.panel, () => notes.moved());   // grab the notes and put them where you like
 captions = createCaptions({
   three: scene.three,
   distM: cfg.distM,

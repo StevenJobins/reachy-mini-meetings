@@ -81,9 +81,9 @@ A **fixed beam straight ahead** was tried and dropped: in an A/B test with a fix
 
 Direct USB (`micarray.py`, `pyusb` + `libusb-package`) because the daemon's `/api/audio/config/apply` cannot write integer parameters: values arrive as floats and `struct.pack("i", 1.0)` fails (reachy_mini 1.11). On Windows USB access may need a driver; then a warning and the defaults stay.
 
-### Meeting notes (summary + action items)
+### Meeting notes (summary, action items, next steps)
 
-Every 45–60 s (`--summary-every`), if something new was said, the transcript goes to **Google Gemini** (free tier, `gemini-flash-lite-latest`; `gemini-flash-latest` ran out of free quota) and comes back as summary bullets + action items, in the target language. It takes ~10 s and runs in the background.
+Every 45–60 s (`--summary-every`), if something new was said, the transcript goes to **Google Gemini** (free tier, `gemini-flash-lite-latest`; `gemini-flash-latest` ran out of free quota) and comes back as summary bullets, action items (who, what, by when) and next steps (open questions, decisions still to take), in the target language. It takes ~10 s and runs in the background.
 
 Key from https://aistudio.google.com/apikey → `export GEMINI_API_KEY="..."` (macOS/Linux, e.g. in `~/.zshrc`) or `setx GEMINI_API_KEY "..."` (Windows). Without a key the captions run as before, just without notes. Note: on the free tier Google may use the content to improve its products — fine for the course project, not for confidential meetings.
 

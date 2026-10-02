@@ -99,15 +99,18 @@ def test_tracker_window_speech_flag_and_head_yaw():
 
 # ---------------------------------------------------------------- summary
 def test_parse_summary_plain_and_fenced():
-    raw = '{"summary": ["Budget first"], "actions": [{"who": "Lisa", "what": "show prototype"}]}'
-    want = {"summary": ["Budget first"], "actions": [{"who": "Lisa", "what": "show prototype"}]}
+    raw = ('{"summary": ["Budget first"], "actions": [{"who": "Lisa", "what": "show prototype", "when": "Friday"}], '
+           '"next_steps": ["Decide on the venue"]}')
+    want = {"summary": ["Budget first"], "actions": [{"who": "Lisa", "what": "show prototype", "when": "Friday"}],
+            "next_steps": ["Decide on the venue"]}
     assert parse_summary(raw) == want
     assert parse_summary("Here you go:\n```json\n" + raw + "\n```") == want
 
 
 def test_parse_summary_tolerates_shapes_and_rejects_garbage():
     assert parse_summary('{"summary": [], "actions": ["call Bob", ""]}') == {
-        "summary": [], "actions": [{"who": "", "what": "call Bob"}]}
+        "summary": [], "actions": [{"who": "", "what": "call Bob", "when": ""}], "next_steps": []}
+    assert parse_summary('{"next_steps": ["pick a date"]}') == {"summary": [], "actions": [], "next_steps": ["pick a date"]}
     assert parse_summary("no json here") is None
     assert parse_summary('{"summary": [') is None
     assert parse_summary('{"summary": [], "actions": []}') is None
