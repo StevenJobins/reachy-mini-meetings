@@ -144,7 +144,8 @@ const talk = new WantToTalk();
 
 // Speaker following is always on: the robot slowly turns to whoever speaks (DoA), and the headset
 // rotation is added ON TOP of that base, so you can always look elsewhere. Straight ahead = the speaker.
-const speaker = new SpeakerTracker();
+// 5 agreeing mic readings within 1 s for a new direction (3 in 0.6 s let single reflections turn the head)
+const speaker = new SpeakerTracker({ confirmN: 5, confirmWindowS: 1.0 });
 let talkCenter = null;   // while waving: turn to the center of all recent speakers (turn_to_speaker.py)
 
 /** Smooth base yaw for this tick (degrees, robot frame). */
@@ -277,8 +278,9 @@ const robot = createRobot({
   onMeasuredHead: (roll, pitch, yaw) => {
     status.meas = [roll, pitch, yaw];
     speaker.pushHeadYaw(performance.now() / 1000, yaw);
-    // The VR room turns with the base: the window shows where the robot looks RELATIVE to the speaker.
-    scene.setRobotHead(recenter.toWorld(robotToHeadset(roll, pitch, yaw - speaker.base)));
+    // The VR room turns with the base (speaker yaw + framing pitch): the window shows where the robot looks
+    // RELATIVE to the speaker, so it stays centred in front of you while Reachy frames a face.
+    scene.setRobotHead(recenter.toWorld(robotToHeadset(roll, pitch - basePitch, yaw - speaker.base)));
   },
   onDoa: (angle, speech) => {
     status.doa = `${(90 - angle * 180 / Math.PI).toFixed(0)}° ${speech ? "SPEECH" : "quiet"}`;   // relative to the head, + = left
@@ -337,9 +339,22 @@ let doaPushedUntil = 0;
 /** Feed the buffered mic directions since `fromS` into the speaker tracker (each reading once, in order). */
 function flushDoa(fromS) {
   // speech = true: the backend confirmed speech for this time span; the mic array's own speech flag is
-  // false most of the time (measured: 8 of 8 readings while someone talked), the angle is still good
-  for (const [t, a] of doaBuf) if (t > doaPushedUntil && t >= fromS) speaker.pushDoa(t, a, true);
+  // false most of the time (measured: 8 of 8 readings while someone talked), the angle is still good.
+  // While the followed person is in the picture, the mic direction (±10-20°, plus wall reflections) only
+  // counts when it points clearly outside the picture: someone out of view speaks. Inside the picture the
+  // face (and mouth movement) is far more precise; letting both steer made the head twitch and turn away.
+  const inView = focusInView();
+  for (const [t, a] of doaBuf) {
+    if (t <= doaPushedUntil || t < fromS) continue;
+    if (inView && Math.abs(90 - a * 180 / Math.PI) < hfovDeg / 2 + 10) continue;
+    speaker.pushDoa(t, a, true);
+  }
   doaPushedUntil = performance.now() / 1000;
+}
+
+/** The person Reachy follows is in the picture right now (seen within the last 0.5 s). */
+function focusInView() {
+  return focusPid != null && faceSpeakers.tracks.some((t) => t.pid === focusPid && (faceSpeakers.lastT ?? 0) - t.seen < 0.5);
 }
 // Instant "someone is speaking" from the backend's neural VAD (~0.1 s after the first word, no text yet):
 // the mic directions count right away, and the speaking face in view becomes the focus person.
