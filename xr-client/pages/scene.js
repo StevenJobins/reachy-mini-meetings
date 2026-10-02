@@ -10,6 +10,7 @@ import { createVideoSource } from "./videosource.js";
 export function createScene({ video, vfovDeg, distM, statusText, onHeadsetPose, onSelect, onEnd, vrButtons = [], log = console.log }) {
   const renderer = new THREE.WebGLRenderer({ antialias: true });
   renderer.xr.enabled = true;
+  renderer.domElement.addEventListener("webglcontextlost", () => log("ERROR webgl context lost (GPU crash / out of memory)"));
   renderer.xr.setReferenceSpaceType("local");
   const scene = new THREE.Scene();
   scene.background = new THREE.Color(0x101014);
@@ -182,11 +183,15 @@ export function createScene({ video, vfovDeg, distM, statusText, onHeadsetPose, 
 
     /** Must be called from a user gesture (button tap). */
     async enterVR() {
+      log("entering VR, video mode", source.mode);
       const session = await navigator.xr.requestSession("immersive-vr", { optionalFeatures: ["local"] });
       session.addEventListener("select", handleSelect);   // pinch / trigger: button under the ray, else recenter
       session.addEventListener("end", onEnd);
       await renderer.xr.setSession(session);
     },
+
+    /** One line about the camera path (for the heartbeat log). */
+    videoStats() { return source.stats(); },
 
     /** Switch how camera frames reach the VR window (track -> canvas -> direct). Returns the new mode. */
     cycleVideo() { return source.cycle(); },

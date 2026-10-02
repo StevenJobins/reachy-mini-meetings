@@ -61,6 +61,8 @@ URL: https://stevenjobins.github.io/reachy-mini-meetings/. It is deployed by `.g
    - **VR buttons** (head-locked, two rows below the view): *I want to talk*, *Unmute/Mute robot*, *Recenter*, *Switch video*, *Exit VR*. Point at them with the controller or hand ray and pinch / pull the trigger. Pinching anywhere else recenters.
    - **I want to talk** (also on the page): the right antenna waves and the body swings ±27° for 3 s, like `robot/turn_to_speaker.py`. The head keeps following you.
    - If no camera frame arrives, the video window says *No camera image yet*. Then check the camera permission on the robot Mac.
+   - **Crash diagnosis:** the log is also kept in `localStorage` (heartbeat every 5 s: heap, video, connection; plus VR end, WebGL context loss, errors). After a crash, reload and open *Debug → Previous session log*.
+   - In `track` mode a watchdog bridges missing track frames with the `<video>` element after 1 s and restarts the frame reader after 3 s.
    - *Switch video* cycles how camera frames reach the VR window (`track` → `canvas` → `direct`, remembered per device). The last HUD line shows the mode and frame rates. Background in `videosource.js`: the old path uploaded the `<video>` as a plain texture whose GPU storage was fixed at the first (small, black) WebRTC frame, so VR stayed black while the page video worked.
 6. Tap **Sleep** to send Reachy back to its sleep pose: motors off, camera and microphone off.
 

@@ -25,11 +25,32 @@ const cfg = {
 const $ = (id) => document.getElementById(id);
 const video = $("video");
 
+// The log also goes to localStorage, so it survives a crashed tab: after a reload the Debug panel
+// shows how the previous session ended (crash diagnosis on the headset without a cable).
+const LOG_KEY = "reachy-xr-log", PREV_KEY = "reachy-xr-log-previous";
+let logLines = [], logDirty = false;
+try {
+  const prev = localStorage.getItem(LOG_KEY);
+  if (prev) localStorage.setItem(PREV_KEY, prev);
+  localStorage.removeItem(LOG_KEY);
+  $("prev-log").textContent = localStorage.getItem(PREV_KEY) ?? "(none)";
+} catch {}
+setInterval(() => {
+  if (!logDirty) return;
+  logDirty = false;
+  try { localStorage.setItem(LOG_KEY, logLines.join("\n")); } catch {}
+}, 2000);
+
 function log(...a) {
-  const line = `${(performance.now() / 1000).toFixed(1)} ${a.join(" ")}`;
+  const line = `${new Date().toLocaleTimeString()} ${a.join(" ")}`;
   console.log(line);
   $("log").textContent = (line + "\n" + $("log").textContent).slice(0, 6000);
+  logLines.push(line);
+  if (logLines.length > 300) logLines = logLines.slice(-300);
+  logDirty = true;
 }
+addEventListener("error", (e) => log("ERROR", e.message, `${e.filename}:${e.lineno}`));
+addEventListener("unhandledrejection", (e) => log("UNHANDLED", e.reason?.message ?? e.reason));
 
 // ---------------------------------------------------------------- status
 const status = { user: "-", robot: "-", motors: "-", ice: "-", video: "-", xr: "off", send: 0, cmd: [0, 0, 0], body: 0, meas: [0, 0, 0], captions: "-", sound: "muted" };
@@ -43,6 +64,13 @@ function statusText() {
     `meas r/p/y ${f(status.meas)}   captions ${status.captions}   robot sound ${status.sound}`,
   ].join("\n");
 }
+// Heartbeat every 5 s: if the page dies, the last lines show memory, video and connection state.
+setInterval(() => {
+  const mem = performance.memory ? `heap ${(performance.memory.usedJSHeapSize / 1e6).toFixed(0)} MB` : "heap ?";
+  log("alive", mem, `xr ${status.xr}`, `robot ${status.robot}`, `ice ${status.ice}`, `motors ${status.motors}`,
+    `send ${status.send} Hz`, scene.videoStats());
+}, 5000);
+document.addEventListener("visibilitychange", () => log("page", document.visibilityState));
 setInterval(() => { $("debug-text").textContent = `user ${status.user}   xr ${status.xr}\n` + statusText(); }, 200);
 
 function show(state, message) {
@@ -104,7 +132,10 @@ setInterval(() => {
 const robot = createRobot({
   clientId: HF_CLIENT_ID,
   log,
-  onStatus: (s) => Object.assign(status, s),
+  onStatus: (s) => {
+    for (const k of ["robot", "ice", "motors"]) if (k in s && s[k] !== status[k]) log(k, "->", s[k]);
+    Object.assign(status, s);
+  },
   onMeasuredHead: (roll, pitch, yaw) => {
     status.meas = [roll, pitch, yaw];
     scene.setRobotHead(recenter.toWorld(robotToHeadset(roll, pitch, yaw)));
@@ -133,7 +164,7 @@ const scene = createScene({
   ],
   log,
   onSelect: () => { wantRecenter = true; },
-  onEnd: () => { status.xr = "off"; show("awake", "Reachy is awake. Tap Start to look around again, or Sleep."); },
+  onEnd: () => { log("VR session ended"); status.xr = "off"; show("awake", "Reachy is awake. Tap Start to look around again, or Sleep."); },
 });
 
 const captions = createCaptions({

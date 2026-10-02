@@ -25,6 +25,7 @@ export function createVideoSource(video, log) {
   const ctx = canvas.getContext("2d", { alpha: false });
 
   let reader = null, trackId = null, latest = null, fresh = false, hasFrame = false;
+  let lastTrackFrame = 0, restarts = 0, usingFallback = false;
   let received = 0, drawn = 0, rxFps = 0, drawFps = 0, size = "-";
   setInterval(() => { rxFps = received; drawFps = drawn; received = drawn = 0; }, 1000);
 
@@ -37,6 +38,7 @@ export function createVideoSource(video, log) {
 
   async function readTrack(track) {
     trackId = track.id;
+    lastTrackFrame = performance.now();
     const clone = track.clone();   // own sink, does not disturb the page <video>
     const r = new MediaStreamTrackProcessor({ track: clone }).readable.getReader();
     reader = r;
@@ -46,7 +48,7 @@ export function createVideoSource(video, log) {
         const { value, done } = await r.read();
         if (done || reader !== r) { value?.close(); break; }
         latest?.close();
-        latest = value; fresh = true; received++;
+        latest = value; fresh = true; received++; lastTrackFrame = performance.now();
       }
     } catch (e) {
       log("video track reader:", e?.message ?? e);
@@ -84,9 +86,25 @@ export function createVideoSource(video, log) {
       if (mode === "track") {
         const track = video.srcObject?.getVideoTracks?.()[0];
         if (track && track.readyState === "live" && track.id !== trackId) { stopTrack(); readTrack(track); }
-        if (!fresh || !latest) return false;
-        fresh = false;
-        return draw(latest, latest.displayWidth, latest.displayHeight);
+        if (fresh && latest) {
+          fresh = false;
+          usingFallback = false;
+          return draw(latest, latest.displayWidth, latest.displayHeight);
+        }
+        // Watchdog: a reader can stall without an error (e.g. after a crash or reconnect). Bridge the gap
+        // with the <video> element, and restart the reader after 3 s without a frame.
+        const silentMs = performance.now() - lastTrackFrame;
+        if (trackId && silentMs > 3000) {
+          restarts++;
+          log("video: no frame from track for 3 s, restarting reader");
+          stopTrack();   // trackId = null -> next update() starts a new reader
+          lastTrackFrame = performance.now();
+        }
+        if (silentMs > 1000 && video.readyState >= video.HAVE_CURRENT_DATA && video.videoWidth) {
+          usingFallback = true;
+          return draw(video, video.videoWidth, video.videoHeight);
+        }
+        return false;
       }
       if (mode === "canvas") {
         if (video.readyState < video.HAVE_CURRENT_DATA || !video.videoWidth) return false;
@@ -99,7 +117,7 @@ export function createVideoSource(video, log) {
 
     /** One status line for the HUD. */
     stats() {
-      const rx = mode === "track" ? `rx ${rxFps} fps  ` : "";
+      const rx = mode === "track" ? `rx ${rxFps} fps${usingFallback ? " (fallback <video>)" : ""}${restarts ? ` restarts ${restarts}` : ""}  ` : "";
       const tex = mode === "direct" ? "tex <video>" : `tex ${drawFps} fps`;
       return `video mode ${mode}   ${rx}${tex}   src ${size}`;
     },
