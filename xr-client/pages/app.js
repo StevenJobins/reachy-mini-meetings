@@ -403,20 +403,27 @@ function frameFocus() {
     return;
   }
   const t = faceSpeakers.lastT;
-  const yawNow = headYawAt(t) + faceSpeakers.angleDeg(tr);   // where the face is in the room
+  const offX = faceSpeakers.angleDeg(tr);                     // face left/right of the image centre (deg)
+  const yawNow = headYawAt(t) + offX;                         // where the face is in the room
   // Lead a moving person: the target only updates ~8x/s and the motion limiter brakes at every target, so
-  // without a lead Reachy lags behind and the face drifts off-centre. Room speed of the face (smoothed)
-  // x 0.3 s ahead, at most 15°.
+  // without a lead Reachy lags behind a walking person. Room speed of the face, smoothed; detections jitter
+  // by a few percent, so below 8 °/s it counts as standing still (no lead, no jitter).
   if (focusLast?.pid === focusPid && t > focusLast.t && t - focusLast.t < 0.5) {
-    focusVel += 0.4 * ((yawNow - focusLast.yaw) / (t - focusLast.t) - focusVel);
+    focusVel += 0.25 * ((yawNow - focusLast.yaw) / (t - focusLast.t) - focusVel);
   } else focusVel = 0;
   focusLast = { pid: focusPid, top: tr.top, bottom: tr.top + tr.h, t, yaw: yawNow };
-  const lead = Math.max(-15, Math.min(15, focusVel * 0.3));
-  const yaw = Math.max(-150, Math.min(150, yawNow + lead));
-  if (Math.abs(yaw - speaker.target) > 2) speaker.target = yaw;   // small deadband: no jitter
+  const moving = Math.abs(focusVel) > 8;
+  // Dead zone around the framing point: a face that is already well placed does not move the head at all.
+  if (moving || Math.abs(offX) > 4) {
+    const lead = moving ? Math.max(-15, Math.min(15, focusVel * 0.3)) : 0;
+    const yaw = Math.max(-150, Math.min(150, yawNow + lead));
+    if (Math.abs(yaw - speaker.target) > 2) speaker.target = yaw;
+  }
   const up = Math.atan((0.5 - tr.cy) * 2 * tanV) * 180 / Math.PI;   // face above the image centre (deg)
-  const pitch = status.meas[1] - (up - FRAME_UP);                   // pitch + = look down
-  if (Math.abs(pitch - targetPitch) > 2) targetPitch = Math.max(-PITCH_UP, Math.min(PITCH_DOWN, pitch));
+  if (Math.abs(up - FRAME_UP) > 3) {
+    const pitch = status.meas[1] - (up - FRAME_UP);                 // pitch + = look down
+    targetPitch = Math.max(-PITCH_UP, Math.min(PITCH_DOWN, pitch));
+  }
 }
 const faces = createFaces({
   getSource: () => (awake ? scene.videoFrame() : null),
