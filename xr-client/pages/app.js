@@ -121,7 +121,6 @@ function stepBase(dt, nowS) {
   if (!talk.active(nowS)) talkCenter = null;
   speaker.override = talkCenter ?? frozenBase;
   const base = speaker.step(dt);
-  captions?.setYawOffset(base);
   return base;
 }
 
@@ -185,7 +184,7 @@ const scene = createScene({
   distM: cfg.distM,
   statusText,
   onHeadsetPose: (q, now) => {
-    if (wantRecenter) { recenter.set(q); wantRecenter = false; captions.layout(); notes.layout(); log("recentered"); }
+    if (wantRecenter) { recenter.set(q); wantRecenter = false; notes.layout(); log("recentered"); }
     if (!awake || status.xr === "off" || !robot.connected || now - lastSend < 1000 / cfg.sendHz) return;
     const dt = (now - lastSend) / 1000;
     lastSend = now;
@@ -221,7 +220,6 @@ const faces = createFaces({
 notes = createNotes({ three: scene.three, recenter, distM: cfg.distM, cardEl: $("notes") });
 captions = createCaptions({
   three: scene.three,
-  recenter,
   distM: cfg.distM,
   vfovDeg: cfg.vfovDeg,
   speakers: faceSpeakers,
@@ -235,6 +233,8 @@ $("captions-url").value = captionsUrl();
 $("captions-url").onchange = (e) => { setCaptionsUrl(e.target.value.trim()); captions.reconnect(); };
 $("caption-mode").value = captions.mode;
 $("caption-mode").onchange = (e) => captions.setMode(e.target.value);
+$("show-faces").checked = captions.showFaces;
+$("show-faces").onchange = (e) => { captions.showFaces = e.target.checked; };
 
 // Status chips in the page header.
 setInterval(() => {

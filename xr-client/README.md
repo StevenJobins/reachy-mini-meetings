@@ -81,7 +81,7 @@ Wake up and Start are taps because browsers allow unmuted audio and entering VR 
 | `pose.js` | Headset ↔ robot maths, recenter, `HeadMirror` (EMA, limits, body follow — same values as `robot/`) | nothing (pure, portable) |
 | `robot.js` | Sign-in (silent first), auto-connect, video, `setHead()`, measured head pose | Pollen SDK |
 | `scene.js` | WebXR rendering: video window at the measured robot head pose, floor grid, status panel | three.js |
-| `captions.js` | Speech bubbles from `backend/` captions: above the speaker's face (else in the speaker direction, else subtitle), one per speaker; mode translation+original / translation / original | three.js |
+| `captions.js` | Speech bubbles from `backend/` captions: above the speaker's face, else subtitle in the video window (never elsewhere in the room), one per speaker; mode translation+original / translation / original; thin frame around detected faces (Settings) | three.js |
 | `faces.js`, `faces-worker.js` | Face boxes + mouth openness in the camera image (MediaPipe FaceLandmarker in a Web Worker, 640×360, 8 Hz) | DOM + media only |
 | `speakers.js` | Which face is speaking: face tracks + mouth movement + DoA (`FaceSpeakers`) | nothing (pure, portable) |
 | `notes.js` | Meeting notes (summary + action items from `backend/`): VR panel right of the video, card on the page | three.js |

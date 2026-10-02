@@ -1,11 +1,10 @@
 // Speech bubbles: live captions from backend/ (`reachy-captions`, WebSocket port 8766), shown in VR
 // and on the page. Protocol: backend/README.md. Same id = update (partial -> final -> + translation).
 //
-// Placement, in this order:
-//   1. above the speaker's face in the video window (faces.js + speakers.js pick the face; the bubble
-//      follows it every frame and points at the head),
-//   2. in the room in the speaker direction (azimuth_deg, robot base frame, + = left),
-//   3. as a subtitle at the bottom of the video window.
+// Placement: above the speaker's face in the video window (faces.js + speakers.js pick the face; the
+// bubble follows it every frame and points at the head), else as a subtitle at the bottom of the video
+// window. Never somewhere else in the room: the mic direction alone is too unreliable for that, and a
+// bubble outside the field of view is a missed bubble. Detected faces get a thin frame (toggleable).
 //
 // The page is served over https, so Chrome only allows ws://localhost (headset: adb reverse tcp:8766 tcp:8766).
 // Wireless: expose the caption server over wss (e.g. cloudflared) and paste the URL in Settings.
@@ -14,6 +13,7 @@ import * as THREE from "three";
 
 const URL_KEY = "reachy-xr-captions-url";
 const MODE_KEY = "reachy-xr-caption-mode";
+const FACES_KEY = "reachy-xr-show-faces";
 const DEFAULT_URL = "ws://localhost:8766";
 export const MODES = ["both", "translation", "original"];
 const SHOW_S = 8;           // a final bubble stays this long after its last update
@@ -87,9 +87,7 @@ function draw(ctx, b, mode) {
   for (const l of subLines) { ctx.fillText(l, x, y); y += 40; }
 }
 
-export function createCaptions({ three, recenter, distM, vfovDeg, speakers, listEl, overlayEl, onSummary, log, onStatus }) {
-  const room = new THREE.Group();           // bubbles with a speaker direction
-  three.scene.add(room);
+export function createCaptions({ three, distM, vfovDeg, speakers, listEl, overlayEl, onSummary, log, onStatus }) {
   const bubbles = new Map();                // id -> { msg, mesh, ctx, tex, until, trackId, color, label, onFace, target }
   const screenH = 2 * distM * Math.tan(vfovDeg / 2 * Math.PI / 180);
   const screenW = screenH * 16 / 9;
@@ -133,8 +131,6 @@ export function createCaptions({ three, recenter, distM, vfovDeg, speakers, list
   }
 
   function layout() {
-    const recenterYaw = new THREE.Euler().setFromQuaternion(
-      new THREE.Quaternion(recenter.q0.x, recenter.q0.y, recenter.q0.z, recenter.q0.w), "YXZ").y;
     const newestFirst = [...bubbles.values()].sort((a, b) => b.msg.id - a.msg.id);
     let subtitles = 0;
     newestFirst.forEach((b, i) => {
@@ -154,25 +150,38 @@ export function createCaptions({ three, recenter, distM, vfovDeg, speakers, list
       }
       b.onFace = false;
       b.target = null;
-      const az = b.msg.azimuth_deg;
-      if (az == null) {
-        three.robotView.add(b.mesh);   // subtitle: bottom of the video window, older ones stacked above
-        b.mesh.position.set(0, -screenH / 2 + planeH / 2 + 0.05 + subtitles++ * planeH, -distM + 0.05);
-        b.mesh.rotation.set(0, 0, 0);
-      } else {
-        const stack = newestFirst.slice(0, i).filter((o) => !o.onFace && o.msg.azimuth_deg != null &&
-          Math.abs(o.msg.azimuth_deg - az) < 25).length;
-        const a = recenterYaw + az * Math.PI / 180, d = distM * 0.9, y = 0.4 + stack * planeH;
-        room.add(b.mesh);
-        b.mesh.position.set(-Math.sin(a) * d, y, -Math.cos(a) * d);
-        b.mesh.lookAt(0, y, 0);
-      }
+      three.robotView.add(b.mesh);   // subtitle: bottom of the video window
+      b.mesh.position.set(0, -screenH / 2 + planeH / 2 + 0.05 + subtitles++ * planeH, -distM + 0.05);
+      b.mesh.rotation.set(0, 0, 0);
+    });
+  }
+
+  // Detected faces: thin frame in the speaker colour, so you can see who is recognised.
+  const boxes = [];
+  let showFaces = load(FACES_KEY, "on") === "on";
+  function updateBoxes() {
+    const tracks = showFaces ? speakers.tracks : [];
+    while (boxes.length < tracks.length) {
+      const box = new THREE.LineSegments(new THREE.EdgesGeometry(new THREE.PlaneGeometry(1, 1)),
+        new THREE.LineBasicMaterial({ transparent: true, opacity: 0.85, depthTest: false }));
+      box.renderOrder = 9;
+      three.robotView.add(box);
+      boxes.push(box);
+    }
+    boxes.forEach((box, i) => {
+      const tr = tracks[i];
+      box.visible = !!tr;
+      if (!tr) return;
+      box.position.set((tr.cx - 0.5) * screenW, (0.5 - tr.cy) * screenH, -distM + 0.04);
+      box.scale.set(tr.w * screenW, tr.h * screenH, 1);
+      box.material.color.set(COLORS[(tr.id - 1) % COLORS.length]);
     });
   }
 
   /** Every frame: face bubbles glide after their face. */
   function follow() {
     if (!speakers) return;
+    updateBoxes();
     for (const b of bubbles.values()) {
       if (b.trackId == null || !b.target) continue;
       let tr = speakers.get(b.trackId);
@@ -268,8 +277,6 @@ export function createCaptions({ three, recenter, distM, vfovDeg, speakers, list
   return {
     /** Reconnect, e.g. after the URL changed. */
     reconnect() { if (ws) { ws.onclose = null; ws.close(); } connect(); },
-    /** After recenter: re-place the room bubbles. */
-    layout,
     follow,
     get mode() { return mode; },
     setMode(m) {
@@ -280,7 +287,7 @@ export function createCaptions({ three, recenter, distM, vfovDeg, speakers, list
       renderPage();
     },
     cycleMode() { this.setMode(MODES[(MODES.indexOf(mode) + 1) % MODES.length]); return mode; },
-    /** The VR room is turned by the speaker-following base yaw (degrees, + = left): turn the bubbles along. */
-    setYawOffset(deg) { room.rotation.y = -deg * Math.PI / 180; },
+    get showFaces() { return showFaces; },
+    set showFaces(on) { showFaces = on; save(FACES_KEY, on ? "on" : "off"); },
   };
 }

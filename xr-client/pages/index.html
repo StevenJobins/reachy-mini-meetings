@@ -92,6 +92,7 @@
   details.card > summary::before { content: "⚙  "; }
   .settings-body { display: grid; gap: 12px; margin-top: 12px; font-size: 14px; }
   .settings-body label { display: grid; gap: 4px; color: var(--muted); }
+  .settings-body label.check { display: flex; align-items: center; gap: 8px; }
   .settings-body .row { display: flex; gap: 8px; flex-wrap: wrap; }
   .settings-body button { border: 1px solid var(--line); background: rgba(255,255,255,0.06); border-radius: 10px; padding: 6px 12px; cursor: pointer; }
   #debug-text, #log, #prev-log { font: 12px ui-monospace, monospace; white-space: pre-wrap; overflow-wrap: anywhere; }
@@ -154,6 +155,7 @@
       <summary>Settings &amp; debug</summary>
       <div class="settings-body">
         <label>Caption server <input id="captions-url" placeholder="ws://localhost:8766"></label>
+        <label class="check"><input type="checkbox" id="show-faces"> Show detected faces (frame in the video)</label>
         <div class="row">
           <button id="recenter">Recenter</button>
           <button id="signout">Sign out</button>

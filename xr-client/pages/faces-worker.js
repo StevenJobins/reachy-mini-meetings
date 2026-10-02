@@ -14,6 +14,8 @@ let landmarker = null;
     const options = (delegate) => ({
       baseOptions: { modelAssetPath: MODEL, delegate },
       runningMode: "VIDEO", numFaces: 4, outputFaceBlendshapes: true,
+      // lower than the 0.5 defaults: people close to the robot are often cut off at the image edge
+      minFaceDetectionConfidence: 0.3, minFacePresenceConfidence: 0.3, minTrackingConfidence: 0.3,
     });
     landmarker = await FaceLandmarker.createFromOptions(files, options("GPU"))
       .catch(() => FaceLandmarker.createFromOptions(files, options("CPU")));
