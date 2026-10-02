@@ -70,6 +70,9 @@ export function createRobot({ clientId, onStatus, onMeasuredHead, log }) {
 
     get connected() { return streaming; },
 
+    /** Robot microphone on/off (the audio track of the video element). Turn on inside a user gesture. */
+    setAudio(on) { reachy.setAudioMuted(!on); },
+
     /** Wake the robot (plays the wake-up motion, motors on). Resolves when it is ready for head targets. */
     async wake() {
       onStatus({ motors: "waking" });
