@@ -92,10 +92,14 @@ export function createRobot({ clientId, onStatus, onMeasuredHead, log }) {
       }
     },
 
-    /** Head target in degrees (robot frame) + body yaw in degrees. Returns true if queued. */
-    setHead({ roll, pitch, yaw, bodyYaw }) {
+    /** Head target in degrees (robot frame), body yaw and antennas [right, left] in degrees. Returns true if queued. */
+    setHead({ roll, pitch, yaw, bodyYaw, antennas = [0, 0] }) {
       if (!streaming) return false;
-      return reachy.setTarget({ head: rpyToMatrix(roll, pitch, yaw).flat(), body_yaw: bodyYaw / DEG });
+      return reachy.setTarget({
+        head: rpyToMatrix(roll, pitch, yaw).flat(),
+        antennas: antennas.map((a) => a / DEG),   // SDK order: [right, left]
+        body_yaw: bodyYaw / DEG,
+      });
     },
   };
 }

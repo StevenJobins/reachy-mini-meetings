@@ -8,6 +8,7 @@
 import { createRobot } from "./robot.js";
 import { createScene } from "./scene.js";
 import { HeadMirror, Recenter, headsetToRobot, robotToHeadset } from "./pose.js";
+import { WantToTalk } from "./gestures.js";
 import { captionsUrl, createCaptions, setCaptionsUrl } from "./captions.js";
 
 // HF OAuth app (huggingface.co/settings/applications), redirect URL = this page's URL.
@@ -49,6 +50,7 @@ function show(state, message) {
   $("wake").hidden = state !== "asleep";
   $("start").hidden = state !== "awake";
   $("sleep").hidden = state !== "awake";
+  $("talk").hidden = state !== "awake";
   $("signin").hidden = state !== "signed-out";
   $("retry").hidden = state !== "failed";
 }
@@ -59,6 +61,34 @@ let mirror = new HeadMirror({ smoothing: cfg.smoothing });
 let awake = false;   // head targets only once the wake-up motion is done, so they don't fight it
 let wantRecenter = true;
 let lastSend = 0;
+const talk = new WantToTalk();
+let last = { roll: 0, pitch: 0, yaw: 0, bodyYaw: 0 };   // last mirrored pose, the gesture is layered on it
+
+/** Mirrored pose + "I want to talk" gesture -> robot. Body swing stays inside the head/body window. */
+function send(t, nowS) {
+  last = t;
+  const g = talk.step(nowS);
+  const bodyYaw = Math.max(t.yaw - 60, Math.min(t.yaw + 60, t.bodyYaw + g.bodyOffset));
+  if (robot.setHead({ ...t, bodyYaw, antennas: g.antennas })) sentCount++;
+  status.cmd = [t.roll, t.pitch, t.yaw];
+  status.body = bodyYaw;
+}
+
+function wantToTalk() {
+  if (!awake) return;
+  talk.trigger(performance.now() / 1000);
+  log("I want to talk");
+}
+
+// Outside VR nothing else sends targets: play the gesture from here (and send one rest pose after it).
+let talkWasActive = false;
+setInterval(() => {
+  if (!awake || status.xr === "on" || !robot.connected) return;
+  const nowS = performance.now() / 1000;
+  const active = talk.active(nowS);
+  if (active || talkWasActive) send(last, nowS);
+  talkWasActive = active;
+}, 1000 / 50);
 
 const robot = createRobot({
   clientId: HF_CLIENT_ID,
@@ -80,11 +110,14 @@ const scene = createScene({
     if (!awake || status.xr !== "on" || !robot.connected || now - lastSend < 1000 / cfg.sendHz) return;
     const dt = (now - lastSend) / 1000;
     lastSend = now;
-    const t = mirror.step(headsetToRobot(recenter.toRelative(q)), dt);
-    if (robot.setHead(t)) sentCount++;
-    status.cmd = [t.roll, t.pitch, t.yaw];
-    status.body = t.bodyYaw;
+    send(mirror.step(headsetToRobot(recenter.toRelative(q)), dt), now / 1000);
   },
+  // Head-locked buttons in VR: point (controller ray / hand pinch) and select. Select elsewhere = recenter.
+  vrButtons: [
+    { label: "I want to talk", onClick: wantToTalk },
+    { label: "Recenter", onClick: () => { wantRecenter = true; } },
+    { label: "Exit VR", onClick: () => scene.exitVR() },
+  ],
   onSelect: () => { wantRecenter = true; },
   onEnd: () => { status.xr = "off"; show("awake", "Reachy is awake. Tap Start to look around again, or Sleep."); },
 });
@@ -143,6 +176,7 @@ $("wake").onclick = async () => {
   show("busy", "Reachy is waking up…");
   await robot.wake();
   mirror = new HeadMirror({ smoothing: cfg.smoothing });   // start from neutral, where the wake-up motion ends
+  last = { roll: 0, pitch: 0, yaw: 0, bodyYaw: 0 };
   lastSend = performance.now();
   awake = true;
   video.hidden = false;
@@ -156,6 +190,7 @@ $("sleep").onclick = async () => {
   await robot.sleep();
   show("asleep", "Reachy is asleep. Tap Wake up to start again.");
 };
+$("talk").onclick = wantToTalk;
 $("signin").onclick = () => robot.signIn();
 $("retry").onclick = connect;
 $("recenter").onclick = () => { wantRecenter = true; };

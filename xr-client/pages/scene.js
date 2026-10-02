@@ -6,7 +6,7 @@
 
 import * as THREE from "three";
 
-export function createScene({ video, vfovDeg, distM, statusText, onHeadsetPose, onSelect, onEnd }) {
+export function createScene({ video, vfovDeg, distM, statusText, onHeadsetPose, onSelect, onEnd, vrButtons = [] }) {
   const renderer = new THREE.WebGLRenderer({ antialias: true });
   renderer.xr.enabled = true;
   renderer.xr.setReferenceSpaceType("local");
@@ -26,7 +26,16 @@ export function createScene({ video, vfovDeg, distM, statusText, onHeadsetPose, 
   videoTex.minFilter = THREE.LinearFilter;
   videoTex.generateMipmaps = false;
   const screenH = 2 * distM * Math.tan(vfovDeg / 2 * Math.PI / 180);
-  const screen = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), new THREE.MeshBasicMaterial({ map: videoTex }));
+  // Shown instead of the video while no camera frame has arrived, so "black" is never ambiguous.
+  const noVideoTex = canvasTexture(1024, 576, (ctx, w, h) => {
+    ctx.fillStyle = "#1a1a1f"; ctx.fillRect(0, 0, w, h);
+    ctx.fillStyle = "#ff9500"; ctx.font = "bold 56px sans-serif"; ctx.textAlign = "center";
+    ctx.fillText("No camera image yet", w / 2, h / 2 - 30);
+    ctx.fillStyle = "#bbb"; ctx.font = "32px sans-serif";
+    ctx.fillText("Robot Mac: camera permission for the app running the daemon?", w / 2, h / 2 + 40);
+  });
+  const screenMat = new THREE.MeshBasicMaterial({ map: noVideoTex });
+  const screen = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), screenMat);
   screen.scale.set(screenH * 16 / 9, screenH, 1);
   screen.position.set(0, 0, -distM);
   video.addEventListener("resize", () => {
@@ -58,6 +67,71 @@ export function createScene({ video, vfovDeg, distM, statusText, onHeadsetPose, 
     hudTex.needsUpdate = true;
   }, 200);
 
+  // ---- head-locked VR buttons, row above the status panel
+  const buttons = vrButtons.map((b, i) => {
+    const draw = (hover) => (ctx, w, h) => {
+      ctx.fillStyle = hover ? "#ff9500" : "rgba(40,40,46,0.92)";
+      ctx.beginPath(); ctx.roundRect(4, 4, w - 8, h - 8, 28); ctx.fill();
+      ctx.fillStyle = hover ? "#000" : "#eee"; ctx.font = "bold 44px sans-serif";
+      ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.fillText(b.label, w / 2, h / 2);
+    };
+    const tex = [canvasTexture(512, 128, draw(false)), canvasTexture(512, 128, draw(true))];
+    const mesh = new THREE.Mesh(new THREE.PlaneGeometry(0.24, 0.06), new THREE.MeshBasicMaterial({ map: tex[0], transparent: true }));
+    const w = 0.26;
+    mesh.position.set((i - (vrButtons.length - 1) / 2) * w, -0.3, -1.2);
+    mesh.userData = { onClick: b.onClick, tex };
+    camera.add(mesh);
+    return mesh;
+  });
+
+  // One visible ray per input source (controller, hand, gaze+pinch), so the buttons can be aimed at.
+  const raycaster = new THREE.Raycaster();
+  const rays = [0, 1].map(() => {
+    const line = new THREE.Line(
+      new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0, 0, 0), new THREE.Vector3(0, 0, -1)]),
+      new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.6 }));
+    line.visible = false;
+    scene.add(line);
+    return line;
+  });
+  const m4 = new THREE.Matrix4();
+
+  /** Button hit by the ray of this XR pose, or null. */
+  function hitButton(rayPose) {
+    m4.fromArray(rayPose.transform.matrix);
+    raycaster.ray.origin.setFromMatrixPosition(m4);
+    raycaster.ray.direction.set(0, 0, -1).transformDirection(m4);
+    camera.updateMatrixWorld(true);
+    return raycaster.intersectObjects(buttons, false)[0] ?? null;
+  }
+
+  function updatePointers(frame) {
+    const ref = renderer.xr.getReferenceSpace();
+    let hovered = null, n = 0;
+    for (const src of frame.session.inputSources) {
+      const pose = src.targetRaySpace && frame.getPose(src.targetRaySpace, ref);
+      if (!pose || n >= rays.length) continue;
+      const hit = hitButton(pose);
+      if (hit) hovered = hit.object;
+      const ray = rays[n++];
+      ray.matrix.copy(m4); ray.matrix.decompose(ray.position, ray.quaternion, ray.scale);
+      ray.scale.z = hit ? hit.distance : 3;
+      ray.visible = true;
+    }
+    for (; n < rays.length; n++) rays[n].visible = false;
+    for (const b of buttons) {
+      const map = b.userData.tex[b === hovered ? 1 : 0];
+      if (b.material.map !== map) { b.material.map = map; b.material.needsUpdate = true; }
+    }
+  }
+
+  function handleSelect(e) {
+    const pose = e.frame.getPose(e.inputSource.targetRaySpace, renderer.xr.getReferenceSpace());
+    const hit = pose && hitButton(pose);
+    if (hit) hit.object.userData.onClick();
+    else onSelect();
+  }
+
   const target = new THREE.Quaternion();
   let haveTarget = false;
   renderer.setAnimationLoop((now, frame) => {
@@ -65,7 +139,11 @@ export function createScene({ video, vfovDeg, distM, statusText, onHeadsetPose, 
       const pose = frame.getViewerPose(renderer.xr.getReferenceSpace());
       if (pose) onHeadsetPose(pose.transform.orientation, now);
     }
-    if (video.readyState >= video.HAVE_CURRENT_DATA) videoTex.needsUpdate = true;
+    const hasVideo = video.readyState >= video.HAVE_CURRENT_DATA && video.videoWidth > 0;
+    if (hasVideo) videoTex.needsUpdate = true;
+    const map = hasVideo ? videoTex : noVideoTex;
+    if (screenMat.map !== map) { screenMat.map = map; screenMat.needsUpdate = true; }
+    if (frame) updatePointers(frame);
     if (haveTarget) robotView.quaternion.slerp(target, 0.5);   // pose stream ~30 Hz -> smooth at display rate
     renderer.render(scene, camera);
   });
@@ -78,10 +156,12 @@ export function createScene({ video, vfovDeg, distM, statusText, onHeadsetPose, 
     /** Must be called from a user gesture (button tap). */
     async enterVR() {
       const session = await navigator.xr.requestSession("immersive-vr", { optionalFeatures: ["local"] });
-      session.addEventListener("select", onSelect);   // pinch / trigger
+      session.addEventListener("select", handleSelect);   // pinch / trigger: button under the ray, else recenter
       session.addEventListener("end", onEnd);
       await renderer.xr.setSession(session);
     },
+
+    exitVR() { renderer.xr.getSession()?.end(); },
 
     /** Robot head orientation in the XR world, as {x, y, z, w}. */
     setRobotHead(q) { target.set(q.x, q.y, q.z, q.w); haveTarget = true; },
@@ -89,4 +169,13 @@ export function createScene({ video, vfovDeg, distM, statusText, onHeadsetPose, 
     /** For overlays (speech bubbles): the room, and the group that moves with the video window. */
     three: { scene, robotView },
   };
+}
+
+function canvasTexture(w, h, draw) {
+  const c = document.createElement("canvas");
+  c.width = w; c.height = h;
+  draw(c.getContext("2d"), w, h);
+  const tex = new THREE.CanvasTexture(c);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  return tex;
 }
