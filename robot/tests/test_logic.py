@@ -27,7 +27,7 @@ LIM = LimitsCfg()
 def test_default_config_loads():
     cfg = load_config()
     assert cfg.mirror.rate_hz > 0
-    assert cfg.limits.head_pitch_deg == 40
+    assert (cfg.limits.head_pitch_up_deg, cfg.limits.head_pitch_down_deg, cfg.limits.head_roll_deg) == (20, 25, 15)
 
 
 def test_config_override(tmp_path):
@@ -48,7 +48,9 @@ def test_config_rejects_typos(tmp_path):
 # ---------------------------------------------------------------- safety
 def test_clamp_pitch_roll():
     h = clamp_head(HeadTarget(roll=90, pitch=-90), body_yaw_deg=0, lim=LIM)
-    assert h.roll == 40 and h.pitch == -40
+    assert h.roll == 15 and h.pitch == -20   # looking up (ceiling) stops at 20°
+    h = clamp_head(HeadTarget(roll=-90, pitch=90), body_yaw_deg=0, lim=LIM)
+    assert h.roll == -15 and h.pitch == 25   # looking down (table) stops at 25°
 
 
 def test_head_body_delta():

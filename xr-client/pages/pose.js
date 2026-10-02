@@ -80,7 +80,10 @@ export class RateLimiter {
 export class HeadMirror {
   constructor({
     smoothing = 0.35,
-    limits = { roll: 40, pitch: 40, yaw: 180, body: 160, headBody: 65 },
+    // Meeting limits (degrees), tighter than the hardware (pitch/roll ±40): the meeting is at the table,
+    // not on the ceiling. pitchUp: faces at ~1 m are at most ~15-20° above the robot. pitchDown: table,
+    // papers, laptop. roll: enough for conversational head tilts. Yaw/body: free to look around.
+    limits = { roll: 15, pitchUp: 20, pitchDown: 25, yaw: 180, body: 160, headBody: 65 },
     // deg/s and deg/s². The body is the heavy part: it turns slower and gentler than the head.
     rate = { headVel: 150, headAcc: 800, bodyVel: 90, bodyAcc: 300 },
   } = {}) {
@@ -102,7 +105,7 @@ export class HeadMirror {
     for (let i = 0; i < 3; i++) this.filt[i] = a * this.filt[i] + (1 - a) * raw[i];
     const goal = [
       clamp(this.filt[0], -L.roll, L.roll),
-      clamp(this.filt[1], -L.pitch, L.pitch),
+      clamp(this.filt[1], -L.pitchUp, L.pitchDown),   // pitch + = look down
       clamp(this.filt[2], -L.yaw, L.yaw),
     ];
     const [roll, pitch, yawWanted] = goal.map((g, i) => this.head[i].step(g, dt));

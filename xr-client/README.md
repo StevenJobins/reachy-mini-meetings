@@ -70,6 +70,7 @@ URL: https://stevenjobins.github.io/reachy-mini-meetings/. It is deployed by `.g
 Wake up and Start are taps because browsers allow unmuted audio and entering VR only from a user gesture.
 
 - **The headset needs no cable.** Only the Reachy Mini Lite stays on USB at the laptop, with its daemon running and signed in to HF on the dashboard. Start the daemon with `reachy-mini-daemon --no-wake-up-on-start`, so the robot sleeps until someone taps Start on the page.
+- **Head limits for meetings** (`HeadMirror` in `pose.js`, same in `robot/`): pitch up 20°, pitch down 25°, roll ±15° (hardware: ±40°). The meeting is at the table, not on the ceiling. Yaw and body stay free.
 - **Fast head turns are rate-limited** (`RateLimiter` in `pose.js`): head ≤ 150 °/s, body ≤ 90 °/s, braking early instead of overshooting, so the robot does not jerk or tip over.
 - **How it connects:** the app uses Pollen's JS SDK `@pollen-robotics/reachy-mini-sdk@1.11.0`, loaded from jsdelivr. Pollen's central signalling finds the robot, and WebRTC carries video, `set_target` and the measured pose stream, directly between the headset and the robot.
 - **Who can connect:** only HF accounts that can see the robot in central signalling.

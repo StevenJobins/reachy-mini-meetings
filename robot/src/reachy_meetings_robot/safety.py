@@ -27,7 +27,7 @@ class HeadTarget:
 
 def clamp_head(target: HeadTarget, body_yaw_deg: float, lim: LimitsCfg) -> HeadTarget:
     roll = float(np.clip(target.roll, -lim.head_roll_deg, lim.head_roll_deg))
-    pitch = float(np.clip(target.pitch, -lim.head_pitch_deg, lim.head_pitch_deg))
+    pitch = float(np.clip(target.pitch, -lim.head_pitch_up_deg, lim.head_pitch_down_deg))  # + = down
     yaw = float(np.clip(target.yaw, -lim.head_yaw_deg, lim.head_yaw_deg))
     d = lim.max_head_body_yaw_delta_deg
     yaw = float(np.clip(yaw, body_yaw_deg - d, body_yaw_deg + d))
