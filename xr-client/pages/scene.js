@@ -154,12 +154,72 @@ export function createScene({ video, vfovDeg, distM, statusText, onHeadsetPose, 
     else onSelect();
   }
 
+  // ---- desktop preview (no headset): same scene in the browser window, mouse drag = head turn
+  let desktop = null;   // { yaw, pitch } while active
+  const mouse = new THREE.Vector2();
+  let hoveredDesktop = null;
+
+  function desktopHit(e) {
+    const r = renderer.domElement.getBoundingClientRect();
+    mouse.set(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
+    camera.updateMatrixWorld(true);
+    raycaster.setFromCamera(mouse, camera);
+    return raycaster.intersectObjects(buttons, false)[0]?.object ?? null;
+  }
+
+  function resize() {
+    renderer.setSize(innerWidth, innerHeight);
+    camera.aspect = innerWidth / innerHeight;
+    camera.updateProjectionMatrix();
+  }
+
+  let drag = null;
+  const el = renderer.domElement;
+  el.addEventListener("pointerdown", (e) => { drag = { x: e.clientX, y: e.clientY, moved: false }; el.setPointerCapture(e.pointerId); });
+  el.addEventListener("pointermove", (e) => {
+    if (!desktop) return;
+    if (drag) {
+      const dx = e.clientX - drag.x, dy = e.clientY - drag.y;
+      if (Math.abs(dx) + Math.abs(dy) > 3) drag.moved = true;
+      desktop.yaw += dx * 0.004;
+      desktop.pitch = Math.max(-1.4, Math.min(1.4, desktop.pitch + dy * 0.004));
+      drag.x = e.clientX; drag.y = e.clientY;
+    }
+    hoveredDesktop = desktopHit(e);
+  });
+  el.addEventListener("pointerup", (e) => {
+    const click = drag && !drag.moved;
+    drag = null;
+    if (click) desktopHit(e)?.userData.onClick();
+  });
+  function onKey(e) {
+    if (e.key === "Escape") exitDesktop();
+    if (e.key === "r" || e.key === "R") onSelect();
+  }
+  function exitDesktop() {
+    if (!desktop) return;
+    desktop = null;
+    removeEventListener("resize", resize);
+    removeEventListener("keydown", onKey);
+    el.remove();
+    camera.quaternion.identity();
+    onEnd();
+  }
+
   const target = new THREE.Quaternion();
   let haveTarget = false;
   renderer.setAnimationLoop((now, frame) => {
     if (frame) {
       const pose = frame.getViewerPose(renderer.xr.getReferenceSpace());
       if (pose) onHeadsetPose(pose.transform.orientation, now);
+    } else if (desktop) {
+      camera.quaternion.setFromEuler(new THREE.Euler(desktop.pitch, desktop.yaw, 0, "YXZ"));
+      const q = camera.quaternion;
+      onHeadsetPose({ x: q.x, y: q.y, z: q.z, w: q.w }, now);
+      for (const b of buttons) {
+        const map = b.userData.tex[b === hoveredDesktop ? 1 : 0];
+        if (b.material.map !== map) { b.material.map = map; b.material.needsUpdate = true; }
+      }
     }
     let map = noVideoTex;
     if (source.mode === "direct") {
@@ -196,7 +256,18 @@ export function createScene({ video, vfovDeg, distM, statusText, onHeadsetPose, 
     /** Switch how camera frames reach the VR window (track -> canvas -> direct). Returns the new mode. */
     cycleVideo() { return source.cycle(); },
 
-    exitVR() { renderer.xr.getSession()?.end(); },
+    exitVR() { renderer.xr.getSession()?.end(); exitDesktop(); },
+
+    /** Desktop preview for debugging without a headset: drag = look, click = VR buttons, R = recenter, Esc = exit. */
+    enterDesktop() {
+      desktop = { yaw: 0, pitch: 0 };
+      el.style.cssText = "position:fixed;inset:0;z-index:10;cursor:grab;touch-action:none";
+      renderer.setPixelRatio(devicePixelRatio);
+      resize();
+      document.body.appendChild(el);
+      addEventListener("resize", resize);
+      addEventListener("keydown", onKey);
+    },
 
     /** Robot head orientation in the XR world, as {x, y, z, w}. */
     setRobotHead(q) { target.set(q.x, q.y, q.z, q.w); haveTarget = true; },

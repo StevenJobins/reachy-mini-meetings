@@ -87,6 +87,10 @@ Wake up and Start are taps because browsers allow unmuted audio and entering VR 
 
 Rules for this code: [docs/xr-client-strategy.md](../docs/xr-client-strategy.md).
 
+### Desktop preview (debugging without a headset)
+
+Tap **Start** in a browser without VR (any laptop): the same three.js scene opens in the browser window instead of the VR session. Drag = turn your head (the robot follows), click the VR buttons, `R` = recenter, `Esc` = back to the page.
+
 ### Speech bubbles
 
 The page connects to the caption server from `backend/` (`reachy-captions`, see [backend/README.md](../backend/README.md)). It reconnects on its own, and the status line shows `captions on/off`.
@@ -99,3 +103,4 @@ The page connects to the caption server from `backend/` (`reachy-captions`, see 
 - **https:** the page is served over https, so Chrome only allows `ws://localhost`. There are two ways to connect the headset:
   - **USB:** run `adb reverse tcp:8766 tcp:8766`.
   - **Wireless:** expose the server via wss, e.g. `cloudflared tunnel --url http://localhost:8766`, then enter `wss://<name>.trycloudflare.com` in the field.
+- **Local network permission:** recent Chrome versions (checked with Chrome 152) ask before a public page may reach `localhost` ("…wants to access devices on your local network"). Until you allow it, the captions stay at `connecting`. Allow it once per device **before** entering VR, because the prompt isn't visible inside VR. If you missed it: lock icon in the address bar → Site settings → Local network → Allow.

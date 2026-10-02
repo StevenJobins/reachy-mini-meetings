@@ -122,7 +122,7 @@ function wantToTalk() {
 // Outside VR nothing else sends targets: play the gesture from here (and send one rest pose after it).
 let talkWasActive = false;
 setInterval(() => {
-  if (!awake || status.xr === "on" || !robot.connected) return;
+  if (!awake || status.xr !== "off" || !robot.connected) return;
   const nowS = performance.now() / 1000;
   const active = talk.active(nowS);
   if (active || talkWasActive) send(last, nowS);
@@ -149,7 +149,7 @@ const scene = createScene({
   statusText,
   onHeadsetPose: (q, now) => {
     if (wantRecenter) { recenter.set(q); wantRecenter = false; captions.layout(); log("recentered"); }
-    if (!awake || status.xr !== "on" || !robot.connected || now - lastSend < 1000 / cfg.sendHz) return;
+    if (!awake || status.xr === "off" || !robot.connected || now - lastSend < 1000 / cfg.sendHz) return;
     const dt = (now - lastSend) / 1000;
     lastSend = now;
     send(mirror.step(headsetToRobot(recenter.toRelative(q)), dt), now / 1000);
@@ -202,8 +202,12 @@ $("start").onclick = async () => {
   video.play().catch((e) => log("video.play:", e?.message ?? e));
   const entering = scene.enterVR();
   if (!(await xrOk)) {
+    // No headset: same scene in the browser window, for debugging on a laptop.
     entering.catch(() => {});
-    show("awake", "VR is not available in this browser. Open this page on the headset.");
+    scene.enterDesktop();
+    wantRecenter = true;
+    status.xr = "desktop";
+    show("awake", "Desktop preview: drag to look around (the robot follows), click the buttons, R = recenter, Esc = exit.");
     return;
   }
   try {
