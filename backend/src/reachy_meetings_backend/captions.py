@@ -12,6 +12,8 @@ Protocol (server -> headset, one JSON per message; keep in sync with xr-client):
             "target": str, "doa_deg": float | null, "azimuth_deg": float | null,
             "t_start": s, "t_end": s}
   summary  {"summary": [str], "actions": [{"who": str, "what": str}], "t": s}
+  vad      {"speaking": bool, "t": s}   instantly from the neural VAD (~0.1 s), long before any text:
+           sent when speech starts/ends and every 0.25 s while it lasts (speaker following uses it)
 
 The same `id` is sent several times: partials (final=false) while the person talks, then the
 final text, then once more with the translation. Clients upsert by `id`. A final with empty
@@ -69,6 +71,10 @@ class CaptionServer:
         if caption["final"]:
             self.recent.append(msg)
         websockets.broadcast(self.clients, msg)
+
+    def send_vad(self, speaking: bool) -> None:
+        websockets.broadcast(self.clients, json.dumps({"type": "vad", "speaking": speaking,
+                                                       "t": round(time.time(), 3)}))
 
     def send_summary(self, notes: dict) -> None:
         self.summary = json.dumps({"type": "summary", **notes})
@@ -194,12 +200,18 @@ class Pipeline:
             jobs.add(t)
             t.add_done_callback(jobs.discard)
 
+        vad_on, vad_sent = False, 0.0
         while not (src.done() and chunks.empty()):
             try:
                 chunk = await asyncio.wait_for(chunks.get(), 0.5)
             except asyncio.TimeoutError:
                 continue
-            for seg in self.segmenter.push(chunk):
+            segs = self.segmenter.push(chunk)
+            now = time.time()
+            if self.segmenter.active != vad_on or (vad_on and now - vad_sent > 0.25):
+                vad_on, vad_sent = self.segmenter.active, now
+                self.server.send_vad(vad_on)
+            for seg in segs:
                 if seg.final:
                     spawn(self._final(seg, time.time()))
                 elif self.stt_partial and self.pending == 0:  # skip partials while Whisper is behind

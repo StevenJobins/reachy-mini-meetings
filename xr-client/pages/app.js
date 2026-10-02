@@ -304,6 +304,21 @@ function flushDoa(fromS) {
   for (const [t, a] of doaBuf) if (t > doaPushedUntil && t >= fromS) speaker.pushDoa(t, a, true);
   doaPushedUntil = performance.now() / 1000;
 }
+// Instant "someone is speaking" from the backend's neural VAD (~0.1 s after the first word, no text yet):
+// the mic directions count right away, and the speaking face in view becomes the focus person.
+function onVadEvent(msg) {
+  if (!msg.speaking || !awake) return;
+  lastSpeechS = performance.now() / 1000;
+  flushDoa(lastSpeechS - 0.6);
+  const last = doaBuf[doaBuf.length - 1];
+  const tr = faceSpeakers.pick(last ? 90 - last[1] * 180 / Math.PI : null);   // mouth movement + mic direction
+  if (tr && tr.seen === faceSpeakers.lastT) {
+    if (tr.pid !== focusPid) speaker.speakers.push([lastSpeechS, speaker.target]);
+    focusPid = tr.pid;
+    frameFocus();
+  }
+}
+
 function onSpeechCaption(msg, track) {
   lastSpeechS = performance.now() / 1000;
   if (!awake) return;
@@ -347,6 +362,7 @@ captions = createCaptions({
   onSummary: (msg) => notes.update(msg),
   onFinal: onFinalCaption,
   onSpeech: onSpeechCaption,
+  onVad: onVadEvent,
   log,
   onStatus: (s) => Object.assign(status, s),
 });
