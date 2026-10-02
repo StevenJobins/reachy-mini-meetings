@@ -187,5 +187,7 @@ export function createCaptions({ three, recenter, distM, vfovDeg, listEl, log, o
     reconnect() { if (ws) { ws.onclose = null; ws.close(); } connect(); },
     /** After recenter: re-place the room bubbles. */
     layout,
+    /** The VR room is turned by the speaker-following base yaw (degrees, + = left): turn the bubbles along. */
+    setYawOffset(deg) { room.rotation.y = -deg * Math.PI / 180; },
   };
 }

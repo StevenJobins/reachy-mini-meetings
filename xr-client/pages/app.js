@@ -9,6 +9,7 @@ import { createRobot } from "./robot.js";
 import { createScene } from "./scene.js";
 import { HeadMirror, Recenter, headsetToRobot, robotToHeadset } from "./pose.js";
 import { WantToTalk } from "./gestures.js";
+import { SpeakerTracker } from "./speaker.js";
 import { captionsUrl, createCaptions, setCaptionsUrl } from "./captions.js";
 
 // HF OAuth app (huggingface.co/settings/applications), redirect URL = this page's URL.
@@ -53,14 +54,14 @@ addEventListener("error", (e) => log("ERROR", e.message, `${e.filename}:${e.line
 addEventListener("unhandledrejection", (e) => log("UNHANDLED", e.reason?.message ?? e.reason));
 
 // ---------------------------------------------------------------- status
-const status = { user: "-", robot: "-", motors: "-", ice: "-", video: "-", xr: "off", send: 0, cmd: [0, 0, 0], body: 0, meas: [0, 0, 0], captions: "-", sound: "muted" };
+const status = { user: "-", robot: "-", motors: "-", ice: "-", video: "-", xr: "off", send: 0, cmd: [0, 0, 0], body: 0, meas: [0, 0, 0], captions: "-", sound: "muted", follow: "on" };
 let sentCount = 0;
 setInterval(() => { status.send = sentCount; sentCount = 0; }, 1000);
 function statusText() {
   const f = (v) => v.map((x) => x.toFixed(1).padStart(6)).join(" ");
   return [
     `robot ${status.robot}   motors ${status.motors}   ice ${status.ice}   video ${status.video}   send ${status.send} Hz`,
-    `cmd  r/p/y ${f(status.cmd)}   body ${status.body.toFixed(1)}`,
+    `cmd  r/p/y ${f(status.cmd)}   body ${status.body.toFixed(1)}   speaker ${status.follow} target ${speaker.target.toFixed(0)} base ${speaker.base.toFixed(0)}`,
     `meas r/p/y ${f(status.meas)}   captions ${status.captions}   robot sound ${status.sound}`,
   ].join("\n");
 }
@@ -80,6 +81,7 @@ function show(state, message) {
   $("sleep").hidden = state !== "awake";
   $("talk").hidden = state !== "awake";
   $("mute").hidden = state !== "awake";
+  $("follow").hidden = state !== "awake";
   $("signin").hidden = state !== "signed-out";
   $("retry").hidden = state !== "failed";
 }
@@ -91,11 +93,33 @@ let awake = false;   // head targets only once the wake-up motion is done, so th
 let wantRecenter = true;
 let lastSend = 0;
 const talk = new WantToTalk();
-let last = { roll: 0, pitch: 0, yaw: 0, bodyYaw: 0 };   // last mirrored pose, the gesture is layered on it
+
+// Speaker following has priority: the robot slowly turns to whoever speaks (DoA), and the headset
+// rotation is added ON TOP of that base. Looking straight ahead in VR = looking at the speaker.
+const speaker = new SpeakerTracker();
+let follow = true;
+let frozenBase = null;   // follow off: keep the base where it was
+let talkCenter = null;   // while waving: turn to the center of all recent speakers (turn_to_speaker.py)
+
+function setFollow(on) {
+  follow = on;
+  frozenBase = on ? null : speaker.base;
+  status.follow = on ? "on" : "off";
+  $("follow").textContent = on ? "🎯 Following speaker: tap to stop" : "🎯 Follow speaker";
+  log("follow speaker", status.follow);
+}
+
+/** Smooth base yaw for this tick (degrees, robot frame). */
+function stepBase(dt, nowS) {
+  if (!talk.active(nowS)) talkCenter = null;
+  speaker.override = talkCenter ?? frozenBase;
+  const base = speaker.step(dt);
+  captions.setYawOffset(base);
+  return base;
+}
 
 /** Mirrored pose + "I want to talk" gesture -> robot. Body swing stays inside the head/body window. */
 function send(t, nowS) {
-  last = t;
   const g = talk.step(nowS);
   const bodyYaw = Math.max(t.yaw - 60, Math.min(t.yaw + 60, t.bodyYaw + g.bodyOffset));
   if (robot.setHead({ ...t, bodyYaw, antennas: g.antennas })) sentCount++;
@@ -115,18 +139,17 @@ function setRobotMuted(m) {
 
 function wantToTalk() {
   if (!awake) return;
-  talk.trigger(performance.now() / 1000);
+  const nowS = performance.now() / 1000;
+  if (!talk.active(nowS)) talkCenter = speaker.center(nowS);
+  talk.trigger(nowS);
   log("I want to talk");
 }
 
-// Outside VR nothing else sends targets: play the gesture from here (and send one rest pose after it).
-let talkWasActive = false;
+// Outside VR the headset sends nothing: follow the speaker (and play gestures) from here.
 setInterval(() => {
   if (!awake || status.xr !== "off" || !robot.connected) return;
-  const nowS = performance.now() / 1000;
-  const active = talk.active(nowS);
-  if (active || talkWasActive) send(last, nowS);
-  talkWasActive = active;
+  const dt = 1 / 50;
+  send(mirror.step([0, 0, stepBase(dt, performance.now() / 1000)], dt), performance.now() / 1000);
 }, 1000 / 50);
 
 const robot = createRobot({
@@ -138,8 +161,11 @@ const robot = createRobot({
   },
   onMeasuredHead: (roll, pitch, yaw) => {
     status.meas = [roll, pitch, yaw];
-    scene.setRobotHead(recenter.toWorld(robotToHeadset(roll, pitch, yaw)));
+    speaker.pushHeadYaw(performance.now() / 1000, yaw);
+    // The VR room turns with the base: the window shows where the robot looks RELATIVE to the speaker.
+    scene.setRobotHead(recenter.toWorld(robotToHeadset(roll, pitch, yaw - speaker.base)));
   },
+  onDoa: (angle, speech) => { if (awake) speaker.pushDoa(performance.now() / 1000, angle, speech); },
 });
 
 const scene = createScene({
@@ -152,11 +178,14 @@ const scene = createScene({
     if (!awake || status.xr === "off" || !robot.connected || now - lastSend < 1000 / cfg.sendHz) return;
     const dt = (now - lastSend) / 1000;
     lastSend = now;
-    send(mirror.step(headsetToRobot(recenter.toRelative(q)), dt), now / 1000);
+    const raw = headsetToRobot(recenter.toRelative(q));
+    raw[2] += stepBase(dt, now / 1000);   // user's head rotation on top of the speaker direction
+    send(mirror.step(raw, dt), now / 1000);
   },
   // Head-locked buttons in VR: point (controller ray / hand pinch) and select. Select elsewhere = recenter.
   vrButtons: [
     { label: "I want to talk", onClick: wantToTalk },
+    { label: () => (follow ? "Stop following" : "Follow speaker"), onClick: () => setFollow(!follow) },
     { label: () => (robotMuted ? "Unmute robot" : "Mute robot"), onClick: () => setRobotMuted(!robotMuted) },
     { label: "Recenter", onClick: () => { wantRecenter = true; } },
     { label: "Switch video", onClick: () => scene.cycleVideo() },   // camera path test, see videosource.js
@@ -225,7 +254,8 @@ $("wake").onclick = async () => {
   show("busy", "Reachy is waking up…");
   await robot.wake();
   mirror = new HeadMirror({ smoothing: cfg.smoothing });   // start from neutral, where the wake-up motion ends
-  last = { roll: 0, pitch: 0, yaw: 0, bodyYaw: 0 };
+  speaker.reset();
+  setFollow(follow);
   lastSend = performance.now();
   awake = true;
   video.hidden = false;
@@ -241,6 +271,8 @@ $("sleep").onclick = async () => {
 };
 $("talk").onclick = wantToTalk;
 $("mute").onclick = () => setRobotMuted(!robotMuted);
+$("follow").onclick = () => setFollow(!follow);
+setFollow(true);
 setRobotMuted(true);
 $("signin").onclick = () => robot.signIn();
 $("retry").onclick = connect;

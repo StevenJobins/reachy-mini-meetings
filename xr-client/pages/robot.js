@@ -16,7 +16,7 @@ function cleanUrlForLogin() {
   if (location.search || location.hash || path !== location.pathname) history.replaceState(null, "", path);
 }
 
-export function createRobot({ clientId, onStatus, onMeasuredHead, log }) {
+export function createRobot({ clientId, onStatus, onMeasuredHead, onDoa = () => {}, log }) {
   const reachy = new ReachyMini({ clientId, appName: "Reachy Meetings XR", videoJitterBufferTargetMs: 0 });
   let streaming = false;
 
@@ -30,6 +30,8 @@ export function createRobot({ clientId, onStatus, onMeasuredHead, log }) {
   reachy.addEventListener("sessionReconnected", () => { streaming = true; onStatus({ robot: "connected" }); });
   reachy.addEventListener("error", (e) => log("error", JSON.stringify(e.detail)));
   reachy.addEventListener("state", (e) => {
+    const doa = e.detail?.doa;   // mic array: {angle (rad, 0 = left, π/2 = front, π = right), speech}
+    if (doa && typeof doa.angle === "number") onDoa(doa.angle, !!doa.speech);
     const h = e.detail?.head;
     if (!h || h.length !== 16) return;
     const { roll, pitch, yaw } = matrixToRpy([h.slice(0, 4), h.slice(4, 8), h.slice(8, 12), h.slice(12, 16)]);
