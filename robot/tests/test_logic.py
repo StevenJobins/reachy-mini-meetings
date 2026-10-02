@@ -106,6 +106,22 @@ def test_controller_compose_respects_limits():
     assert body > 0  # body turned to follow
 
 
+def test_controller_compose_limits_speed():
+    """A violent head snap must not become a jerk: velocity stays within the configured limits."""
+    cfg = load_config()
+    mc = MotionController(mini=None, cfg=cfg, state=StateStore())
+    dt = 1 / cfg.mirror.rate_hz
+    prev_head, prev_body = HeadTarget(), 0.0
+    for i in range(300):
+        mc.mirror.push(HeadsetPose(0, 30 if i < 150 else -20, 150 if i < 150 else -120, time.time()))
+        head, body, _ = mc.compose()
+        assert abs(head.yaw - prev_head.yaw) / dt <= cfg.mirror.head_max_vel_dps + 1e-6
+        assert abs(head.pitch - prev_head.pitch) / dt <= cfg.mirror.head_max_vel_dps + 1e-6
+        assert abs(body - prev_body) / dt <= cfg.mirror.body_max_vel_dps + 1e-6
+        assert abs(head.yaw - body) <= 65 + 1e-9
+        prev_head, prev_body = head, body
+
+
 # ---------------------------------------------------------------- protocol
 def test_protocol_roundtrip():
     msg = parse(encode("head_pose", roll=1, pitch=2, yaw=3, t=4))

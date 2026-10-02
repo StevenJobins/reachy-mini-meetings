@@ -56,6 +56,7 @@ export function createRobot({ clientId, onStatus, onMeasuredHead, log }) {
     async connect() {
       onStatus({ robot: "connecting" });
       const res = await reachy.autoConnect({
+        wakeOnConnect: false,   // the robot stays asleep until the user taps Start (wake())
         pickRobot: async (robots) => {
           log("robots:", robots.map((r) => `${r.name ?? r.id}${r.busy ? " (busy)" : ""}`).join(", "));
           return robots.find((r) => !r.busy)?.id ?? null;   // TODO picker when the team has several robots
@@ -68,6 +69,28 @@ export function createRobot({ clientId, onStatus, onMeasuredHead, log }) {
     },
 
     get connected() { return streaming; },
+
+    /** Robot microphone on/off (the audio track of the video element). Turn on inside a user gesture. */
+    setAudio(on) { reachy.setAudioMuted(!on); },
+
+    /** Wake the robot (plays the wake-up motion, motors on). Resolves when it is ready for head targets. */
+    async wake() {
+      onStatus({ motors: "waking" });
+      await reachy.ensureAwake(3000);
+      onStatus({ motors: "awake" });
+    },
+
+    /** Back to the sleep pose, then motors off. Never throws: the user may already be gone. */
+    async sleep() {
+      onStatus({ motors: "sleeping" });
+      try {
+        await reachy.gotoSleep();
+        reachy.setMotorMode("disabled");
+        onStatus({ motors: "asleep" });
+      } catch (e) {
+        log("goto sleep:", e?.message ?? e);
+      }
+    },
 
     /** Head target in degrees (robot frame) + body yaw in degrees. Returns true if queued. */
     setHead({ roll, pitch, yaw, bodyYaw }) {

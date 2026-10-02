@@ -1,6 +1,8 @@
 // Wires robot connection, pose logic and rendering together, plus the one-button UI.
 //
-// Flow: open page -> silent HF sign-in -> auto-connect to the robot -> tap Start -> VR.
+// Flow: open page -> silent HF sign-in -> auto-connect to the robot (stays asleep)
+//   -> tap Wake up: robot wakes, its camera and microphone switch on
+//   -> tap Start: VR, the robot follows your head. Sleep puts it back to sleep (motors, camera, mic off).
 // Only "Start" needs a tap: browsers allow entering VR only from a user gesture.
 
 import { createRobot } from "./robot.js";
@@ -29,13 +31,13 @@ function log(...a) {
 }
 
 // ---------------------------------------------------------------- status
-const status = { user: "-", robot: "-", ice: "-", video: "-", xr: "off", send: 0, cmd: [0, 0, 0], body: 0, meas: [0, 0, 0], captions: "-" };
+const status = { user: "-", robot: "-", motors: "-", ice: "-", video: "-", xr: "off", send: 0, cmd: [0, 0, 0], body: 0, meas: [0, 0, 0], captions: "-" };
 let sentCount = 0;
 setInterval(() => { status.send = sentCount; sentCount = 0; }, 1000);
 function statusText() {
   const f = (v) => v.map((x) => x.toFixed(1).padStart(6)).join(" ");
   return [
-    `robot ${status.robot}   ice ${status.ice}   video ${status.video}   send ${status.send} Hz`,
+    `robot ${status.robot}   motors ${status.motors}   ice ${status.ice}   video ${status.video}   send ${status.send} Hz`,
     `cmd  r/p/y ${f(status.cmd)}   body ${status.body.toFixed(1)}`,
     `meas r/p/y ${f(status.meas)}   captions ${status.captions}`,
   ].join("\n");
@@ -44,14 +46,17 @@ setInterval(() => { $("debug-text").textContent = `user ${status.user}   xr ${st
 
 function show(state, message) {
   $("message").textContent = message;
-  $("start").hidden = state !== "ready";
+  $("wake").hidden = state !== "asleep";
+  $("start").hidden = state !== "awake";
+  $("sleep").hidden = state !== "awake";
   $("signin").hidden = state !== "signed-out";
   $("retry").hidden = state !== "failed";
 }
 
 // ---------------------------------------------------------------- wiring
 const recenter = new Recenter();
-const mirror = new HeadMirror({ smoothing: cfg.smoothing });
+let mirror = new HeadMirror({ smoothing: cfg.smoothing });
+let awake = false;   // head targets only once the wake-up motion is done, so they don't fight it
 let wantRecenter = true;
 let lastSend = 0;
 
@@ -72,15 +77,16 @@ const scene = createScene({
   statusText,
   onHeadsetPose: (q, now) => {
     if (wantRecenter) { recenter.set(q); wantRecenter = false; captions.layout(); log("recentered"); }
-    if (!robot.connected || now - lastSend < 1000 / cfg.sendHz) return;
+    if (!awake || status.xr !== "on" || !robot.connected || now - lastSend < 1000 / cfg.sendHz) return;
+    const dt = (now - lastSend) / 1000;
     lastSend = now;
-    const t = mirror.step(headsetToRobot(recenter.toRelative(q)));
+    const t = mirror.step(headsetToRobot(recenter.toRelative(q)), dt);
     if (robot.setHead(t)) sentCount++;
     status.cmd = [t.roll, t.pitch, t.yaw];
     status.body = t.bodyYaw;
   },
   onSelect: () => { wantRecenter = true; },
-  onEnd: () => { status.xr = "off"; show("ready", "Connected. Tap Start to look around again."); },
+  onEnd: () => { status.xr = "off"; show("awake", "Reachy is awake. Tap Start to look around again, or Sleep."); },
 });
 
 const captions = createCaptions({
@@ -96,6 +102,7 @@ $("captions-url").value = captionsUrl();
 $("captions-url").onchange = (e) => { setCaptionsUrl(e.target.value.trim()); captions.reconnect(); };
 
 video.onplaying = () => { status.video = `${video.videoWidth}x${video.videoHeight}`; };
+video.hidden = true;   // camera "off" while the robot sleeps
 robot.attachVideo(video);
 
 // ---------------------------------------------------------------- UI flow
@@ -103,7 +110,7 @@ async function connect() {
   show("busy", "Connecting to Reachy Mini…");
   try {
     const res = await robot.connect();
-    show("ready", `Connected to ${res.robotName ?? "Reachy Mini"}. Put on the headset, look straight ahead and tap Start.`);
+    show("asleep", `Connected to ${res.robotName ?? "Reachy Mini"}. Tap Wake up.`);
   } catch (e) {
     log("connect failed:", e?.message ?? e);
     show("failed", `Could not connect: ${e?.message ?? e}. Is the robot on and its daemon signed in to Hugging Face?`);
@@ -118,7 +125,7 @@ $("start").onclick = async () => {
   const entering = scene.enterVR();
   if (!(await xrOk)) {
     entering.catch(() => {});
-    show("ready", "VR is not available in this browser. Open this page on the headset.");
+    show("awake", "VR is not available in this browser. Open this page on the headset.");
     return;
   }
   try {
@@ -128,6 +135,26 @@ $("start").onclick = async () => {
   } catch (e) {
     log("enter VR failed:", e?.message ?? e);
   }
+};
+$("wake").onclick = async () => {
+  // Inside the tap: browsers allow unmuted playback (robot microphone) only during a user gesture.
+  robot.setAudio(true);
+  video.play().catch((e) => log("video.play:", e?.message ?? e));
+  show("busy", "Reachy is waking up…");
+  await robot.wake();
+  mirror = new HeadMirror({ smoothing: cfg.smoothing });   // start from neutral, where the wake-up motion ends
+  lastSend = performance.now();
+  awake = true;
+  video.hidden = false;
+  show("awake", "Reachy is awake: camera and microphone are on. Put on the headset, look straight ahead and tap Start.");
+};
+$("sleep").onclick = async () => {
+  awake = false;
+  robot.setAudio(false);
+  video.hidden = true;
+  show("busy", "Reachy is going to sleep…");
+  await robot.sleep();
+  show("asleep", "Reachy is asleep. Tap Wake up to start again.");
 };
 $("signin").onclick = () => robot.signIn();
 $("retry").onclick = connect;

@@ -47,3 +47,24 @@ def body_yaw_to_follow(head_yaw_deg: float, body_yaw_deg: float, lim: LimitsCfg)
     elif head_yaw_deg < body_yaw_deg - d:
         body_yaw_deg = head_yaw_deg + d
     return clamp_body_yaw(body_yaw_deg, lim)
+
+
+class RateLimiter:
+    """Velocity + acceleration limited tracking (deg, s). Same as RateLimiter in xr-client/pages/pose.js.
+
+    Brakes early enough to stop at the target, so a fast head turn of the user becomes a quick but
+    smooth robot motion instead of a jerk that can tip the robot over.
+    """
+
+    def __init__(self, max_vel: float, max_acc: float) -> None:
+        self.max_vel, self.max_acc = max_vel, max_acc
+        self.pos = 0.0
+        self.vel = 0.0
+
+    def step(self, target: float, dt: float) -> float:
+        err = target - self.pos
+        v_stop = (2 * self.max_acc * abs(err)) ** 0.5
+        v_want = float(np.sign(err)) * min(self.max_vel, v_stop, abs(err) / dt)
+        self.vel += float(np.clip(v_want - self.vel, -self.max_acc * dt, self.max_acc * dt))
+        self.pos += self.vel * dt
+        return self.pos

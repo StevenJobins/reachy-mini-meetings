@@ -20,7 +20,7 @@ import time
 import numpy as np
 
 from ..config import Config
-from ..safety import HeadTarget, body_yaw_to_follow, clamp_head
+from ..safety import HeadTarget, RateLimiter, body_yaw_to_follow, clamp_head
 from ..state import StateStore
 from .gestures import GesturePlayer
 from .head_mirror import HeadMirror
@@ -35,7 +35,10 @@ class MotionController:
         self.state = state
         self.mirror = HeadMirror(cfg.mirror)
         self.gestures = GesturePlayer(cfg.gestures.default_duration_s)
-        self._body_yaw = 0.0
+        self._body_yaw = 0.0   # goal; the rate-limited value is self._body.pos
+        m = cfg.mirror
+        self._head = [RateLimiter(m.head_max_vel_dps, m.head_max_acc_dps2) for _ in range(3)]
+        self._body = RateLimiter(m.body_max_vel_dps, m.body_max_acc_dps2)
         self._thread: threading.Thread | None = None
         self._stop = threading.Event()
 
@@ -74,12 +77,19 @@ class MotionController:
             w = 6 * math.sin(2 * math.pi * 3 * time.monotonic())
             al, ar = al + w, ar - w
 
-        head = HeadTarget(base.roll + r, base.pitch + p, base.yaw + y, base.z_mm)
+        goal = HeadTarget(base.roll + r, base.pitch + p, base.yaw + y, base.z_mm)
         lim = self.cfg.limits
+        dt = 1.0 / self.cfg.mirror.rate_hz
         if self.cfg.mirror.body_follow:
-            self._body_yaw = body_yaw_to_follow(head.yaw, self._body_yaw, lim)
-        head = clamp_head(head, self._body_yaw, lim)
-        return head, self._body_yaw, (al, ar)
+            self._body_yaw = body_yaw_to_follow(goal.yaw, self._body_yaw, lim)
+        body_yaw = self._body.step(self._body_yaw, dt)
+        # Clamp first (so the limiters never chase unreachable goals), then limit velocity/acceleration.
+        goal = clamp_head(goal, self._body_yaw, lim)
+        roll, pitch, yaw = (f.step(g, dt) for f, g in zip(self._head, (goal.roll, goal.pitch, goal.yaw)))
+        head = clamp_head(HeadTarget(roll, pitch, yaw, goal.z_mm), body_yaw, lim)
+        if head.yaw != yaw:   # head waits at the edge of the head/body window while the body catches up
+            self._head[2].pos, self._head[2].vel = head.yaw, self._body.vel
+        return head, body_yaw, (al, ar)
 
     def tick(self) -> None:
         from reachy_mini.utils import create_head_pose

@@ -55,12 +55,15 @@ URL: https://stevenjobins.github.io/reachy-mini-meetings/. It is deployed by `.g
 
 1. Open the URL in Chrome. Then choose ⋮ → *Install app* / *Add to home screen*, so the app gets an icon in the launcher.
 2. Start the app. The first time, sign in with Hugging Face. After that, sign-in is silent (OAuth `prompt=none`).
-3. The app connects to the robot automatically. When exactly one free robot is visible, it is picked without asking.
-4. Look straight ahead and tap **Start**. You are in VR. To recenter, pinch.
+3. The app connects to the robot automatically. When exactly one free robot is visible, it is picked without asking. The robot stays asleep.
+4. Tap **Wake up**. Reachy plays its wake-up motion (~2 s), and its camera and microphone switch on (video on the page, room audio audible).
+5. Look straight ahead and tap **Start**. You are in VR and Reachy follows your head. To recenter, pinch. Leaving VR keeps Reachy awake, so you can tap Start again.
+6. Tap **Sleep** to send Reachy back to its sleep pose: motors off, camera and microphone off.
 
-Start is the only tap needed, because browsers allow entering VR only from a user gesture.
+Wake up and Start are taps because browsers allow unmuted audio and entering VR only from a user gesture.
 
-- **The headset needs no cable.** Only the Reachy Mini Lite stays on USB at the laptop, with its daemon running and signed in to HF on the dashboard.
+- **The headset needs no cable.** Only the Reachy Mini Lite stays on USB at the laptop, with its daemon running and signed in to HF on the dashboard. Start the daemon with `reachy-mini-daemon --no-wake-up-on-start`, so the robot sleeps until someone taps Start on the page.
+- **Fast head turns are rate-limited** (`RateLimiter` in `pose.js`): head ≤ 150 °/s, body ≤ 90 °/s, braking early instead of overshooting, so the robot does not jerk or tip over.
 - **How it connects:** the app uses Pollen's JS SDK `@pollen-robotics/reachy-mini-sdk@1.11.0`, loaded from jsdelivr. Pollen's central signalling finds the robot, and WebRTC carries video, `set_target` and the measured pose stream, directly between the headset and the robot.
 - **Who can connect:** only HF accounts that can see the robot in central signalling.
 - **OAuth:** `HF_CLIENT_ID` in `app.js` is the client ID of the HF OAuth app "Reachy Meetings XR". Its registered redirect URLs are the page URL above and `http://localhost:8080/`. Always open the page without a query string, because HF only accepts the exact registered redirect URL.
