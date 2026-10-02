@@ -14,6 +14,8 @@ import { captionsUrl, createCaptions, setCaptionsUrl } from "./captions.js";
 import { createFaces } from "./faces.js";
 import { FaceSpeakers } from "./speakers.js";
 import { createNotes } from "./notes.js";
+import { createMic } from "./mic.js";
+import { volumeCommand } from "./voicecmd.js";
 
 // HF OAuth app (huggingface.co/settings/applications), redirect URL = this page's URL.
 const HF_CLIENT_ID = "37472ae1-2bae-4d97-be66-ef7446028c40";
@@ -57,13 +59,13 @@ addEventListener("error", (e) => log("ERROR", e.message, `${e.filename}:${e.line
 addEventListener("unhandledrejection", (e) => log("UNHANDLED", e.reason?.message ?? e.reason));
 
 // ---------------------------------------------------------------- status
-const status = { user: "-", robot: "-", motors: "-", ice: "-", video: "-", xr: "off", send: 0, cmd: [0, 0, 0], body: 0, meas: [0, 0, 0], captions: "-", sound: "muted", follow: "on", doa: "none" };
+const status = { user: "-", robot: "-", motors: "-", ice: "-", video: "-", xr: "off", send: 0, cmd: [0, 0, 0], body: 0, meas: [0, 0, 0], captions: "-", sound: "muted", follow: "on", doa: "none", mic: "off", volume: "-" };
 let sentCount = 0;
 setInterval(() => { status.send = sentCount; sentCount = 0; }, 1000);
 function statusText() {
   const f = (v) => v.map((x) => x.toFixed(1).padStart(6)).join(" ");
   return [
-    `robot ${status.robot}   motors ${status.motors}   ice ${status.ice}   video ${status.video}   send ${status.send} Hz`,
+    `robot ${status.robot}   motors ${status.motors}   ice ${status.ice}   video ${status.video}   send ${status.send} Hz   mic ${status.mic}   volume ${status.volume}`,
     `cmd  r/p/y ${f(status.cmd)}   body ${status.body.toFixed(1)}   speaker ${status.follow} target ${speaker.target.toFixed(0)} base ${speaker.base.toFixed(0)}`,
     `meas r/p/y ${f(status.meas)}   captions ${status.captions}   ${faces.stats()}   robot sound ${status.sound}   doa ${status.doa}`,
   ].join("\n");
@@ -88,6 +90,7 @@ function show(state, message) {
   $("sleep").hidden = state !== "awake";
   $("talk").hidden = state !== "awake";
   $("mute").hidden = state !== "awake";
+  $("mic").hidden = state !== "awake";
   $("follow").hidden = state !== "awake";
   $("signin").hidden = state !== "signed-out";
   $("retry").hidden = state !== "failed";
@@ -143,6 +146,46 @@ function setRobotMuted(m) {
   $("mute").textContent = m ? "🔇 Robot muted: tap to unmute" : "🔊 Mute robot";
 }
 
+// Two-way audio, like a video call: your mic (headset, or the laptop's mic in the browser) goes to the
+// robot speaker while Reachy is awake. On by default; the big mic button mutes you.
+const mic = createMic({
+  getPeerConnection: () => robot.peerConnection,
+  onStatus: (s) => { Object.assign(status, s); renderMicButton(); },
+  log,
+});
+function renderMicButton() {
+  const el = $("mic");
+  el.classList.toggle("muted", mic.muted || status.mic !== "on");
+  el.querySelector(".mic-label").textContent =
+    status.mic === "blocked" ? "Mic blocked" : status.mic === "no channel" ? "No audio channel" : mic.muted ? "Unmute" : "Mute";
+  el.title = mic.muted ? "You are muted. Tap (or press M) to talk to the room." : "The room hears you. Tap (or press M) to mute.";
+}
+function toggleMic() {
+  if (!awake) return;
+  if (status.mic === "blocked" || status.mic === "off") { mic.start(); return; }   // retry permission inside the tap
+  mic.setMuted(!mic.muted);
+}
+
+// "Reachy, volume 5" from anyone in the room, in any language -> robot speaker volume 50 %.
+const volumeDone = new Set();
+function onFinalCaption(msg) {
+  if (volumeDone.has(msg.id)) return;
+  const v = volumeCommand(msg);
+  if (v === null) return;
+  volumeDone.add(msg.id);
+  log(`voice command: volume ${v}% ("${msg.text}")`);
+  robot.setVolume(v)
+    .then((got) => { status.volume = `${got ?? v}%`; flash(`🔊 Reachy volume ${got ?? v}%`); })
+    .catch((e) => log("set volume failed:", e?.message ?? e));
+}
+let flashTimer = 0;
+function flash(text) {
+  const el = $("toast");
+  el.textContent = text; el.hidden = false;
+  clearTimeout(flashTimer);
+  flashTimer = setTimeout(() => { el.hidden = true; }, 3000);
+}
+
 function wantToTalk() {
   if (!awake) return;
   const nowS = performance.now() / 1000;
@@ -194,6 +237,7 @@ const scene = createScene({
   },
   // Head-locked buttons in VR: point (controller ray / hand pinch) and select. Select elsewhere = recenter.
   vrButtons: [
+    { kind: "mic", muted: () => mic.muted || status.mic !== "on", label: () => (mic.muted ? "Muted" : status.mic === "on" ? "Mic on" : "Mic off"), onClick: toggleMic },
     { label: "I want to talk", onClick: wantToTalk },
     { label: () => (follow ? "Stop following" : "Follow speaker"), onClick: () => setFollow(!follow) },
     { label: () => (robotMuted ? "Unmute robot" : "Mute robot"), onClick: () => setRobotMuted(!robotMuted) },
@@ -226,6 +270,7 @@ captions = createCaptions({
   listEl: $("captions"),
   overlayEl: $("live-caption"),
   onSummary: (msg) => notes.update(msg),
+  onFinal: onFinalCaption,
   log,
   onStatus: (s) => Object.assign(status, s),
 });
@@ -286,6 +331,7 @@ $("start").onclick = async () => {
   }
 };
 $("wake").onclick = async () => {
+  mic.start();   // right in the tap: the first time the browser asks for microphone permission
   // Inside the tap: browsers allow unmuted playback (robot microphone) only during a user gesture.
   robot.setAudio(!robotMuted);
   video.play().catch((e) => log("video.play:", e?.message ?? e));
@@ -301,6 +347,7 @@ $("wake").onclick = async () => {
 };
 $("sleep").onclick = async () => {
   awake = false;
+  mic.stop();
   robot.setAudio(false);
   video.hidden = true;
   show("busy", "Reachy is going to sleep…");
@@ -309,6 +356,9 @@ $("sleep").onclick = async () => {
 };
 $("talk").onclick = wantToTalk;
 $("mute").onclick = () => setRobotMuted(!robotMuted);
+$("mic").onclick = toggleMic;
+addEventListener("keydown", (e) => { if ((e.key === "m" || e.key === "M") && !e.target.closest?.("input, select, textarea")) toggleMic(); });
+renderMicButton();
 $("follow").onclick = () => setFollow(!follow);
 setFollow(true);
 setRobotMuted(true);

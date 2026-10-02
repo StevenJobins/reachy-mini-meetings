@@ -59,6 +59,8 @@ URL: https://stevenjobins.github.io/reachy-mini-meetings/. It is deployed by `.g
 4. Tap **Wake up**. Reachy plays its wake-up motion (~2 s) and its camera switches on. **Robot sound is muted by default** (otherwise you hear yourself twice); *Unmute robot* / *Mute robot* toggles it, on the page and in VR.
 5. Look straight ahead and tap **Start**. You are in VR and Reachy follows your head. Leaving VR keeps Reachy awake, so you can tap Start again.
    - **VR buttons** (head-locked, two rows below the view): *I want to talk*, *Stop following / Follow speaker*, *Unmute/Mute robot*, *Recenter*, *Switch video*, *Exit VR*.
+   - **Two-way audio** (`mic.js`): while Reachy is awake, your microphone goes to the robot speaker, like a video call: the headset mic, or the laptop mic when testing in the browser (the browser asks for permission on the first *Wake up*). On by default; the big round mic button (page, VR, key `M`) mutes you and turns red. Echo cancellation is on; robot sound stays muted by default.
+   - **Voice volume** (`voicecmd.js`): anyone in the room says "Reachy, volume 5" in any language → robot speaker 50 % (0–10 → 0–100 %, "70" or "70 %" → 70 %). Found in the finished captions (original text and translation), so the caption backend must run. Number words for ~17 languages; others work through the translation or digits.
    - **Speaker following has priority** (`speaker.js`, ported from `robot/turn_to_speaker.py`): the robot slowly turns to whoever speaks (DoA from the mic array, max 80 °/s). Your head rotation is added on top of that base, so looking straight ahead = looking at the speaker. The VR room turns slowly around you along with it. A new direction needs 3 agreeing speech readings within 0.6 s (±12° of their median); single outliers are ignored. Also active outside VR. *Stop following* freezes the base where it is. Point at them with the controller or hand ray and pinch / pull the trigger. Pinching anywhere else recenters.
    - **I want to talk** (also on the page): the robot turns to the center of all speakers of the last minute, the right antenna waves and the body swings ±27° for 3 s, like `robot/turn_to_speaker.py`.
    - If no camera frame arrives, the video window says *No camera image yet*. Then check the camera permission on the robot Mac.
@@ -87,6 +89,8 @@ Wake up and Start are taps because browsers allow unmuted audio and entering VR 
 | `notes.js` | Meeting notes (summary + action items from `backend/`): VR panel right of the video, card on the page | three.js |
 | `videosource.js` | Camera frames for the VR window: WebRTC track → fixed-size canvas (modes track/canvas/direct) | DOM + media only |
 | `speaker.js` | Speaker following: DoA → confirmed speaker direction → slow base yaw; speakers' center | `pose.js` (pure) |
+| `mic.js` | Your mic → robot speaker (replaceTrack on the SDK's audio sender), mute, re-attach after reconnects | DOM + media only |
+| `voicecmd.js` | "Reachy, volume N" in any language → percent | nothing (pure, portable) |
 | `gestures.js` | "I want to talk" gesture (antenna wave + body swing), layered on the mirrored pose | nothing (pure, portable) |
 | `app.js` | Wires everything together, one-button UI | the four above |
 | `manifest.webmanifest`, `icon*.{svg,png}` | Installable app (PWA) | |

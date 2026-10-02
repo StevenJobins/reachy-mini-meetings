@@ -84,6 +84,12 @@ export function createRobot({ clientId, onStatus, onMeasuredHead, onDoa = () => 
 
     get connected() { return streaming; },
 
+    /** Live RTCPeerConnection (null between sessions; replaced on reconnect, so re-read it each time). */
+    get peerConnection() { return reachy.peerConnection; },
+
+    /** Robot speaker volume 0-100. Resolves with the volume the daemon reports (or null). */
+    setVolume(percent) { return reachy.setVolume(percent); },
+
     /** Robot microphone on/off (the audio track of the video element). Turn on inside a user gesture. */
     setAudio(on) { reachy.setAudioMuted(!on); },
 

@@ -87,7 +87,7 @@ function draw(ctx, b, mode) {
   for (const l of subLines) { ctx.fillText(l, x, y); y += 40; }
 }
 
-export function createCaptions({ three, distM, vfovDeg, speakers, listEl, overlayEl, onSummary, log, onStatus }) {
+export function createCaptions({ three, distM, vfovDeg, speakers, listEl, overlayEl, onSummary, onFinal, log, onStatus }) {
   const bubbles = new Map();                // id -> { msg, mesh, ctx, tex, until, trackId, color, label, onFace, target }
   const screenH = 2 * distM * Math.tan(vfovDeg / 2 * Math.PI / 180);
   const screenW = screenH * 16 / 9;
@@ -235,6 +235,7 @@ export function createCaptions({ three, distM, vfovDeg, speakers, listEl, overla
     if (!msg.text) { remove(msg.id); layout(); renderPage(); return; }
     // replayed history on (re)connect: list only, no bubbles
     if (msg.final && msg.t_end < Date.now() / 1000 - SHOW_S) { renderPage(); return; }
+    if (msg.final) onFinal?.(msg);   // fresh finished utterance (voice commands)
     const b = bubble(msg.id);
     b.msg = msg;
     b.until = performance.now() + 1000 * (msg.final ? SHOW_S : PARTIAL_S);

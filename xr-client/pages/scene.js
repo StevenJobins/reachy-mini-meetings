@@ -77,28 +77,38 @@ export function createScene({ video, vfovDeg, distM, statusText, onHeadsetPose, 
   }, 200);
 
   // ---- head-locked VR buttons, row above the status panel. A label may be a function (e.g. mute state).
+  // {kind: "mic", muted: () => bool}: big round FaceTime-style mic button left of the rows.
   const labelOf = (b) => (typeof b.label === "function" ? b.label() : b.label);
-  const buttons = vrButtons.map((b, i) => {
-    let text = labelOf(b);
+  const keyOf = (b) => `${labelOf(b)}|${b.muted?.() ?? ""}`;
+  const rowButtons = vrButtons.filter((b) => b.kind !== "mic");
+  const buttons = vrButtons.map((b) => {
+    let key = keyOf(b);
+    const isMic = b.kind === "mic";
     const draw = (hover) => (ctx, w, h) => {
       ctx.clearRect(0, 0, w, h);
+      if (isMic) return drawMicButton(ctx, w, h, b.muted(), hover, labelOf(b));
       ctx.fillStyle = hover ? "#ff9500" : "rgba(40,40,46,0.92)";
       ctx.beginPath(); ctx.roundRect(4, 4, w - 8, h - 8, 28); ctx.fill();
       ctx.fillStyle = hover ? "#000" : "#eee"; ctx.font = "bold 44px sans-serif";
-      ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.fillText(text, w / 2, h / 2);
+      ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.fillText(labelOf(b), w / 2, h / 2);
     };
-    const tex = [canvasTexture(512, 128, draw(false)), canvasTexture(512, 128, draw(true))];
-    const mesh = new THREE.Mesh(new THREE.PlaneGeometry(0.2, 0.05), new THREE.MeshBasicMaterial({ map: tex[0], transparent: true }));
-    // Rows of 3, centred, just above the status panel.
-    const perRow = 3, row = Math.floor(i / perRow), col = i % perRow;
-    const inRow = Math.min(perRow, vrButtons.length - row * perRow);
-    mesh.position.set((col - (inRow - 1) / 2) * 0.215, -0.25 - row * 0.06, -1.2);
+    const [cw, ch, pw, ph] = isMic ? [256, 300, 0.11, 0.129] : [512, 128, 0.2, 0.05];
+    const tex = [canvasTexture(cw, ch, draw(false)), canvasTexture(cw, ch, draw(true))];
+    const mesh = new THREE.Mesh(new THREE.PlaneGeometry(pw, ph), new THREE.MeshBasicMaterial({ map: tex[0], transparent: true }));
+    if (isMic) {
+      mesh.position.set(-1.5 * 0.215 - 0.09, -0.29, -1.2);
+    } else {
+      // Rows of 3, centred, just above the status panel.
+      const i = rowButtons.indexOf(b), perRow = 3, row = Math.floor(i / perRow), col = i % perRow;
+      const inRow = Math.min(perRow, rowButtons.length - row * perRow);
+      mesh.position.set((col - (inRow - 1) / 2) * 0.215, -0.25 - row * 0.06, -1.2);
+    }
     mesh.userData = {
       onClick: b.onClick, tex,
-      refresh() {   // redraw both textures when the label changed
-        const now = labelOf(b);
-        if (now === text) return;
-        text = now;
+      refresh() {   // redraw both textures when the label (or mute state) changed
+        const now = keyOf(b);
+        if (now === key) return;
+        key = now;
         tex.forEach((t, hover) => { draw(!!hover)(t.image.getContext("2d"), t.image.width, t.image.height); t.needsUpdate = true; });
       },
     };
@@ -289,4 +299,23 @@ function canvasTexture(w, h, draw) {
   const tex = new THREE.CanvasTexture(c);
   tex.colorSpace = THREE.SRGBColorSpace;
   return tex;
+}
+
+/** Round mic button: red with a crossed-out mic when muted, like a video call. */
+function drawMicButton(ctx, w, h, muted, hover, label) {
+  const r = w / 2 - 10, cx = w / 2, cy = r + 10;
+  ctx.fillStyle = muted ? (hover ? "#ff6b6b" : "#e5484d") : (hover ? "#ff9500" : "rgba(40,40,46,0.95)");
+  ctx.beginPath(); ctx.arc(cx, cy, r, 0, 2 * Math.PI); ctx.fill();
+  ctx.strokeStyle = "#fff"; ctx.fillStyle = "#fff"; ctx.lineWidth = 12; ctx.lineCap = "round";
+  ctx.beginPath(); ctx.roundRect(cx - 24, cy - 70, 48, 88, 24); ctx.fill();          // capsule
+  ctx.beginPath(); ctx.arc(cx, cy - 10, 46, 0.15 * Math.PI, 0.85 * Math.PI); ctx.stroke(); // holder
+  ctx.beginPath(); ctx.moveTo(cx, cy + 36); ctx.lineTo(cx, cy + 62); ctx.stroke();          // stem
+  if (muted) {
+    ctx.strokeStyle = muted ? "#e5484d" : "#fff"; ctx.lineWidth = 26;
+    ctx.beginPath(); ctx.moveTo(cx - 62, cy - 70); ctx.lineTo(cx + 62, cy + 62); ctx.stroke();
+    ctx.strokeStyle = "#fff"; ctx.lineWidth = 12;
+    ctx.beginPath(); ctx.moveTo(cx - 62, cy - 70); ctx.lineTo(cx + 62, cy + 62); ctx.stroke();
+  }
+  ctx.fillStyle = "#eee"; ctx.font = "bold 30px sans-serif"; ctx.textAlign = "center"; ctx.textBaseline = "alphabetic";
+  ctx.fillText(label, cx, h - 4);
 }
