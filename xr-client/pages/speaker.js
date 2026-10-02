@@ -16,8 +16,8 @@ export class SpeakerTracker {
     confirmSpreadDeg = 12, // ... within ± this of their median (outliers are ignored, not blocking)
     memoryS = 60,          // speakers of the last minute, for center() ("I want to talk")
     binDeg = 20,           // center(): each 20° sector counts once
-    maxVel = 40,           // deg/s: deliberately slow and smooth ("gemütlich")
-    maxAcc = 40,           // deg/s²
+    maxVel = 80,           // deg/s: smooth, not hectic (40 felt too slow in the test)
+    maxAcc = 80,           // deg/s²
   } = {}) {
     Object.assign(this, { deadbandDeg, latencyS, maxYawDeg, confirmN, confirmWindowS, confirmSpreadDeg, memoryS, binDeg });
     this.headHist = [];   // [t, measured world head yaw]

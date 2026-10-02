@@ -82,8 +82,8 @@ export class HeadMirror {
     smoothing = 0.35,
     // Meeting limits (degrees), tighter than the hardware (pitch/roll ±40): the meeting is at the table,
     // not on the ceiling. pitchUp: faces at ~1 m are at most ~15-20° above the robot. pitchDown: table,
-    // papers, laptop. roll: enough for conversational head tilts. Yaw/body: free to look around.
-    limits = { roll: 15, pitchUp: 20, pitchDown: 25, yaw: 180, body: 160, headBody: 65 },
+    // papers, laptop (25° was more than needed in the test). roll: enough for conversational head tilts. Yaw/body: free to look around.
+    limits = { roll: 15, pitchUp: 20, pitchDown: 20, yaw: 180, body: 160, headBody: 65 },
     // deg/s and deg/s². The body is the heavy part: it turns slower and gentler than the head.
     rate = { headVel: 150, headAcc: 800, bodyVel: 90, bodyAcc: 300 },
   } = {}) {
