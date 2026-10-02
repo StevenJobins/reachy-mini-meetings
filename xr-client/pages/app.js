@@ -59,7 +59,7 @@ addEventListener("error", (e) => log("ERROR", e.message, `${e.filename}:${e.line
 addEventListener("unhandledrejection", (e) => log("UNHANDLED", e.reason?.message ?? e.reason));
 
 // ---------------------------------------------------------------- status
-const status = { user: "-", robot: "-", motors: "-", ice: "-", video: "-", xr: "off", send: 0, cmd: [0, 0, 0], body: 0, meas: [0, 0, 0], captions: "-", sound: "muted", doa: "none", mic: "off", volume: "-", micKbps: 0 };
+const status = { user: "-", robot: "-", motors: "-", ice: "-", video: "-", xr: "off", send: 0, cmd: [0, 0, 0], body: 0, meas: [0, 0, 0], captions: "-", audioIn: "", sound: "muted", doa: "none", mic: "off", volume: "-", micKbps: 0 };
 let sentCount = 0;
 setInterval(() => { status.send = sentCount; sentCount = 0; }, 1000);
 function statusText() {
@@ -67,13 +67,33 @@ function statusText() {
   return [
     `robot ${status.robot}   motors ${status.motors}   ice ${status.ice}   video ${status.video}   send ${status.send} Hz   mic ${status.mic} ${status.micKbps.toFixed(0)} kbps   volume ${status.volume}`,
     `cmd  r/p/y ${f(status.cmd)}   body ${status.body.toFixed(1)}   speaker target ${speaker.target.toFixed(0)} base ${speaker.base.toFixed(0)}`,
-    `meas r/p/y ${f(status.meas)}   captions ${status.captions}   ${faces.stats()}   robot sound ${status.sound}   doa ${status.doa}`,
+    `meas r/p/y ${f(status.meas)}   captions ${status.captions}   ${faces.stats()}   robot sound ${status.sound} ${status.audioIn}   doa ${status.doa}`,
   ].join("\n");
 }
+// Robot sound diagnostics (why is it choppy?): packets lost, jitter, playout buffer, and how much audio
+// the browser had to conceal (fill in) over the last 2 s. Shown in the status line, logged with the heartbeat.
+let audioPrev = null;
+setInterval(async () => {
+  const pc = robot.peerConnection;
+  if (!pc) return;
+  try {
+    const stats = await pc.getStats();
+    stats.forEach((r) => {
+      if (r.type !== "inbound-rtp" || r.kind !== "audio") return;
+      const p = audioPrev ?? r;
+      const samples = r.totalSamplesReceived - p.totalSamplesReceived;
+      const concealed = r.concealedSamples - p.concealedSamples;
+      const bufMs = (r.jitterBufferDelay - p.jitterBufferDelay) / Math.max(1, r.jitterBufferEmittedCount - p.jitterBufferEmittedCount) * 1000;
+      status.audioIn = `| in: lost ${r.packetsLost} jitter ${(r.jitter * 1000).toFixed(0)}ms buf ${bufMs.toFixed(0)}ms concealed ${samples > 0 ? (100 * concealed / samples).toFixed(0) : "-"}%`;
+      audioPrev = r;
+    });
+  } catch {}
+}, 2000);
+
 // Heartbeat every 5 s: if the page dies, the last lines show memory, video and connection state.
 setInterval(() => {
   const mem = performance.memory ? `heap ${(performance.memory.usedJSHeapSize / 1e6).toFixed(0)} MB` : "heap ?";
-  log("alive", mem, `xr ${status.xr}`, `robot ${status.robot}`, `ice ${status.ice}`, `motors ${status.motors}`,
+  log("alive", mem, status.audioIn, `xr ${status.xr}`, `robot ${status.robot}`, `ice ${status.ice}`, `motors ${status.motors}`,
     `send ${status.send} Hz`, scene.videoStats());
 }, 5000);
 document.addEventListener("visibilitychange", () => log("page", document.visibilityState));
