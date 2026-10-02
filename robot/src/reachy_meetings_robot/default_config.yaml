@@ -22,6 +22,10 @@ mirror:                     # headset pose -> robot head
   gain: [1.0, 1.0, 1.0]     # roll, pitch, yaw scaling (headset deg -> robot deg)
   stale_after_s: 0.5        # no pose for this long -> drift back to neutral
   body_follow: true         # rotate body when head yaw exceeds the head/body delta
+  head_max_vel_dps: 150     # rate limits: fast user head turns must not jerk the robot over
+  head_max_acc_dps2: 800
+  body_max_vel_dps: 90      # the body is the heavy part: slower and gentler than the head
+  body_max_acc_dps2: 300
 
 gestures:
   default_duration_s: 0.6

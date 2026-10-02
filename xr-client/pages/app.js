@@ -73,8 +73,9 @@ const scene = createScene({
   onHeadsetPose: (q, now) => {
     if (wantRecenter) { recenter.set(q); wantRecenter = false; captions.layout(); log("recentered"); }
     if (!robot.connected || now - lastSend < 1000 / cfg.sendHz) return;
+    const dt = (now - lastSend) / 1000;
     lastSend = now;
-    const t = mirror.step(headsetToRobot(recenter.toRelative(q)));
+    const t = mirror.step(headsetToRobot(recenter.toRelative(q)), dt);
     if (robot.setHead(t)) sentCount++;
     status.cmd = [t.roll, t.pitch, t.yaw];
     status.body = t.bodyYaw;

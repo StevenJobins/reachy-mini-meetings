@@ -53,29 +53,67 @@ export class Recenter {
 }
 
 /**
+ * Moves towards a target with limited velocity and acceleration (degrees, seconds).
+ * Brakes early enough to stop at the target instead of overshooting. Fast head turns of the user
+ * then become a quick but smooth robot motion instead of a jerk that can tip the robot over.
+ */
+export class RateLimiter {
+  constructor(maxVel, maxAcc) { this.maxVel = maxVel; this.maxAcc = maxAcc; this.pos = 0; this.vel = 0; }
+
+  step(target, dt) {
+    const err = target - this.pos;
+    // Fastest speed from which we can still brake to zero within the remaining distance.
+    const vStop = Math.sqrt(2 * this.maxAcc * Math.abs(err));
+    const vWant = Math.sign(err) * Math.min(this.maxVel, vStop, Math.abs(err) / dt);
+    const dv = Math.max(-this.maxAcc * dt, Math.min(this.maxAcc * dt, vWant - this.vel));
+    this.vel += dv;
+    this.pos += this.vel * dt;
+    return this.pos;
+  }
+}
+
+/**
  * Same pipeline as robot/src/reachy_meetings_robot (head_mirror + safety):
- * exponential smoothing -> clamp -> body follows when head yaw leaves the head/body window.
+ * exponential smoothing -> clamp -> velocity/acceleration limit -> body follows (slower) when
+ * head yaw leaves the head/body window.
  */
 export class HeadMirror {
-  constructor({ smoothing = 0.35, limits = { roll: 40, pitch: 40, yaw: 180, body: 160, headBody: 65 } } = {}) {
+  constructor({
+    smoothing = 0.35,
+    limits = { roll: 40, pitch: 40, yaw: 180, body: 160, headBody: 65 },
+    // deg/s and deg/s². The body is the heavy part: it turns slower and gentler than the head.
+    rate = { headVel: 150, headAcc: 800, bodyVel: 90, bodyAcc: 300 },
+  } = {}) {
     this.smoothing = smoothing;
     this.lim = limits;
     this.filt = [0, 0, 0];
-    this.bodyYaw = 0;
+    this.head = [0, 1, 2].map(() => new RateLimiter(rate.headVel, rate.headAcc));
+    this.body = new RateLimiter(rate.bodyVel, rate.bodyAcc);
+    this.bodyGoal = 0;
   }
 
-  /** raw = [roll, pitch, yaw] degrees -> {roll, pitch, yaw, bodyYaw} degrees, safe to send. */
-  step(raw) {
+  get bodyYaw() { return this.body.pos; }
+
+  /** raw = [roll, pitch, yaw] degrees, dt = seconds since the last step -> {roll, pitch, yaw, bodyYaw} degrees, safe to send. */
+  step(raw, dt) {
     const a = this.smoothing, L = this.lim;
     const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+    dt = clamp(dt || 0.02, 0.001, 0.1);
     for (let i = 0; i < 3; i++) this.filt[i] = a * this.filt[i] + (1 - a) * raw[i];
-    const roll = clamp(this.filt[0], -L.roll, L.roll);
-    const pitch = clamp(this.filt[1], -L.pitch, L.pitch);
-    let yaw = clamp(this.filt[2], -L.yaw, L.yaw);
-    if (yaw > this.bodyYaw + L.headBody) this.bodyYaw = yaw - L.headBody;
-    if (yaw < this.bodyYaw - L.headBody) this.bodyYaw = yaw + L.headBody;
-    this.bodyYaw = clamp(this.bodyYaw, -L.body, L.body);
-    yaw = clamp(yaw, this.bodyYaw - L.headBody, this.bodyYaw + L.headBody);
-    return { roll, pitch, yaw, bodyYaw: this.bodyYaw };
+    const goal = [
+      clamp(this.filt[0], -L.roll, L.roll),
+      clamp(this.filt[1], -L.pitch, L.pitch),
+      clamp(this.filt[2], -L.yaw, L.yaw),
+    ];
+    const [roll, pitch, yawWanted] = goal.map((g, i) => this.head[i].step(g, dt));
+    // Body goal from where the user looks (not from the rate-limited head), so it starts turning at once.
+    if (goal[2] > this.bodyGoal + L.headBody) this.bodyGoal = goal[2] - L.headBody;
+    if (goal[2] < this.bodyGoal - L.headBody) this.bodyGoal = goal[2] + L.headBody;
+    this.bodyGoal = clamp(this.bodyGoal, -L.body, L.body);
+    const bodyYaw = this.body.step(this.bodyGoal, dt);
+    // While the body is still catching up, the head waits at the edge of the window.
+    const yaw = clamp(yawWanted, bodyYaw - L.headBody, bodyYaw + L.headBody);
+    if (yaw !== yawWanted) { this.head[2].pos = yaw; this.head[2].vel = this.body.vel; }
+    return { roll, pitch, yaw, bodyYaw };
   }
 }

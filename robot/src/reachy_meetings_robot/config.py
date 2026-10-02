@@ -36,6 +36,10 @@ class MirrorCfg:
     gain: tuple[float, float, float] = (1.0, 1.0, 1.0)
     stale_after_s: float = 0.5
     body_follow: bool = True
+    head_max_vel_dps: float = 150
+    head_max_acc_dps2: float = 800
+    body_max_vel_dps: float = 90
+    body_max_acc_dps2: float = 300
 
 
 @dataclass
