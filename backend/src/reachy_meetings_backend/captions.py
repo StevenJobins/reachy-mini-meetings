@@ -85,6 +85,7 @@ class Pipeline:
         self.worker = ThreadPoolExecutor(1)  # Whisper runs one job at a time
         self.pending = 0
         self.finalized: set[int] = set()
+        self.partial_tr: dict[int, tuple[float, int]] = {}   # id -> (time, text length) of last partial translation
         self.server = CaptionServer(args.host, args.port, args.target)
         self.segmenter = Segmenter()
         self.translator = None
@@ -133,12 +134,25 @@ class Pipeline:
 
     async def _partial(self, seg: Segment, wall_end: float) -> None:
         text, lang = await self._stt(self.stt_partial, seg.audio)
-        if text and seg.id not in self.finalized:
-            self.server.send(self._caption(seg, wall_end, text, lang))
+        if not text or seg.id in self.finalized:
+            return
+        cap = self._caption(seg, wall_end, text, lang)
+        self.server.send(cap)
+        # Translate live text too, so the bubble is readable while the person still talks. Throttled
+        # (DeepL quota): only when enough new text came in since the last partial translation.
+        last_t, last_len = self.partial_tr.get(seg.id, (0.0, 0))
+        now = time.time()
+        if (self.translator and lang != self.args.target and len(text) - last_len >= 15
+                and now - last_t >= 1.2):
+            self.partial_tr[seg.id] = (now, len(text))
+            translation = await self.translator(text, remember=False)
+            if translation and seg.id not in self.finalized:
+                self.server.send({**cap, "translation": translation})
 
     async def _final(self, seg: Segment, wall_end: float) -> None:
         text, lang = await self._stt(self.stt, seg.audio)
         self.finalized.add(seg.id)
+        self.partial_tr.pop(seg.id, None)
         cap = self._caption(seg, wall_end, text, lang)
         self.server.send(cap)
         log.info("[%d %s] %s", seg.id, lang, text)

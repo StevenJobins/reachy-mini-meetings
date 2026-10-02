@@ -13,13 +13,40 @@ export function createScene({ video, vfovDeg, distM, statusText, onHeadsetPose, 
   renderer.domElement.addEventListener("webglcontextlost", () => log("ERROR webgl context lost (GPU crash / out of memory)"));
   renderer.xr.setReferenceSpaceType("local");
   const scene = new THREE.Scene();
-  scene.background = new THREE.Color(0x101014);
+  scene.background = new THREE.Color(0x0b0d16);
   const camera = new THREE.PerspectiveCamera(70, 1, 0.05, 100);
   scene.add(camera);
 
-  const grid = new THREE.GridHelper(20, 40, 0x335533, 0x222822);   // floor: a stable room to stand in
-  grid.position.y = -1.4;
-  scene.add(grid);
+  // ---- environment: a calm evening sky and a glowing floor, so the room feels stable and not like a void
+  const sky = new THREE.Mesh(new THREE.SphereGeometry(40, 48, 24), new THREE.ShaderMaterial({
+    side: THREE.BackSide, depthWrite: false,
+    vertexShader: "varying vec3 vDir; void main() { vDir = normalize(position); gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }",
+    fragmentShader: `varying vec3 vDir;
+      void main() {
+        float h = vDir.y;
+        vec3 zenith = vec3(0.04, 0.05, 0.12), horizon = vec3(0.22, 0.13, 0.26), ground = vec3(0.025, 0.025, 0.04);
+        vec3 c = h > 0.0 ? mix(horizon, zenith, pow(h, 0.5)) : mix(horizon * 0.5, ground, pow(-h, 0.35));
+        c += vec3(1.0, 0.55, 0.18) * 0.25 * exp(-abs(h) * 12.0);   // warm band along the horizon
+        gl_FragColor = vec4(c, 1.0);
+      }`,
+  }));
+  scene.add(sky);
+  const floor = new THREE.Mesh(new THREE.CircleGeometry(9, 96), new THREE.MeshBasicMaterial({
+    transparent: true, depthWrite: false,
+    map: canvasTexture(1024, 1024, (ctx, w) => {
+      const r = w / 2;
+      const glow = ctx.createRadialGradient(r, r, 0, r, r, r);
+      glow.addColorStop(0, "rgba(255,149,0,0.28)"); glow.addColorStop(0.35, "rgba(140,90,200,0.10)"); glow.addColorStop(1, "rgba(0,0,0,0)");
+      ctx.fillStyle = glow; ctx.fillRect(0, 0, w, w);
+      for (let k = 1; k <= 8; k++) {   // rings every ~1.1 m, fading outwards
+        ctx.strokeStyle = `rgba(255,255,255,${0.10 - k * 0.011})`; ctx.lineWidth = 2;
+        ctx.beginPath(); ctx.arc(r, r, (r * k) / 8.5, 0, Math.PI * 2); ctx.stroke();
+      }
+    }),
+  }));
+  floor.rotation.x = -Math.PI / 2;
+  floor.position.y = -1.4;
+  scene.add(floor);
 
   // Camera frames: see videosource.js for why the VR window does not simply use the <video> element.
   const source = createVideoSource(video, log);
@@ -50,71 +77,98 @@ export function createScene({ video, vfovDeg, distM, statusText, onHeadsetPose, 
   video.addEventListener("resize", () => {
     if (video.videoHeight) screen.scale.x = screenH * video.videoWidth / video.videoHeight;
   });
-  // Orange frame: the window stays findable even when no video arrives.
-  const frame = new THREE.LineSegments(
-    new THREE.EdgesGeometry(new THREE.PlaneGeometry(1, 1)),
-    new THREE.LineBasicMaterial({ color: 0xff9500 }));
-  screen.add(frame);
+  // Dark rounded bezel with a soft glow behind the video: the window stays findable even without video.
+  const bezel = new THREE.Mesh(new THREE.PlaneGeometry(1.04, 1.07), new THREE.MeshBasicMaterial({
+    transparent: true, depthWrite: false,
+    map: canvasTexture(1040, 620, (ctx, w, h) => {
+      ctx.shadowColor = "rgba(255,149,0,0.45)"; ctx.shadowBlur = 40;
+      ctx.fillStyle = "#12141c"; ctx.beginPath(); ctx.roundRect(24, 24, w - 48, h - 48, 26); ctx.fill();
+      ctx.shadowBlur = 0; ctx.strokeStyle = "rgba(255,255,255,0.18)"; ctx.lineWidth = 3; ctx.stroke();
+    }),
+  }));
+  bezel.position.z = -0.01;
+  screen.add(bezel);
   const robotView = new THREE.Group();
   robotView.add(screen);
   scene.add(robotView);
 
-  // Small head-locked status panel, low in the view.
+  // Head-locked debug panel at the top of the view, hidden unless "Debug" is on (More menu).
   const hudCanvas = document.createElement("canvas");
-  hudCanvas.width = 1024; hudCanvas.height = 160;
+  hudCanvas.width = 1800; hudCanvas.height = 190;
   const hudCtx = hudCanvas.getContext("2d");
   const hudTex = new THREE.CanvasTexture(hudCanvas);
-  const hud = new THREE.Mesh(new THREE.PlaneGeometry(0.8, 0.125), new THREE.MeshBasicMaterial({ map: hudTex, transparent: true }));
-  hud.position.set(0, -0.45, -1.2);
+  const hud = new THREE.Mesh(new THREE.PlaneGeometry(1.1, 0.116), new THREE.MeshBasicMaterial({ map: hudTex, transparent: true }));
+  hud.position.set(0, 0.36, -1.2);
+  hud.visible = false;
   camera.add(hud);
   setInterval(() => {
+    if (!hud.visible) return;
     hudCtx.clearRect(0, 0, hudCanvas.width, hudCanvas.height);
-    hudCtx.fillStyle = "rgba(0,0,0,0.6)";
-    hudCtx.fillRect(0, 0, hudCanvas.width, hudCanvas.height);
-    hudCtx.fillStyle = "#7f7"; hudCtx.font = "24px monospace";
-    [...statusText().split("\n"), source.stats()].forEach((l, i) => hudCtx.fillText(l, 12, 32 + i * 34));
+    hudCtx.fillStyle = "rgba(8,10,16,0.82)";
+    hudCtx.beginPath(); hudCtx.roundRect(0, 0, hudCanvas.width, hudCanvas.height, 24); hudCtx.fill();
+    hudCtx.fillStyle = "#86efac"; hudCtx.font = "26px ui-monospace, monospace";
+    [...statusText().split("\n"), source.stats()].forEach((l, i) => hudCtx.fillText(l, 20, 40 + i * 40));
     hudTex.needsUpdate = true;
   }, 200);
 
-  // ---- head-locked VR buttons, row above the status panel. A label may be a function (e.g. mute state).
-  // {kind: "mic", muted: () => bool}: big round FaceTime-style mic button left of the rows.
-  const labelOf = (b) => (typeof b.label === "function" ? b.label() : b.label);
-  const keyOf = (b) => `${labelOf(b)}|${b.muted?.() ?? ""}`;
-  const rowButtons = vrButtons.filter((b) => b.kind !== "mic");
-  const buttons = vrButtons.map((b) => {
-    let key = keyOf(b);
+  // ---- head-locked dock below the view: glass pills with icon + label. Entries with `more: true` sit in a
+  // second row that the automatic "More" button opens. label / icon / active may be functions.
+  // {kind: "mic", muted: () => bool}: big round video-call style mic button left of the dock.
+  const val = (v) => (typeof v === "function" ? v() : v);
+  let moreOpen = false;
+  const entries = [...vrButtons.filter((b) => !b.more && b.kind !== "mic"),
+    { icon: () => (moreOpen ? "✕" : "⋯"), label: () => (moreOpen ? "Less" : "More"), onClick: () => { moreOpen = !moreOpen; } },
+    ...vrButtons.filter((b) => b.more), ...vrButtons.filter((b) => b.kind === "mic")];
+  const PW = 0.15, PH = 0.044, GAP = 0.012;
+  const buttons = entries.map((b) => {
+    let key = "";
     const isMic = b.kind === "mic";
     const draw = (hover) => (ctx, w, h) => {
+      if (isMic) { ctx.clearRect(0, 0, w, h); return drawMicButton(ctx, w, h, b.muted(), hover, val(b.label)); }
+      const active = !!val(b.active);
       ctx.clearRect(0, 0, w, h);
-      if (isMic) return drawMicButton(ctx, w, h, b.muted(), hover, labelOf(b));
-      ctx.fillStyle = hover ? "#ff9500" : "rgba(40,40,46,0.92)";
-      ctx.beginPath(); ctx.roundRect(4, 4, w - 8, h - 8, 28); ctx.fill();
-      ctx.fillStyle = hover ? "#000" : "#eee"; ctx.font = "bold 44px sans-serif";
-      ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.fillText(labelOf(b), w / 2, h / 2);
+      ctx.fillStyle = hover ? "#ff9500" : active ? "rgba(255,149,0,0.22)" : "rgba(22,24,34,0.88)";
+      ctx.beginPath(); ctx.roundRect(4, 4, w - 8, h - 8, (h - 8) / 2); ctx.fill();
+      ctx.strokeStyle = hover ? "rgba(255,255,255,0.0)" : active ? "rgba(255,149,0,0.9)" : "rgba(255,255,255,0.16)";
+      ctx.lineWidth = 3; ctx.stroke();
+      ctx.textBaseline = "middle";
+      ctx.font = "44px system-ui, 'Noto Color Emoji', sans-serif"; ctx.textAlign = "center";
+      ctx.fillStyle = hover ? "#111" : "#fff";
+      ctx.fillText(val(b.icon) ?? "", 62, h / 2 + 2);
+      ctx.font = "600 38px system-ui, sans-serif"; ctx.textAlign = "left";
+      ctx.fillStyle = hover ? "#111" : active ? "#ffb347" : "#eef0f4";
+      ctx.fillText(val(b.label), 104, h / 2 + 2);
     };
-    const [cw, ch, pw, ph] = isMic ? [256, 300, 0.11, 0.129] : [512, 128, 0.2, 0.05];
+    const [cw, ch, pw, ph] = isMic ? [256, 300, 0.085, 0.1] : [420, 124, PW, PH];
     const tex = [canvasTexture(cw, ch, draw(false)), canvasTexture(cw, ch, draw(true))];
     const mesh = new THREE.Mesh(new THREE.PlaneGeometry(pw, ph), new THREE.MeshBasicMaterial({ map: tex[0], transparent: true }));
-    if (isMic) {
-      mesh.position.set(-1.5 * 0.215 - 0.09, -0.29, -1.2);
-    } else {
-      // Rows of 3, centred, just above the status panel.
-      const i = rowButtons.indexOf(b), perRow = 3, row = Math.floor(i / perRow), col = i % perRow;
-      const inRow = Math.min(perRow, rowButtons.length - row * perRow);
-      mesh.position.set((col - (inRow - 1) / 2) * 0.215, -0.25 - row * 0.06, -1.2);
-    }
     mesh.userData = {
-      onClick: b.onClick, tex,
-      refresh() {   // redraw both textures when the label (or mute state) changed
-        const now = keyOf(b);
+      onClick: b.onClick, tex, more: !!b.more, mic: isMic,
+      refresh() {   // redraw when label / icon / active / mute state changed
+        const now = `${val(b.icon)}|${val(b.label)}|${!!val(b.active)}|${b.muted?.() ?? ""}`;
         if (now === key) return;
         key = now;
         tex.forEach((t, hover) => { draw(!!hover)(t.image.getContext("2d"), t.image.width, t.image.height); t.needsUpdate = true; });
       },
     };
+    mesh.userData.refresh();
     camera.add(mesh);
     return mesh;
   });
+  function layoutDock() {
+    const main = buttons.filter((m) => !m.userData.more && !m.userData.mic);
+    const rows = [main, moreOpen ? buttons.filter((m) => m.userData.more) : []];
+    for (const m of buttons) m.visible = false;
+    rows.forEach((row, r) => row.forEach((m, i) => {
+      m.visible = true;
+      m.position.set((i - (row.length - 1) / 2) * (PW + GAP), -0.33 - r * (PH + GAP), -1.1);
+    }));
+    for (const m of buttons.filter((b) => b.userData.mic)) {   // round mic button left of the first row
+      m.visible = true;
+      m.position.set(-((main.length + 1) / 2) * (PW + GAP) - 0.03, -0.33 - 0.025, -1.1);
+    }
+  }
+  const visibleButtons = () => buttons.filter((m) => m.visible);
 
   // One visible ray per input source (controller, hand, gaze+pinch), so the buttons can be aimed at.
   const raycaster = new THREE.Raycaster();
@@ -134,7 +188,7 @@ export function createScene({ video, vfovDeg, distM, statusText, onHeadsetPose, 
     raycaster.ray.origin.setFromMatrixPosition(m4);
     raycaster.ray.direction.set(0, 0, -1).transformDirection(m4);
     camera.updateMatrixWorld(true);
-    return raycaster.intersectObjects(buttons, false)[0] ?? null;
+    return raycaster.intersectObjects(visibleButtons(), false)[0] ?? null;
   }
 
   function updatePointers(frame) {
@@ -174,7 +228,7 @@ export function createScene({ video, vfovDeg, distM, statusText, onHeadsetPose, 
     mouse.set(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
     camera.updateMatrixWorld(true);
     raycaster.setFromCamera(mouse, camera);
-    return raycaster.intersectObjects(buttons, false)[0]?.object ?? null;
+    return raycaster.intersectObjects(visibleButtons(), false)[0]?.object ?? null;
   }
 
   function resize() {
@@ -197,6 +251,7 @@ export function createScene({ video, vfovDeg, distM, statusText, onHeadsetPose, 
       drag.x = e.clientX; drag.y = e.clientY;
     }
     hoveredDesktop = desktopHit(e);
+    el.style.cursor = hoveredDesktop ? "pointer" : drag ? "grabbing" : "grab";
   });
   el.addEventListener("pointerup", (e) => {
     const click = drag && !drag.moved;
@@ -242,6 +297,7 @@ export function createScene({ video, vfovDeg, distM, statusText, onHeadsetPose, 
     }
     if (screenMat.map !== map) { screenMat.map = map; screenMat.needsUpdate = true; }
     for (const b of buttons) b.userData.refresh();
+    layoutDock();
     if (frame) updatePointers(frame);
     if (haveTarget) robotView.quaternion.slerp(target, 0.5);   // pose stream ~30 Hz -> smooth at display rate
     onFrame?.(now);
@@ -270,6 +326,9 @@ export function createScene({ video, vfovDeg, distM, statusText, onHeadsetPose, 
 
     /** Switch how camera frames reach the VR window (track -> canvas -> direct). Returns the new mode. */
     cycleVideo() { return source.cycle(); },
+
+    /** Debug panel (status lines) at the top of the view. */
+    toggleDebug() { hud.visible = !hud.visible; },
 
     exitVR() { renderer.xr.getSession()?.end(); exitDesktop(); },
 

@@ -30,9 +30,11 @@ class DeepLTranslator:
         self.target = {"EN": "EN-US", "PT": "PT-PT"}.get(target.upper(), target.upper())
         self.history: deque[str] = deque(maxlen=context)
 
-    async def __call__(self, text: str) -> str | None:
+    async def __call__(self, text: str, remember: bool = True) -> str | None:
+        """remember=False for live partials: they are not part of the context for later utterances."""
         context = " ".join(self.history) or None
-        self.history.append(text)
+        if remember:
+            self.history.append(text)
         try:
             result = await asyncio.to_thread(self.client.translate_text, text,
                                              target_lang=self.target, context=context)
@@ -64,12 +66,13 @@ class ClaudeTranslator:
         self.system = CLAUDE_SYSTEM.format(target=f"the language with ISO 639-1 code '{target}'")
         self.history: deque[str] = deque(maxlen=context)
 
-    async def __call__(self, text: str) -> str | None:
+    async def __call__(self, text: str, remember: bool = True) -> str | None:
         prompt = ""
         if self.history:
             prompt += "Earlier in the meeting:\n" + "\n".join(self.history) + "\n\n"
         prompt += f"Utterance to translate:\n{text}"
-        self.history.append(text)
+        if remember:
+            self.history.append(text)
         try:
             resp = await self.client.beta.messages.create(
                 model=self.model,

@@ -14,7 +14,8 @@ room mic ──► Segmenter (VAD) ──► Whisper ──► DeepL translation
 
 - **Where it runs:** once, on the laptop the robot is plugged into (Mac, Windows or Linux). The headsets only open the web page and receive finished captions, so they need nothing installed.
 - **Mic:** the Reachy Mini Lite shows up on the laptop as a USB audio device, so the captions read the room audio directly. The robot process doesn't have to forward it. If no device matches `--mic` (default `Reachy`), the default mic is used, which is handy for testing on a laptop.
-- **Segmenter:** energy-based VAD. The threshold follows the room noise. It emits *partials* every 0.8 s while someone talks, and a *final* after 0.6 s of silence.
+- **Segmenter:** energy-based VAD. The threshold follows the room noise. It emits the first *partial* 0.5 s after someone starts talking, then every 0.6 s, and a *final* after 0.45 s of silence.
+- **Live translation:** partials are translated too (DeepL, throttled: ≥ 15 new characters and ≥ 1.2 s apart), so the bubble is readable while the person still talks. This roughly doubles the DeepL character use.
 - **Whisper:** the engine and models are picked from the hardware (override with `--engine`, `--model`, `--partial-model`):
 
   | Laptop | Engine | Final text | Live partials |

@@ -1,10 +1,11 @@
 // Speech bubbles: live captions from backend/ (`reachy-captions`, WebSocket port 8766), shown in VR
 // and on the page. Protocol: backend/README.md. Same id = update (partial -> final -> + translation).
 //
-// Placement: above the speaker's face in the video window (faces.js + speakers.js pick the face; the
-// bubble follows it every frame and points at the head), else as a subtitle at the bottom of the video
-// window. Never somewhere else in the room: the mic direction alone is too unreliable for that, and a
-// bubble outside the field of view is a missed bubble. Detected faces get a thin frame (toggleable).
+// Placement: always above a head in the video window. faces.js finds the people (also when the face is cut
+// off: head estimated from the shoulders), speakers.js picks the one who talks (mouth movement + mic
+// direction), the bubble follows that person every frame and points at the head. Until someone is
+// visible it waits at the top of the window in the mic direction. One bubble per person; detected heads
+// get a thin frame (toggle in Settings).
 //
 // The page is served over https, so Chrome only allows ws://localhost (headset: adb reverse tcp:8766 tcp:8766).
 // Wireless: expose the caption server over wss (e.g. cloudflared) and paste the URL in Settings.
@@ -70,9 +71,8 @@ function draw(ctx, b, mode) {
   ctx.fillStyle = msg.final ? "rgba(255,255,255,0.95)" : "rgba(255,255,255,0.78)";
   ctx.beginPath();
   ctx.roundRect(left, top, w, h, 34);
-  if (b.onFace) {   // tail pointing down at the head
-    ctx.moveTo(W / 2 - 26, H - TAIL - 1); ctx.lineTo(W / 2, H - 4); ctx.lineTo(W / 2 + 26, H - TAIL - 1);
-  }
+  // tail pointing down at the head
+  ctx.moveTo(W / 2 - 26, H - TAIL - 1); ctx.lineTo(W / 2, H - 4); ctx.lineTo(W / 2 + 26, H - TAIL - 1);
   ctx.fill();
   ctx.fillStyle = b.color;   // speaker colour strip
   ctx.beginPath(); ctx.roundRect(left + 12, top + 18, 10, h - 36, 5); ctx.fill();
@@ -88,7 +88,7 @@ function draw(ctx, b, mode) {
 }
 
 export function createCaptions({ three, distM, vfovDeg, speakers, listEl, overlayEl, onSummary, onFinal, log, onStatus }) {
-  const bubbles = new Map();                // id -> { msg, mesh, ctx, tex, until, trackId, color, label, onFace, target }
+  const bubbles = new Map();                // id -> { msg, mesh, ctx, tex, until, trackId, color, label, last }
   const screenH = 2 * distM * Math.tan(vfovDeg / 2 * Math.PI / 180);
   const screenW = screenH * 16 / 9;
   const planeH = PLANE_W * H / W;
@@ -105,7 +105,7 @@ export function createCaptions({ three, distM, vfovDeg, speakers, listEl, overla
     const mesh = new THREE.Mesh(new THREE.PlaneGeometry(PLANE_W, planeH),
       new THREE.MeshBasicMaterial({ map: tex, transparent: true, depthTest: false }));
     mesh.renderOrder = 10;
-    b = { mesh, ctx: canvas.getContext("2d"), tex, trackId: null, color: "#9ca3af", label: "", target: null };
+    b = { mesh, ctx: canvas.getContext("2d"), tex, trackId: null, color: "#9ca3af", label: "", last: null };
     bubbles.set(id, b);
     return b;
   }
@@ -120,43 +120,49 @@ export function createCaptions({ three, distM, vfovDeg, speakers, listEl, overla
 
   function redraw(b) { draw(b.ctx, b, mode); b.tex.needsUpdate = true; }
 
-  /** Pick the speaker's face once per utterance (retried while it is still a partial). */
-  function assignSpeaker(b) {
-    if (b.trackId != null || !speakers) return;
-    const tr = speakers.pick(b.msg.doa_deg);
-    if (!tr) return;
+  const tanHalf = Math.tan((2 * Math.atan(Math.tan(vfovDeg / 2 * Math.PI / 180) * 16 / 9)) / 2);
+  let lastAnchor = { cx: 0.5, top: 0.02 };   // where the last speaker was, if nobody is visible
+
+  function setSpeaker(b, tr) {
     b.trackId = tr.id;
     b.color = COLORS[(tr.id - 1) % COLORS.length];
     b.label = `Speaker ${tr.id}`;
+    b.msg.meta = { color: b.color, label: b.label };
+    redraw(b);
+    renderPage();
   }
 
-  function layout() {
-    const newestFirst = [...bubbles.values()].sort((a, b) => b.msg.id - a.msg.id);
-    let subtitles = 0;
-    newestFirst.forEach((b, i) => {
-      const tr = b.trackId != null ? speakers.get(b.trackId) : null;
-      if (b.trackId != null) {
-        // on the face; older bubbles of the same speaker stack upwards
-        const stack = newestFirst.slice(0, i).filter((o) => o.trackId === b.trackId).length;
-        if (tr) b.target = new THREE.Vector3((tr.cx - 0.5) * screenW, (0.5 - tr.top) * screenH + planeH / 2 + 0.03,
-          -distM + 0.05 + i * 0.01);
-        if (b.target) {
-          b.onFace = true;
-          if (b.mesh.parent !== three.robotView) { three.robotView.add(b.mesh); b.mesh.position.copy(b.target); }
-          b.mesh.rotation.set(0, 0, 0);
-          b.stackY = stack * planeH * 0.85;
-          return;
-        }
-      }
-      b.onFace = false;
-      b.target = null;
-      three.robotView.add(b.mesh);   // subtitle: bottom of the video window
-      b.mesh.position.set(0, -screenH / 2 + planeH / 2 + 0.05 + subtitles++ * planeH, -distM + 0.05);
-      b.mesh.rotation.set(0, 0, 0);
-    });
+  /** The head this bubble belongs to, as {cx, top} in the image (0..1). Never "nowhere". */
+  function anchor(b) {
+    let tr = b.trackId != null ? speakers?.get(b.trackId) : null;
+    if (!tr && b.trackId != null && b.last) {
+      // person lost for a moment (blur, head turn, robot turning): back with a new track id -> nearest one
+      const near = speakers.tracks.reduce((best, t) => (!best || Math.abs(t.cx - b.last.cx) < Math.abs(best.cx - b.last.cx) ? t : best), null);
+      if (near && Math.abs(near.cx - b.last.cx) < 0.3) { tr = near; b.trackId = near.id; }
+    }
+    if (!tr && b.trackId == null && speakers) {
+      tr = speakers.pick(b.msg.doa_deg);   // first time someone is visible for this utterance
+      if (tr) setSpeaker(b, tr);
+    }
+    if (tr) return (b.last = lastAnchor = { cx: tr.cx, top: tr.top });
+    if (b.last) return b.last;
+    // nobody visible yet: towards the voice (mic direction), at the top of the window
+    const doa = b.msg.doa_deg;
+    const cx = doa == null ? lastAnchor.cx : 0.5 - Math.tan(doa * Math.PI / 180) / (2 * tanHalf);
+    return { cx: Math.max(0.1, Math.min(0.9, cx)), top: 0.02 };
   }
 
-  // Detected faces: thin frame in the speaker colour, so you can see who is recognised.
+  /** Position in the video window just above the head (heads cut off at the top: above the window edge). */
+  function place(b, jump) {
+    const a = anchor(b);
+    const x = Math.max(-0.45, Math.min(0.45, a.cx - 0.5)) * screenW;
+    const y = (0.5 - Math.max(-0.05, a.top)) * screenH + planeH / 2 + 0.03;
+    const target = new THREE.Vector3(x, y, -distM + 0.05 + (b.msg.id % 5) * 0.005);
+    if (jump || b.mesh.parent !== three.robotView) { three.robotView.add(b.mesh); b.mesh.position.copy(target); }
+    else b.mesh.position.lerp(target, 0.25);
+  }
+
+  // Detected people: thin frame around the (estimated) head in the speaker colour, toggle in Settings.
   const boxes = [];
   let showFaces = load(FACES_KEY, "on") === "on";
   function updateBoxes() {
@@ -178,22 +184,15 @@ export function createCaptions({ three, distM, vfovDeg, speakers, listEl, overla
     });
   }
 
-  /** Every frame: face bubbles glide after their face. */
+  /** Every frame: bubbles glide after their person; one bubble per person (the newest wins). */
   function follow() {
-    if (!speakers) return;
-    updateBoxes();
-    for (const b of bubbles.values()) {
-      if (b.trackId == null || !b.target) continue;
-      let tr = speakers.get(b.trackId);
-      if (!tr) {
-        // face lost for a moment (blur, head turn, robot turning): it comes back with a new track id,
-        // so take over the nearest face to where the bubble is
-        const x = b.target.x / screenW + 0.5;
-        tr = speakers.tracks.reduce((best, t) => (Math.abs(t.cx - x) < Math.abs((best?.cx ?? 9) - x) ? t : best), null);
-        if (tr && Math.abs(tr.cx - x) < 0.3) b.trackId = tr.id; else tr = null;
-      }
-      if (tr) b.target.set((tr.cx - 0.5) * screenW, (0.5 - tr.top) * screenH + planeH / 2 + 0.03, b.target.z);
-      b.mesh.position.lerp(new THREE.Vector3(b.target.x, b.target.y + (b.stackY ?? 0), b.target.z), 0.25);
+    if (speakers) updateBoxes();
+    const newestFirst = [...bubbles.values()].sort((a, b) => b.msg.id - a.msg.id);
+    const owners = new Set();
+    for (const b of newestFirst) {
+      place(b, false);
+      if (b.trackId == null) continue;
+      if (owners.has(b.trackId)) remove(b.msg.id); else owners.add(b.trackId);
     }
   }
 
@@ -232,19 +231,19 @@ export function createCaptions({ three, distM, vfovDeg, speakers, listEl, overla
       else if (i >= 0) finals.splice(i, 1);
       finals.splice(0, finals.length - 30);
     }
-    if (!msg.text) { remove(msg.id); layout(); renderPage(); return; }
+    if (!msg.text) { remove(msg.id); renderPage(); return; }
     // replayed history on (re)connect: list only, no bubbles
     if (msg.final && msg.t_end < Date.now() / 1000 - SHOW_S) { renderPage(); return; }
     if (msg.final) onFinal?.(msg);   // fresh finished utterance (voice commands)
     const b = bubble(msg.id);
     b.msg = msg;
     b.until = performance.now() + 1000 * (msg.final ? SHOW_S : PARTIAL_S);
-    assignSpeaker(b);
     msg.meta = { color: b.color, label: b.label };   // keep the speaker for the page list
-    // One bubble per speaker (and one without a face): the new utterance replaces the old one.
+    const isNew = !b.mesh.parent;
+    place(b, isNew);   // picks the speaker on first sight
+    // One bubble per speaker (and one not yet on a person): the new utterance replaces the old one.
     for (const [id, o] of bubbles) if (id < msg.id && o.trackId === b.trackId) remove(id);
     for (const id of [...bubbles.keys()].sort((x, y) => y - x).slice(MAX_BUBBLES)) remove(id);
-    layout();
     redraw(b);
     renderPage();
   }
@@ -253,7 +252,7 @@ export function createCaptions({ three, distM, vfovDeg, speakers, listEl, overla
     const now = performance.now();
     let changed = false;
     for (const [id, b] of bubbles) if (now > b.until) { remove(id); changed = true; }
-    if (changed) { layout(); renderPage(); }
+    if (changed) renderPage();
   }, 500);
 
   let ws = null;

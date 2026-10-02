@@ -83,8 +83,8 @@ Wake up and Start are taps because browsers allow unmuted audio and entering VR 
 | `pose.js` | Headset ↔ robot maths, recenter, `HeadMirror` (EMA, limits, body follow — same values as `robot/`) | nothing (pure, portable) |
 | `robot.js` | Sign-in (silent first), auto-connect, video, `setHead()`, measured head pose | Pollen SDK |
 | `scene.js` | WebXR rendering: video window at the measured robot head pose, floor grid, status panel | three.js |
-| `captions.js` | Speech bubbles from `backend/` captions: above the speaker's face, else subtitle in the video window (never elsewhere in the room), one per speaker; mode translation+original / translation / original; thin frame around detected faces (Settings) | three.js |
-| `faces.js`, `faces-worker.js` | Face boxes + mouth openness in the camera image (MediaPipe FaceLandmarker in a Web Worker, 640×360, 8 Hz) | DOM + media only |
+| `captions.js` | Speech bubbles from `backend/` captions: always above a head in the video window (until someone is visible: top of the window in the mic direction), one per person, follows the person; mode translation+original / translation / original; thin frame around detected heads (Settings) | three.js |
+| `faces.js`, `faces-worker.js` | People in the camera image: MediaPipe PoseLandmarker (head estimated from nose/eyes/ears, or from the shoulders when the face is cut off) + FaceLandmarker (mouth openness), in a Web Worker on 640×360 frames, 8 Hz | DOM + media only |
 | `speakers.js` | Which face is speaking: face tracks + mouth movement + DoA (`FaceSpeakers`) | nothing (pure, portable) |
 | `notes.js` | Meeting notes (summary + action items from `backend/`): VR panel right of the video, card on the page | three.js |
 | `videosource.js` | Camera frames for the VR window: WebRTC track → fixed-size canvas (modes track/canvas/direct) | DOM + media only |
@@ -100,6 +100,11 @@ Rules for this code: [docs/xr-client-strategy.md](../docs/xr-client-strategy.md)
 ### Desktop preview (debugging without a headset)
 
 Tap **Start** in a browser without VR (any laptop): the same three.js scene opens in the browser window instead of the VR session. Drag = turn your head (the robot follows), click the VR buttons, `R` = recenter, `Esc` = back to the page.
+
+### VR interface
+
+- Evening sky with a warm horizon and a glowing floor (no black void); the video window has a dark rounded bezel.
+- Dock below the view: 🙋 Talk · 🎯 Follow · 💬 Both/Translated/Original · 📝 Notes · 🔇/🔊 Sound · ⋯ More → ⟳ Recenter · 🐞 Debug (status panel at the top) · ✕ Exit VR. Active toggles are highlighted. (*Switch video* was removed from the UI; the modes in `videosource.js` still exist.)
 
 ### Speech bubbles
 

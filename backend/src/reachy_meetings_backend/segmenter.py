@@ -1,8 +1,9 @@
 """Energy-based voice activity detection that cuts the mic stream into utterances.
 
 Feed it 16 kHz mono float32 chunks of any size. It emits:
-  Segment(final=False)  every `partial_every_s` while someone talks  -> live bubble text
-  Segment(final=True)   after `silence_s` of silence (or `max_s`)     -> final text + translation
+  Segment(final=False)  after `first_partial_s`, then every `partial_every_s` while someone talks
+                        -> live bubble text
+  Segment(final=True)   after `silence_s` of silence (or `max_s`) -> final text + translation
 
 The speech threshold follows the room: noise floor (EMA over quiet frames) + `margin_db`.
 """
@@ -31,11 +32,12 @@ class SegmenterCfg:
     margin_db: float = 12.0        # speech = this much above the noise floor
     min_level_db: float = -50.0    # never treat quieter frames as speech
     start_frames: int = 3          # consecutive loud frames to start (90 ms)
-    silence_s: float = 0.6         # quiet this long -> utterance ends
+    silence_s: float = 0.45        # quiet this long -> utterance ends
     preroll_s: float = 0.3
     min_s: float = 0.4             # drop shorter blips (coughs, clicks)
     max_s: float = 15.0            # force a cut in monologues
-    partial_every_s: float = 0.8
+    first_partial_s: float = 0.5   # first live text this early: the bubble appears quickly
+    partial_every_s: float = 0.6
 
 
 def frame_db(frame: np.ndarray) -> float:
@@ -55,6 +57,7 @@ class Segmenter:
         self._t_start = 0.0
         self._preroll_n = 0
         self._since_partial = 0.0
+        self._had_partial = False
         self._next_id = 0
 
     @property
@@ -97,6 +100,7 @@ class Segmenter:
                 self._t_start = self._t - len(self._speech) * dt
                 self._quiet = 0
                 self._since_partial = 0.0
+                self._had_partial = False
             return None
 
         self._speech.append(f)
@@ -105,8 +109,9 @@ class Segmenter:
         dur = self._t - self._t_start
         if self._quiet * dt >= c.silence_s or dur >= c.max_s:
             return self._finish()
-        if self._since_partial >= c.partial_every_s:
+        if self._since_partial >= (c.partial_every_s if self._had_partial else c.first_partial_s):
             self._since_partial = 0.0
+            self._had_partial = True
             return Segment(self._next_id, False, np.concatenate(self._speech), self._t_start, self._t)
         return None
 

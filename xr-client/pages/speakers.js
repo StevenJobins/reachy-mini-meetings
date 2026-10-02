@@ -1,4 +1,4 @@
-// Who is speaking: face tracks in the robot camera image + mouth movement + microphone direction (DoA).
+// Who is speaking: person tracks in the robot camera image + mouth movement + microphone direction (DoA).
 // Pure logic: no DOM, no three.js (portable to C#/Kotlin).
 //
 // Faces come in normalized image coordinates (0..1, origin top left) from faces.js, several times a second.
@@ -14,7 +14,7 @@ export class FaceSpeakers {
     this.nextId = 1;
   }
 
-  /** faces = [{cx, cy, top, w, h, mouth}], t = seconds. Matches faces to tracks by nearest centre. */
+  /** faces = [{cx, cy, top, w, h, mouth}] (head boxes, mouth may be null), t = seconds. Nearest-centre matching. */
   update(faces, t) {
     const free = new Set(this.tracks);
     for (const f of faces) {
@@ -25,8 +25,11 @@ export class FaceSpeakers {
       }
       if (best) free.delete(best);
       else { best = { id: this.nextId++, mouth: [] }; this.tracks.push(best); }
-      Object.assign(best, { cx: f.cx, cy: f.cy, top: f.top, w: f.w, h: f.h, seen: t });
-      best.mouth.push([t, f.mouth]);
+      // smooth the box: detections jitter by a few percent from frame to frame
+      const k = best.seen == null ? 1 : 0.5;
+      for (const key of ["cx", "cy", "top", "w", "h"]) best[key] = best[key] == null ? f[key] : best[key] + k * (f[key] - best[key]);
+      best.seen = t;
+      if (f.mouth != null) best.mouth.push([t, f.mouth]);
       while (best.mouth.length && best.mouth[0][0] < t - this.windowS) best.mouth.shift();
     }
     this.tracks = this.tracks.filter((tr) => t - tr.seen < this.ttlS);

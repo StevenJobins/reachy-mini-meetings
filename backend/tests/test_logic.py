@@ -41,6 +41,12 @@ def test_one_utterance_with_partials_then_final():
     assert 1.9 < len(f.audio) / SAMPLE_RATE < 2.6      # trailing silence trimmed
 
 
+def test_first_partial_comes_early():
+    out = feed(Segmenter(), np.concatenate([noise(1.0), tone(2.0), noise(1.0)]), block=480)
+    first = next(s for s in out if not s.final)
+    assert first.t_end - first.t_start < 1.0    # first_partial_s 0.5 + pre-roll 0.3 + start frames
+
+
 def test_two_utterances_get_new_ids():
     audio = np.concatenate([noise(1), tone(1), noise(1), tone(1), noise(1)])
     finals = [s for s in feed(Segmenter(), audio) if s.final]

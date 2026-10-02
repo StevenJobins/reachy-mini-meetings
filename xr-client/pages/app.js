@@ -221,6 +221,7 @@ const robot = createRobot({
 });
 
 let captions = null, notes = null;   // created after the scene (they need its three.js groups)
+let debugOn = false;                 // VR debug panel (More -> Debug)
 const scene = createScene({
   video,
   vfovDeg: cfg.vfovDeg,
@@ -238,14 +239,15 @@ const scene = createScene({
   // Head-locked buttons in VR: point (controller ray / hand pinch) and select. Select elsewhere = recenter.
   vrButtons: [
     { kind: "mic", muted: () => mic.muted || status.mic !== "on", label: () => (mic.muted ? "Muted" : status.mic === "on" ? "Mic on" : "Mic off"), onClick: toggleMic },
-    { label: "I want to talk", onClick: wantToTalk },
-    { label: () => (follow ? "Stop following" : "Follow speaker"), onClick: () => setFollow(!follow) },
-    { label: () => (robotMuted ? "Unmute robot" : "Mute robot"), onClick: () => setRobotMuted(!robotMuted) },
-    { label: "Recenter", onClick: () => { wantRecenter = true; } },
-    { label: () => `Bubbles: ${captions?.mode ?? "both"}`, onClick: () => captions.cycleMode() },
-    { label: () => (notes?.visible ? "Hide notes" : "Notes"), onClick: () => notes.toggle() },
-    { label: "Switch video", onClick: () => scene.cycleVideo() },   // camera path test, see videosource.js
-    { label: "Exit VR", onClick: () => scene.exitVR() },
+    { icon: "🙋", label: "Talk", onClick: wantToTalk },
+    { icon: "🎯", label: "Follow", active: () => follow, onClick: () => setFollow(!follow) },
+    { icon: "💬", label: () => ({ both: "Both", translation: "Translated", original: "Original" })[captions?.mode ?? "both"],
+      onClick: () => captions.cycleMode() },
+    { icon: "📝", label: "Notes", active: () => !!notes?.visible, onClick: () => notes.toggle() },
+    { icon: () => (robotMuted ? "🔇" : "🔊"), label: "Sound", active: () => !robotMuted, onClick: () => setRobotMuted(!robotMuted) },
+    { icon: "⟳", label: "Recenter", more: true, onClick: () => { wantRecenter = true; } },
+    { icon: "🐞", label: "Debug", more: true, active: () => debugOn, onClick: () => { debugOn = !debugOn; scene.toggleDebug(); } },
+    { icon: "✕", label: "Exit VR", more: true, onClick: () => scene.exitVR() },
   ],
   onFrame: () => captions?.follow(),
   log,
