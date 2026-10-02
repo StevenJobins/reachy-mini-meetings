@@ -16,6 +16,7 @@ Protocol (server -> headset, one JSON per message; keep in sync with xr-client):
            sent when speech starts/ends and every 0.25 s while it lasts (speaker following uses it)
   binary   the room audio itself: int16 little-endian PCM, 16 kHz mono, ~40 ms per frame. The robot's own
            WebRTC audio drops ~55 % of the sound (daemon bug, 0 packets lost); the page plays this instead.
+           Between utterances it is turned down by --pause-db (noise gate driven by the neural VAD).
 
 The same `id` is sent several times: partials (final=false) while the person talks, then the
 final text, then once more with the translation. Clients upsert by `id`. A final with empty
@@ -42,6 +43,28 @@ from .segmenter import Segment, Segmenter
 log = logging.getLogger("reachy_captions")
 
 PROTOCOL_VERSION = "0.2"
+
+
+class NoiseGate:
+    """Turns the room sound down while nobody speaks (the background hum stays out of the headset), back up
+    within one frame when speech starts. Gain ramps across each chunk, so there are no clicks."""
+
+    def __init__(self, pause_db: float, hold_s: float = 0.35, release_s: float = 0.25) -> None:
+        self.floor = 10 ** (pause_db / 20)
+        self.hold_s, self.release_s = hold_s, release_s
+        self.gain = self.floor
+        self.last_speech = -1e9
+
+    def __call__(self, chunk: np.ndarray, speaking: bool, now: float) -> np.ndarray:
+        if speaking:
+            self.last_speech = now
+            target = 1.0
+        else:
+            quiet = now - self.last_speech - self.hold_s   # keep the tail of a sentence
+            target = 1.0 if quiet < 0 else max(self.floor, 1.0 - (1.0 - self.floor) * quiet / self.release_s)
+        ramp = np.linspace(self.gain, target, len(chunk), dtype=np.float32)
+        self.gain = target
+        return chunk * ramp
 
 
 class CaptionServer:
@@ -129,6 +152,7 @@ class Pipeline:
             from .doa import DoaTracker
 
             self.doa = DoaTracker(args.daemon)
+        self.gate = NoiseGate(args.pause_db) if args.pause_db < 0 else None
         self.summarizer = None
         if args.summary == "gemini":
             from .summary import Summarizer
@@ -214,8 +238,9 @@ class Pipeline:
                 chunk = await asyncio.wait_for(chunks.get(), 0.5)
             except asyncio.TimeoutError:
                 continue
-            self.server.send_audio(chunk)
             segs = self.segmenter.push(chunk)
+            speaking = self.segmenter.active or self.segmenter.prob > 0.4
+            self.server.send_audio(self.gate(chunk, speaking, time.time()) if self.gate else chunk)
             now = time.time()
             if self.segmenter.active != vad_on or (vad_on and now - vad_sent > 0.25):
                 vad_on, vad_sent = self.segmenter.active, now
@@ -256,6 +281,8 @@ def cli() -> None:
     ap.add_argument("--summary-model", default="gemini-flash-lite-latest",
                     help="has free quota for new accounts (gemini-flash-latest ran into 429)")
     ap.add_argument("--summary-every", type=float, default=60, help="seconds between summaries")
+    ap.add_argument("--pause-db", type=float, default=-14,
+                    help="room sound level between utterances (noise gate, needs the neural VAD); 0 = off")
     ap.add_argument("--host", default="0.0.0.0")
     ap.add_argument("--port", type=int, default=8766)
     ap.add_argument("-v", "--verbose", action="store_true")

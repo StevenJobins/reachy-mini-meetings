@@ -52,6 +52,7 @@ class Segmenter:
     def __init__(self, cfg: SegmenterCfg | None = None, vad=None) -> None:
         self.cfg = cfg or SegmenterCfg()
         self.vad = vad   # callable(frame) -> speech probability, or None for the loudness fallback
+        self.prob = 0.0  # speech probability of the latest frame (neural VAD only)
         self.noise_db: float | None = None  # set from the first frame
         self._pending = np.zeros(0, np.float32)
         self._preroll: list[np.ndarray] = []
@@ -88,7 +89,8 @@ class Segmenter:
         dt = FRAME / SAMPLE_RATE
         self._t += dt
         if self.vad is not None:
-            loud = self.vad(f) > (c.speech_prob if self._speech is None else c.keep_prob)
+            self.prob = self.vad(f)
+            loud = self.prob > (c.speech_prob if self._speech is None else c.keep_prob)
         else:
             db = frame_db(f)
             if self.noise_db is None:

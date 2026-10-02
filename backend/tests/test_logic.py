@@ -1,7 +1,10 @@
 """Pure-logic tests: no mic, no Whisper model, no network.   pytest -q"""
 
+from itertools import pairwise
+
 import numpy as np
 
+from reachy_meetings_backend.captions import NoiseGate
 from reachy_meetings_backend.doa import DoaTracker, circular_mean_deg, doa_to_head_deg
 from reachy_meetings_backend.segmenter import SAMPLE_RATE, Segmenter, SegmenterCfg
 from reachy_meetings_backend.stt import plausible
@@ -136,3 +139,17 @@ def test_segmenter_with_vad_ignores_loud_noise():
     finals = [s for s in feed(Segmenter(vad=vad), audio) if s.final]
     assert len(finals) == 1
     assert finals[0].t_start > 1.7   # tone at 2.1 s minus 0.3 s pre-roll; the click (1.0 s) is ignored
+
+
+# ---------------------------------------------------------------- noise gate
+def test_noise_gate_quiet_in_pauses_full_in_speech_no_jumps():
+    g = NoiseGate(-14)
+    one = np.ones(640, np.float32)
+    quiet = g(one, False, 0.0)
+    assert quiet.max() < 0.25                        # -14 dB in a pause
+    up = g(one, True, 0.04)
+    assert abs(up[-1] - 1.0) < 1e-6 and up[0] < 0.25  # ramps up within the frame, no jump
+    tail = g(one, False, 0.2)
+    assert tail.min() > 0.99                          # sentence tail kept (hold)
+    later = [g(one, False, 0.2 + 0.04 * i)[-1] for i in range(1, 20)]
+    assert all(b <= a + 1e-6 for a, b in pairwise(later)) and later[-1] < 0.25   # smooth release
