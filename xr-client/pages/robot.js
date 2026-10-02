@@ -6,6 +6,16 @@ import { DEG } from "./pose.js";
 
 const SILENT_TRIED = "reachy-xr-silent-signin-tried";
 
+/**
+ * The SDK uses the current URL as OAuth redirect_uri, and HF only accepts the exact registered URL
+ * (page URL without query/hash, see xr-client/README.md). A failed silent sign-in comes back with
+ * ?error=..., so strip query, hash and "index.html" right before every login redirect.
+ */
+function cleanUrlForLogin() {
+  const path = location.pathname.replace(/index\.html$/, "");
+  if (location.search || location.hash || path !== location.pathname) history.replaceState(null, "", path);
+}
+
 export function createRobot({ clientId, onStatus, onMeasuredHead, log }) {
   const reachy = new ReachyMini({ clientId, appName: "Reachy Meetings XR", videoJitterBufferTargetMs: 0 });
   let streaming = false;
@@ -37,11 +47,12 @@ export function createRobot({ clientId, onStatus, onMeasuredHead, log }) {
       if (ok) { sessionStorage.removeItem(SILENT_TRIED); return "signed-in"; }
       if (!clientId || sessionStorage.getItem(SILENT_TRIED)) return "signed-out";
       sessionStorage.setItem(SILENT_TRIED, "1");
+      cleanUrlForLogin();
       await reachy.login({ prompt: "none" });
       return "redirecting";
     },
 
-    signIn() { return reachy.login(); },
+    signIn() { cleanUrlForLogin(); return reachy.login(); },
     signOut() { reachy.logout(); sessionStorage.removeItem(SILENT_TRIED); },
 
     attachVideo(video) {
