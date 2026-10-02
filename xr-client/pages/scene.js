@@ -75,19 +75,32 @@ export function createScene({ video, vfovDeg, distM, statusText, onHeadsetPose, 
     hudTex.needsUpdate = true;
   }, 200);
 
-  // ---- head-locked VR buttons, row above the status panel
+  // ---- head-locked VR buttons, row above the status panel. A label may be a function (e.g. mute state).
+  const labelOf = (b) => (typeof b.label === "function" ? b.label() : b.label);
   const buttons = vrButtons.map((b, i) => {
+    let text = labelOf(b);
     const draw = (hover) => (ctx, w, h) => {
+      ctx.clearRect(0, 0, w, h);
       ctx.fillStyle = hover ? "#ff9500" : "rgba(40,40,46,0.92)";
       ctx.beginPath(); ctx.roundRect(4, 4, w - 8, h - 8, 28); ctx.fill();
       ctx.fillStyle = hover ? "#000" : "#eee"; ctx.font = "bold 44px sans-serif";
-      ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.fillText(b.label, w / 2, h / 2);
+      ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.fillText(text, w / 2, h / 2);
     };
     const tex = [canvasTexture(512, 128, draw(false)), canvasTexture(512, 128, draw(true))];
     const mesh = new THREE.Mesh(new THREE.PlaneGeometry(0.2, 0.05), new THREE.MeshBasicMaterial({ map: tex[0], transparent: true }));
-    const w = 0.215;
-    mesh.position.set((i - (vrButtons.length - 1) / 2) * w, -0.3, -1.2);
-    mesh.userData = { onClick: b.onClick, tex };
+    // Rows of 3, centred, just above the status panel.
+    const perRow = 3, row = Math.floor(i / perRow), col = i % perRow;
+    const inRow = Math.min(perRow, vrButtons.length - row * perRow);
+    mesh.position.set((col - (inRow - 1) / 2) * 0.215, -0.25 - row * 0.06, -1.2);
+    mesh.userData = {
+      onClick: b.onClick, tex,
+      refresh() {   // redraw both textures when the label changed
+        const now = labelOf(b);
+        if (now === text) return;
+        text = now;
+        tex.forEach((t, hover) => { draw(!!hover)(t.image.getContext("2d"), t.image.width, t.image.height); t.needsUpdate = true; });
+      },
+    };
     camera.add(mesh);
     return mesh;
   });
@@ -156,6 +169,7 @@ export function createScene({ video, vfovDeg, distM, statusText, onHeadsetPose, 
       if (source.hasFrame) map = canvasTex;
     }
     if (screenMat.map !== map) { screenMat.map = map; screenMat.needsUpdate = true; }
+    for (const b of buttons) b.userData.refresh();
     if (frame) updatePointers(frame);
     if (haveTarget) robotView.quaternion.slerp(target, 0.5);   // pose stream ~30 Hz -> smooth at display rate
     renderer.render(scene, camera);

@@ -56,9 +56,9 @@ URL: https://stevenjobins.github.io/reachy-mini-meetings/. It is deployed by `.g
 1. Open the URL in Chrome. Then choose ⋮ → *Install app* / *Add to home screen*, so the app gets an icon in the launcher.
 2. Start the app. The first time, sign in with Hugging Face. After that, sign-in is silent (OAuth `prompt=none`).
 3. The app connects to the robot automatically. When exactly one free robot is visible, it is picked without asking. The robot stays asleep.
-4. Tap **Wake up**. Reachy plays its wake-up motion (~2 s), and its camera and microphone switch on (video on the page, room audio audible).
+4. Tap **Wake up**. Reachy plays its wake-up motion (~2 s) and its camera switches on. **Robot sound is muted by default** (otherwise you hear yourself twice); *Unmute robot* / *Mute robot* toggles it, on the page and in VR.
 5. Look straight ahead and tap **Start**. You are in VR and Reachy follows your head. Leaving VR keeps Reachy awake, so you can tap Start again.
-   - **VR buttons** (head-locked, below the view): *I want to talk*, *Recenter*, *Switch video*, *Exit VR*. Point at them with the controller or hand ray and pinch / pull the trigger. Pinching anywhere else recenters.
+   - **VR buttons** (head-locked, two rows below the view): *I want to talk*, *Unmute/Mute robot*, *Recenter*, *Switch video*, *Exit VR*. Point at them with the controller or hand ray and pinch / pull the trigger. Pinching anywhere else recenters.
    - **I want to talk** (also on the page): the right antenna waves and the body swings ±27° for 3 s, like `robot/turn_to_speaker.py`. The head keeps following you.
    - If no camera frame arrives, the video window says *No camera image yet*. Then check the camera permission on the robot Mac.
    - *Switch video* cycles how camera frames reach the VR window (`track` → `canvas` → `direct`, remembered per device). The last HUD line shows the mode and frame rates. Background in `videosource.js`: the old path uploaded the `<video>` as a plain texture whose GPU storage was fixed at the first (small, black) WebRTC frame, so VR stayed black while the page video worked.

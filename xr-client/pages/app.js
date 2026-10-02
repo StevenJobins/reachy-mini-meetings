@@ -32,7 +32,7 @@ function log(...a) {
 }
 
 // ---------------------------------------------------------------- status
-const status = { user: "-", robot: "-", motors: "-", ice: "-", video: "-", xr: "off", send: 0, cmd: [0, 0, 0], body: 0, meas: [0, 0, 0], captions: "-" };
+const status = { user: "-", robot: "-", motors: "-", ice: "-", video: "-", xr: "off", send: 0, cmd: [0, 0, 0], body: 0, meas: [0, 0, 0], captions: "-", sound: "muted" };
 let sentCount = 0;
 setInterval(() => { status.send = sentCount; sentCount = 0; }, 1000);
 function statusText() {
@@ -40,7 +40,7 @@ function statusText() {
   return [
     `robot ${status.robot}   motors ${status.motors}   ice ${status.ice}   video ${status.video}   send ${status.send} Hz`,
     `cmd  r/p/y ${f(status.cmd)}   body ${status.body.toFixed(1)}`,
-    `meas r/p/y ${f(status.meas)}   captions ${status.captions}`,
+    `meas r/p/y ${f(status.meas)}   captions ${status.captions}   robot sound ${status.sound}`,
   ].join("\n");
 }
 setInterval(() => { $("debug-text").textContent = `user ${status.user}   xr ${status.xr}\n` + statusText(); }, 200);
@@ -51,6 +51,7 @@ function show(state, message) {
   $("start").hidden = state !== "awake";
   $("sleep").hidden = state !== "awake";
   $("talk").hidden = state !== "awake";
+  $("mute").hidden = state !== "awake";
   $("signin").hidden = state !== "signed-out";
   $("retry").hidden = state !== "failed";
 }
@@ -72,6 +73,16 @@ function send(t, nowS) {
   if (robot.setHead({ ...t, bodyYaw, antennas: g.antennas })) sentCount++;
   status.cmd = [t.roll, t.pitch, t.yaw];
   status.body = bodyYaw;
+}
+
+// Robot sound (its microphone, i.e. the room) is muted by default: otherwise you hear yourself twice,
+// once directly and once through the robot. Unmuting must happen inside a tap / VR select.
+let robotMuted = true;
+function setRobotMuted(m) {
+  robotMuted = m;
+  if (awake) robot.setAudio(!m);
+  status.sound = m ? "muted" : "on";
+  $("mute").textContent = m ? "🔇 Robot muted: tap to unmute" : "🔊 Mute robot";
 }
 
 function wantToTalk() {
@@ -115,6 +126,7 @@ const scene = createScene({
   // Head-locked buttons in VR: point (controller ray / hand pinch) and select. Select elsewhere = recenter.
   vrButtons: [
     { label: "I want to talk", onClick: wantToTalk },
+    { label: () => (robotMuted ? "Unmute robot" : "Mute robot"), onClick: () => setRobotMuted(!robotMuted) },
     { label: "Recenter", onClick: () => { wantRecenter = true; } },
     { label: "Switch video", onClick: () => scene.cycleVideo() },   // camera path test, see videosource.js
     { label: "Exit VR", onClick: () => scene.exitVR() },
@@ -173,7 +185,7 @@ $("start").onclick = async () => {
 };
 $("wake").onclick = async () => {
   // Inside the tap: browsers allow unmuted playback (robot microphone) only during a user gesture.
-  robot.setAudio(true);
+  robot.setAudio(!robotMuted);
   video.play().catch((e) => log("video.play:", e?.message ?? e));
   show("busy", "Reachy is waking up…");
   await robot.wake();
@@ -182,7 +194,7 @@ $("wake").onclick = async () => {
   lastSend = performance.now();
   awake = true;
   video.hidden = false;
-  show("awake", "Reachy is awake: camera and microphone are on. Put on the headset, look straight ahead and tap Start.");
+  show("awake", `Reachy is awake: camera is on, robot sound ${robotMuted ? "muted" : "on"}. Put on the headset, look straight ahead and tap Start.`);
 };
 $("sleep").onclick = async () => {
   awake = false;
@@ -193,6 +205,8 @@ $("sleep").onclick = async () => {
   show("asleep", "Reachy is asleep. Tap Wake up to start again.");
 };
 $("talk").onclick = wantToTalk;
+$("mute").onclick = () => setRobotMuted(!robotMuted);
+setRobotMuted(true);
 $("signin").onclick = () => robot.signIn();
 $("retry").onclick = connect;
 $("recenter").onclick = () => { wantRecenter = true; };
