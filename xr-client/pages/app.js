@@ -54,7 +54,7 @@ addEventListener("error", (e) => log("ERROR", e.message, `${e.filename}:${e.line
 addEventListener("unhandledrejection", (e) => log("UNHANDLED", e.reason?.message ?? e.reason));
 
 // ---------------------------------------------------------------- status
-const status = { user: "-", robot: "-", motors: "-", ice: "-", video: "-", xr: "off", send: 0, cmd: [0, 0, 0], body: 0, meas: [0, 0, 0], captions: "-", sound: "muted", follow: "on" };
+const status = { user: "-", robot: "-", motors: "-", ice: "-", video: "-", xr: "off", send: 0, cmd: [0, 0, 0], body: 0, meas: [0, 0, 0], captions: "-", sound: "muted", follow: "on", doa: "none" };
 let sentCount = 0;
 setInterval(() => { status.send = sentCount; sentCount = 0; }, 1000);
 function statusText() {
@@ -62,7 +62,7 @@ function statusText() {
   return [
     `robot ${status.robot}   motors ${status.motors}   ice ${status.ice}   video ${status.video}   send ${status.send} Hz`,
     `cmd  r/p/y ${f(status.cmd)}   body ${status.body.toFixed(1)}   speaker ${status.follow} target ${speaker.target.toFixed(0)} base ${speaker.base.toFixed(0)}`,
-    `meas r/p/y ${f(status.meas)}   captions ${status.captions}   robot sound ${status.sound}`,
+    `meas r/p/y ${f(status.meas)}   captions ${status.captions}   robot sound ${status.sound}   doa ${status.doa}`,
   ].join("\n");
 }
 // Heartbeat every 5 s: if the page dies, the last lines show memory, video and connection state.
@@ -165,7 +165,10 @@ const robot = createRobot({
     // The VR room turns with the base: the window shows where the robot looks RELATIVE to the speaker.
     scene.setRobotHead(recenter.toWorld(robotToHeadset(roll, pitch, yaw - speaker.base)));
   },
-  onDoa: (angle, speech) => { if (awake) speaker.pushDoa(performance.now() / 1000, angle, speech); },
+  onDoa: (angle, speech) => {
+    status.doa = `${(90 - angle * 180 / Math.PI).toFixed(0)}° ${speech ? "SPEECH" : "quiet"}`;   // relative to the head, + = left
+    if (awake) speaker.pushDoa(performance.now() / 1000, angle, speech);
+  },
 });
 
 const scene = createScene({
