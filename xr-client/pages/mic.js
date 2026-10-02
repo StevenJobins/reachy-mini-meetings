@@ -53,7 +53,7 @@ export function createMic({ getPeerConnection, onStatus, log }) {
   }
   setInterval(attach, 2000);   // reconnects, late SDP negotiation
 
-  return {
+  const api = {
     get muted() { return muted; },
     get state() { return state(); },
 
@@ -82,7 +82,12 @@ export function createMic({ getPeerConnection, onStatus, log }) {
           audioCtx.createMediaStreamSource(stream).connect(analyser);
         } catch { analyser = null; }
         track.enabled = !muted;
-        track.onended = () => { log("mic: track ended"); track = null; report(); };
+        track.onended = () => {
+          // device gone (e.g. the iPhone's Continuity mic disconnected): take the current default mic again
+          log("mic: track ended, restarting with the default microphone");
+          track = null; report();
+          if (wanted) setTimeout(() => { if (wanted && !track) api.start(); }, 500);
+        };
         log("mic:", track.label || "default microphone");
       }
       await attach();
@@ -119,4 +124,5 @@ export function createMic({ getPeerConnection, onStatus, log }) {
       report();
     },
   };
+  return api;
 }

@@ -172,7 +172,7 @@ function applyVolume(v, source) {
 
 function toggleMic() {
   if (!awake) return;
-  if (status.mic === "blocked" || status.mic === "off") { mic.start(); return; }   // retry permission inside the tap
+  if (status.mic === "blocked" || status.mic === "off" || status.mic === "starting") { mic.start(); return; }   // retry permission inside the tap
   mic.setMuted(!mic.muted);
 }
 
