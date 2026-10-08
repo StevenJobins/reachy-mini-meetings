@@ -42,6 +42,15 @@ try {
   localStorage.removeItem(LOG_KEY);
   $("prev-log").textContent = localStorage.getItem(PREV_KEY) ?? "(none)";
 } catch {}
+// The same lines go to the caption backend, which writes them to a file on the Mac
+// (~/Library/Logs/reachy-headset.log): the headset's own log is unreachable without a cable.
+let logSent = 0, logTotal = 0;
+setInterval(() => {
+  if (!captions?.connected) return;
+  const fresh = Math.min(logTotal - logSent, logLines.length);
+  if (fresh > 0) captions.sendLog(logLines.slice(-fresh));
+  logSent = logTotal;
+}, 2000);
 setInterval(() => {
   if (!logDirty) return;
   logDirty = false;
@@ -53,6 +62,7 @@ function log(...a) {
   console.log(line);
   $("log").textContent = (line + "\n" + $("log").textContent).slice(0, 6000);
   logLines.push(line);
+  logTotal++;
   if (logLines.length > 300) logLines = logLines.slice(-300);
   logDirty = true;
 }

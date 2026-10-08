@@ -321,6 +321,10 @@ export function createCaptions({ three, distM, vfovDeg, speakers, listEl, overla
       if (ws?.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: "voice", gender: g }));
     },
 
+    get connected() { return ws?.readyState === WebSocket.OPEN; },
+    /** Page log lines -> the backend's headset log file. */
+    sendLog(lines) { if (ws?.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: "log", lines })); },
+
     /** Your voice for "translate me" (binary int16 PCM, 16 kHz). */
     sendVoice(buf) { if (ws?.readyState === WebSocket.OPEN) ws.send(buf); },
     reconnect() { if (ws) { ws.onclose = null; ws.close(); } tryLocal = true; connect(); },

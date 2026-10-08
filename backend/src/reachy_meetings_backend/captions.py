@@ -21,7 +21,8 @@ Protocol (server -> headset, one JSON per message; keep in sync with xr-client):
            Between utterances it is turned down by --pause-db (noise gate driven by the neural VAD).
 
 Client -> server: {"type": "auth", "hf_token": str} first (checked through the tunnel only);
-{"type": "voice", "gender": "male" | "female"} picks Reachy's voice (voice.py GENDER_VOICES); binary frames
+{"type": "voice", "gender": "male" | "female"} picks Reachy's voice (voice.py GENDER_VOICES);
+{"type": "log", "lines": [str]} appends the page's log to ~/Library/Logs/reachy-headset.log; binary frames
 (int16 PCM, 16 kHz mono) = the remote user's voice while "translate me" is on: transcribed, translated into
 the meeting language (the language most spoken in the room lately, or --meeting-lang) and spoken by Reachy.
 
@@ -45,6 +46,7 @@ import time
 import urllib.request
 from collections import deque
 from concurrent.futures import ThreadPoolExecutor
+from pathlib import Path
 
 import numpy as np
 import websockets
@@ -54,6 +56,7 @@ from .segmenter import Segment, Segmenter
 log = logging.getLogger("reachy_captions")
 
 PROTOCOL_VERSION = "0.2"
+HEADSET_LOG = Path.home() / "Library/Logs/reachy-headset.log"   # the page's log lines ({"type": "log"})
 
 
 class NoiseGate:
@@ -234,9 +237,9 @@ class Pipeline:
                     self.me_segmenter = Segmenter()
                 self.server.on_voice = lambda b: self.me_queue.put_nowait(
                     np.frombuffer(b, "<i2").astype(np.float32) / 32768)
-                self.server.on_message = self._client_message
             except (OSError, subprocess.CalledProcessError) as e:
                 log.warning("No voice output: %s", e)
+        self.server.on_message = self._client_message
         self.summarizer = None
         if args.summary == "gemini":
             from .summary import Summarizer
@@ -301,6 +304,10 @@ class Pipeline:
             self.summarizer.add(cap)
 
     def _client_message(self, msg: dict) -> None:
+        if msg.get("type") == "log" and isinstance(msg.get("lines"), list):
+            with HEADSET_LOG.open("a") as f:
+                f.writelines(f"{line}\n" for line in msg["lines"] if isinstance(line, str))
+            return
         if msg.get("type") == "voice" and msg.get("gender") in ("male", "female") and self.voice:
             if self.voice.gender != msg["gender"]:
                 self.voice.gender = msg["gender"]
