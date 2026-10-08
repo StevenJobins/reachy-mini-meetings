@@ -1,13 +1,14 @@
 """Live captions for the speech bubbles: room audio -> Whisper -> translation -> WebSocket.
 
-    reachy-captions                              # Mac mic / Reachy mic, captions on ws://0.0.0.0:8766
+    reachy-captions                              # Mac mic / Reachy mic, captions on ws://127.0.0.1:8766
     reachy-captions --target en                  # any spoken language (detected per utterance)
     reachy-captions --lang de --target en         # force one spoken language
     reachy-captions --translator none            # captions only, no DeepL key needed
     reachy-captions --file meeting.wav           # test without a room
 
 Protocol (server -> headset, one JSON per message; keep in sync with xr-client):
-  hello    {"version": str, "target": str}
+  hello    {"version": str, "target": str, "session": str, "t": s}   session changes on every backend start
+           (caption ids restart then); t = server clock, for mapping backend times onto the page's clock
   caption  {"id": int, "final": bool, "text": str, "lang": str, "translation": str | null,
             "target": str, "doa_deg": float | null, "azimuth_deg": float | null,
             "t_start": s, "t_end": s}
@@ -50,6 +51,7 @@ import signal
 import subprocess
 import time
 import urllib.request
+import uuid
 from collections import deque
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
@@ -110,6 +112,7 @@ class CaptionServer:
         self.token_users: dict[str, str | None] = {}
         self.clients: set = set()
         self.on_voice = None   # binary frames from a client: the remote user's voice
+        self.session = uuid.uuid4().hex[:8]   # caption ids restart with every backend start
         self.on_message = None   # JSON from a client (e.g. {"type": "voice", "gender": "female"})
         self.on_depth = None     # (jpeg bytes, w, h) -> [metres]: room-scan depth (depth.py), blocking
         self.recent: deque[str] = deque(maxlen=20)  # last finals, replayed to new clients
@@ -128,9 +131,11 @@ class CaptionServer:
             token = msg.get("hf_token") if msg.get("type") == "auth" else None
         except (asyncio.TimeoutError, ValueError, AttributeError, websockets.ConnectionClosed):
             token = None
-        if token and token not in self.token_users:
-            self.token_users[token] = await asyncio.to_thread(hf_username, token)
         user = self.token_users.get(token) if token else None
+        if token and user is None:
+            user = await asyncio.to_thread(hf_username, token)
+            if user:   # only cache answers: a network hiccup must not lock a valid account out until restart
+                self.token_users[token] = user
         if user and user.lower() in self.allow_hf:
             log.info("Tunnel client signed in as %s", user)
             return True
@@ -143,8 +148,8 @@ class CaptionServer:
             return
         self.clients.add(ws)
         try:
-            await ws.send(json.dumps({"type": "hello", "version": PROTOCOL_VERSION,
-                                      "target": self.target}))
+            await ws.send(json.dumps({"type": "hello", "version": PROTOCOL_VERSION, "target": self.target,
+                                      "session": self.session, "t": round(time.time(), 3)}))
             for msg in list(self.recent):
                 await ws.send(msg)
             if self.summary:
@@ -504,7 +509,9 @@ def cli() -> None:
                          "(default: the account this Mac is signed in with)")
     ap.add_argument("--require-mic", action="store_true",
                     help="exit if the --mic device is missing instead of using the default mic (autostart)")
-    ap.add_argument("--host", default="0.0.0.0")
+    # localhost only: the https page can't reach a LAN address anyway (mixed content), the headset comes in over
+    # adb reverse or the tunnel; 0.0.0.0 gave anyone on the Wi-Fi the room audio without any sign-in
+    ap.add_argument("--host", default="127.0.0.1")
     ap.add_argument("--port", type=int, default=8766)
     ap.add_argument("-v", "--verbose", action="store_true")
     args = ap.parse_args()

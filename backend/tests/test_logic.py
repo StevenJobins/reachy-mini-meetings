@@ -86,11 +86,10 @@ def test_circular_mean_wraps():
     assert abs(abs(circular_mean_deg([170, -170])) - 180) < 1e-6
 
 
-def test_tracker_window_speech_flag_and_head_yaw():
+def test_tracker_window_ignores_chip_speech_flag_and_adds_head_yaw():
+    # the chip's speech flag is unreliable (false while people talk), so readings count without it
     tr = DoaTracker("http://unused")
-    tr.add({"angle": 0.0, "speech_detected": False}, 0, now=10)
-    assert tr.direction(0, 100) == (None, None)
-    tr.add({"angle": 0.0, "speech_detected": True}, 30, now=10)   # speaker left, head turned left
+    tr.add({"angle": 0.0, "speech_detected": False}, 30, now=10)   # speaker left, head turned left
     assert tr.direction(0, 100) == (90, 120)
     assert tr.direction(11, 100) == (None, None)
     tr.add({"angle": None, "speech_detected": True}, 0, now=10)   # daemon without a reading yet
@@ -167,3 +166,31 @@ def test_pick_voice_prefers_premium_and_avoids_anna():
     assert pick_voice("de", voices[:2], "DE") == "Flo (Deutsch (Deutschland))"
     assert pick_voice("en", voices, "US") == "Samantha"
     assert pick_voice("ja", voices) is None
+
+
+# ---------------------------------------------------------------- tunnel
+def test_tunnel_url_regex_skips_cloudflare_api_host():
+    from reachy_meetings_backend.tunnel import URL_RE
+
+    assert URL_RE.search(b"failed to request https://api.trycloudflare.com/tunnel") is None
+    assert URL_RE.search(b"|  https://quiet-river-1.trycloudflare.com  |").group() == b"https://quiet-river-1.trycloudflare.com"
+
+
+def test_tunnel_message_signature_verifies(tmp_path, monkeypatch):
+    import base64
+    import json
+
+    from cryptography.hazmat.primitives import hashes, serialization
+    from cryptography.hazmat.primitives.asymmetric import ec
+    from cryptography.hazmat.primitives.asymmetric.utils import encode_dss_signature
+
+    from reachy_meetings_backend import tunnel
+
+    monkeypatch.setattr(tunnel, "KEY_PATH", tmp_path / "k.pem")
+    key = tunnel.signing_key()
+    assert tunnel.signing_key().private_numbers() == key.private_numbers()   # reloaded, not regenerated
+    m = json.loads(tunnel.signed_message("wss://a-b.trycloudflare.com", key, 123))
+    raw = base64.b64decode(m["sig"])
+    pub = serialization.load_der_public_key(base64.b64decode(m["key"]))
+    sig = encode_dss_signature(int.from_bytes(raw[:32], "big"), int.from_bytes(raw[32:], "big"))
+    pub.verify(sig, b"wss://a-b.trycloudflare.com|123", ec.ECDSA(hashes.SHA256()))   # raises if wrong

@@ -44,7 +44,9 @@ class DoaTracker:
         self.head_yaw_deg = 0.0
 
     def add(self, doa: dict, head_yaw_deg: float, now: float | None = None) -> None:
-        if not doa or doa.get("angle") is None or not doa.get("speech_detected"):
+        # The chip's own speech flag is false most of the time even while someone talks (measured on the page:
+        # 8 of 8 readings), so keep every reading: the utterance's time window already says it was speech.
+        if not doa or doa.get("angle") is None:
             return
         now = time.time() if now is None else now
         self.samples.append((now, doa_to_head_deg(doa["angle"]), head_yaw_deg))

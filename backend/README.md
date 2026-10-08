@@ -7,7 +7,7 @@ Streaming, speech-to-text, translation, text-to-speech and meeting copilot (note
 Python package `reachy_meetings_backend`. The pipeline:
 
 ```
-room mic ──► Segmenter (VAD) ──► Whisper ──► DeepL translation ──► ws://0.0.0.0:8766 ──► headset
+room mic ──► Segmenter (VAD) ──► Whisper ──► DeepL translation ──► ws://127.0.0.1:8766 ──► headset
                                                 ▲
              robot bridge state (DoA) ──────────┘ speaker direction per utterance
 ```
@@ -72,6 +72,12 @@ Headset over USB: `adb reverse tcp:8766 tcp:8766`
 The page is served from GitHub Pages over https, so the headset can only reach this server over `wss` with a valid certificate; `ws://localhost` only works on the Mac itself or over USB. `reachy-captions --tunnel` opens a Cloudflare quick tunnel (`brew install cloudflared`, no account) and posts its address (random, new on every start) to the ntfy.sh topic `reachy-meetings-xr-captions`; the page looks it up there (`tunnel.py`, `captions.js`). Nothing to enter on the headset.
 
 Access: the address is public, so clients through the tunnel must first send their Hugging Face sign-in (`{"type": "auth", "hf_token": ...}`, the page does it automatically); the server checks the account with Hugging Face and closes the connection (code 4001) unless it is allowed. Default: the account this Mac is signed in with (`huggingface-cli login`); teammates: `--allow-hf name1,name2`. Local and LAN clients are not checked (as before). Tested: no sign-in → nothing sent, closed after 10 s; wrong token → 4001; the Mac's account → hello, captions, audio.
+
+Signed address (code review 2026-10-08): the ntfy topic is public, so anyone could post their own address and collect the HF sign-in token the page sends there. The backend therefore signs the address with an ECDSA P-256 key kept in `~/.config/reachy-meetings/tunnel_key.pem` (created on first start, never in the repo) and posts `{"url", "ts", "sig", "key"}`; the page only connects to `wss://<name>.trycloudflare.com` addresses with a valid signature (WebCrypto) from a trusted key, not older than 13 h. Dominic's Mac key is built into `captions.js`; the key of another laptop is logged when its backend starts (`Tunnel signing key ...`) and can be pasted into Settings → *Trusted backend keys*. Tests: signature roundtrip (Python) and verification with WebCrypto in node (valid: true, tampered address: false).
+
+Other hardening from the same review: the server listens on `127.0.0.1` by default (0.0.0.0 gave anyone on the Wi-Fi the room audio without sign-in; the https page cannot reach a LAN address anyway); an HF check that fails because of the network is no longer cached as "rejected"; `api.trycloudflare.com` (in cloudflared's error lines) is no longer mistaken for the tunnel address.
+
+Unplugging and re-plugging the robot: the mic callback just stops (no exception) and PortAudio keeps its old device list, so captions, speech detection and room audio stopped for good. `MicSource` now reopens when no audio arrived for 2 s (re-initializing PortAudio for a fresh device list, waiting while the device is missing); a failed playback in `voice.py` asks for the same and retries once.
 
 `--require-mic` exits at once when the Reachy mic is missing (instead of falling back to the Mac mic), for running it as a background service that is restarted until the robot is plugged in.
 
