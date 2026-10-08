@@ -19,6 +19,7 @@ dependencies = [
     "pyusb", "libusb-package",   # directional mic: XVF3800 settings over USB
     "huggingface_hub",       # tunnel: which HF account this Mac is signed in with
     "mediapipe", "opencv-python", "cv2-enumerate-cameras",   # faces + mouth in the robot camera (vision.py)
+    "pyobjc-framework-Cocoa; sys_platform == 'darwin'",   # speech synthesis in-process (voice.py), ~1 s faster than `say`
 ]
 
 [project.optional-dependencies]
