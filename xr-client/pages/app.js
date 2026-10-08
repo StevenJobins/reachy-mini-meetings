@@ -8,7 +8,7 @@
 import { createRobot } from "./robot.js";
 import { createScene } from "./scene.js";
 import { HeadMirror, Recenter, headsetToRobot, robotToHeadset } from "./pose.js";
-import { WantToTalk } from "./gestures.js";
+import { Laugh, WantToTalk } from "./gestures.js";
 import { SpeakerTracker } from "./speaker.js";
 import { captionsUrl, createCaptions, setCaptionsUrl } from "./captions.js";
 import { createFaces } from "./faces.js";
@@ -127,6 +127,7 @@ function show(state, message) {
   $("start").hidden = state !== "awake";
   $("sleep").hidden = state !== "awake";
   $("talk").hidden = state !== "awake";
+  $("laugh").hidden = state !== "awake";
   $("mute").hidden = state !== "awake";
   $("mic").hidden = state !== "awake";
   $("volume-box").hidden = state !== "awake";
@@ -141,6 +142,7 @@ let awake = false;   // head targets only once the wake-up motion is done, so th
 let wantRecenter = true;
 let lastSend = 0;
 const talk = new WantToTalk();
+const laugh = new Laugh();
 
 // Speaker following is always on: the robot slowly turns to whoever speaks (DoA), and the headset
 // rotation is added ON TOP of that base, so you can always look elsewhere. Straight ahead = the speaker.
@@ -167,8 +169,13 @@ function stepBase(dt, nowS) {
 /** Mirrored pose + "I want to talk" gesture -> robot. Body swing stays inside the head/body window. */
 function send(t, nowS) {
   const g = talk.step(nowS);
+  const l = laugh.step(nowS);
   const bodyYaw = Math.max(t.yaw - 60, Math.min(t.yaw + 60, t.bodyYaw + g.bodyOffset));
-  if (robot.setHead({ ...t, bodyYaw, antennas: g.antennas })) sentCount++;
+  // Laughing: its antenna wiggle wins over "I want to talk"; the chuckle stays inside the meeting limits.
+  const L = mirror.lim;
+  const pitch = Math.max(-L.pitchUp, Math.min(L.pitchDown, t.pitch + l.pitch));
+  const antennas = laugh.active(nowS) ? l.antennas : g.antennas;
+  if (robot.setHead({ ...t, pitch, bodyYaw, antennas })) sentCount++;
   status.cmd = [t.roll, t.pitch, t.yaw];
   status.body = bodyYaw;
 }
@@ -258,6 +265,17 @@ function flash(text) {
   flashTimer = setTimeout(() => { el.hidden = true; }, 3000);
 }
 
+/**
+ * The headset user laughs -> Reachy laughs (antennas wiggle, head chuckles). Today: the Laugh button (page, VR,
+ * key L). The native app will call this from the Galaxy XR face tracking (smile / laugh blendshapes); WebXR in
+ * Chrome does not expose face tracking. Works while muted too: it does not depend on the microphone.
+ */
+function userLaughed(source = "button") {
+  if (!awake) return;
+  laugh.trigger(performance.now() / 1000);
+  log("laugh", source);
+}
+
 function wantToTalk() {
   if (!awake) return;
   const nowS = performance.now() / 1000;
@@ -320,6 +338,7 @@ const scene = createScene({
   vrButtons: [
     { kind: "mic", muted: () => mic.muted || status.mic !== "on", label: () => (mic.muted ? "Muted" : status.mic === "on" ? "Mic on" : "Mic off"), onClick: toggleMic },
     { icon: "🙋", label: "Talk", onClick: wantToTalk },
+    { icon: "😂", label: "Laugh", onClick: () => userLaughed("vr button") },
     { icon: "💬", label: () => ({ both: "Both", translation: "Translated", original: "Original" })[captions?.mode ?? "both"],
       onClick: () => captions.cycleMode() },
     { icon: "📝", label: "Notes", active: () => !!notes?.visible, onClick: () => notes.toggle() },
@@ -573,6 +592,8 @@ $("sleep").onclick = async () => {
   show("asleep", "Reachy is asleep. Tap Wake up to start again.");
 };
 $("talk").onclick = wantToTalk;
+$("laugh").onclick = () => userLaughed("button");
+addEventListener("keydown", (e) => { if ((e.key === "l" || e.key === "L") && !e.target.closest?.("input, select, textarea")) userLaughed("key"); });
 $("mute").onclick = () => setRobotMuted(!robotMuted);
 $("mic").onclick = toggleMic;
 $("volume").oninput = (e) => { $("volume-val").textContent = `${e.target.value}%`; };
