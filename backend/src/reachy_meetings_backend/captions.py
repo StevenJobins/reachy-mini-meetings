@@ -24,13 +24,19 @@ Protocol (server -> headset, one JSON per message; keep in sync with xr-client):
            Between utterances it is turned down by --pause-db (noise gate driven by the neural VAD).
 
 Client -> server: {"type": "auth", "hf_token": str} first (checked through the tunnel only);
-{"type": "voice", "gender": "male" | "female"} picks Reachy's voice (voice.py GENDER_VOICES);
+{"type": "voice", "gender": "male" | "female"} picks Reachy's voice (voice.py GENDER_VOICES, per language);
+{"type": "lang", "meeting": "auto" | "de" | "en" | ..., "target": "en" | ...} (both optional, ISO 639-1):
+the language Reachy speaks for the remote user ("auto" = --meeting-lang, else the one most spoken in the
+room lately) and the bubble language (caption translations, notes; default --target); sent by the page on
+every (re)connect, applies to everyone connected;
 {"type": "log", "lines": [str]} appends the page's log to ~/Library/Logs/reachy-headset.log;
 {"type": "depth", "id": str, "w": int, "h": int, "jpeg": base64} = a room-scan frame: answered (to that client
 only) with {"type": "depth", "id", "w", "h", "depth": [metres, w*h row-major]} or {"type": "depth", "id", "error"}
 (Depth Anything V2 metric indoor, depth.py; needs the [depth] extra); binary frames
-(int16 PCM, 16 kHz mono) = the remote user's voice while "translate me" is on: transcribed, translated into
-the meeting language (the language most spoken in the room lately, or --meeting-lang) and spoken by Reachy.
+(int16 PCM, 16 kHz mono) = the remote user's voice while "translate me" is on: transcribed (language
+detected, never forced by --lang), translated into the meeting language and spoken by Reachy, sentences in
+order; {"type": "voice_end"} = the page stopped sending them (translate off, muted): the sentence ends now
+(also after 1 s without frames).
 
 The same `id` is sent several times: partials (final=false) while the person talks, then the
 final text, then once more with the translation. Clients upsert by `id`. A final with empty
@@ -49,6 +55,7 @@ import json
 import logging
 import os
 import queue
+import re
 import signal
 import subprocess
 import threading
@@ -106,6 +113,19 @@ def hf_username(token: str) -> str | None:
         except (OSError, ValueError):
             continue
     return None
+
+
+LANG_RE = re.compile(r"[a-z]{2}")
+
+
+def parse_lang(msg: dict) -> tuple[str | None, str | None]:
+    """{"type": "lang", "meeting": "auto" | "de" | ..., "target": "en" | ...} -> (meeting, target); None = not
+    given or invalid (ISO 639-1 codes only)."""
+    meeting, target = msg.get("meeting"), msg.get("target")
+    meeting = meeting.lower() if isinstance(meeting, str) else None
+    target = target.lower() if isinstance(target, str) else None
+    return (meeting if meeting == "auto" or (meeting and LANG_RE.fullmatch(meeting)) else None,
+            target if target and LANG_RE.fullmatch(target) else None)
 
 
 class Worker:
@@ -264,18 +284,11 @@ class Pipeline:
         except (ImportError, OSError) as e:  # onnxruntime missing / no download: loudness fallback
             log.warning("Silero VAD unavailable (%s), using the loudness threshold", e)
             self.segmenter = Segmenter()
-        self.translator = None
-        try:
-            if args.translator == "deepl":
-                from .translate import DeepLTranslator
-
-                self.translator = DeepLTranslator(args.target)
-            elif args.translator == "claude":
-                from .translate import ClaudeTranslator
-
-                self.translator = ClaudeTranslator(args.target, args.claude_model)
-        except (RuntimeError, ImportError) as e:
-            log.warning("No translation: %s", e)
+        # Languages, switchable from the page ({"type": "lang"}): the bubbles' language, and the one Reachy
+        # speaks for the remote user ("auto" = --meeting-lang, else the language most spoken in the room)
+        self.target = args.target
+        self.meeting_choice = "auto"
+        self.translator = self._new_translator(self.target)   # room captions, with context
         self.doa = None
         if args.daemon:
             from .doa import DoaTracker
@@ -336,7 +349,7 @@ class Pipeline:
         doa_deg, azimuth_deg = self.doa.direction(t_start, wall_end) if self.doa else (None, None)
         return {
             "id": seg.id, "final": seg.final, "text": text, "lang": lang,
-            "translation": translation, "target": self.args.target,
+            "translation": translation, "target": self.target,
             "doa_deg": doa_deg, "azimuth_deg": azimuth_deg,
             "t_start": round(t_start, 3), "t_end": round(wall_end, 3),
         }
@@ -352,7 +365,7 @@ class Pipeline:
         # (DeepL quota): only when enough new text came in since the last partial translation.
         last_t, last_len = self.partial_tr.get(seg.id, (0.0, 0))
         now = time.time()
-        if (self.translator and lang != self.args.target and len(text) - last_len >= 15
+        if (self.translator and lang != self.target and len(text) - last_len >= 15
                 and now - last_t >= 1.2):
             self.partial_tr[seg.id] = (now, len(text))
             translation = await self.translator(text, remember=False)
@@ -368,10 +381,11 @@ class Pipeline:
         log.info("[%d %s] %s", seg.id, lang, text)
         if text:
             self.room_langs.append((time.time(), lang))
-        if text and lang != self.args.target and self.translator:
-            translation = await self.translator(text)
-            if translation:
-                log.info("[%d %s] %s", seg.id, self.args.target, translation)
+        target, translator = self.target, self.translator
+        if text and lang != target and translator:
+            translation = await translator(text)
+            if translation and target == self.target:   # not if the bubble language changed meanwhile
+                log.info("[%d %s] %s", seg.id, target, translation)
                 cap = {**cap, "translation": translation}
                 self.server.send(cap)
         if self.summarizer:
@@ -386,30 +400,48 @@ class Pipeline:
             if self.voice.gender != msg["gender"]:
                 self.voice.gender = msg["gender"]
                 log.info("Reachy's voice: %s (%s)", msg["gender"], self.voice.voice(self.meeting_lang()) or "system voice")
+        if msg.get("type") == "voice_end" and self.voice:   # the page stopped sending the remote user's voice
+            self.me_queue.put_nowait(None)
+        if msg.get("type") == "lang":
+            meeting, target = parse_lang(msg)
+            if meeting and meeting != self.meeting_choice:
+                self.meeting_choice = meeting
+                log.info("Reachy speaks for the remote user: %s (now %s)", meeting, self.meeting_lang())
+            if target and target != self.target:
+                self.target = self.server.target = target
+                self.translator = self._new_translator(target)
+                if self.summarizer:
+                    self.summarizer.set_target(target)
+                log.info("Bubbles in: %s", target)
 
     def meeting_lang(self) -> str:
-        """--meeting-lang, else the language most spoken in the room in the last 10 minutes."""
+        """The page's choice, else --meeting-lang, else the language most spoken in the room in the last 10 min."""
+        if self.meeting_choice != "auto":
+            return self.meeting_choice
         if self.args.meeting_lang:
             return self.args.meeting_lang
         now = time.time()
         langs = [lang for t, lang in self.room_langs if now - t < 600]
         return max(set(langs), key=langs.count) if langs else (self.args.lang or "de")
 
+    def _new_translator(self, target: str):
+        try:
+            if self.args.translator == "deepl":
+                from .translate import DeepLTranslator
+
+                return DeepLTranslator(target)
+            if self.args.translator == "claude":
+                from .translate import ClaudeTranslator
+
+                return ClaudeTranslator(target, self.args.claude_model)
+        except (RuntimeError, ImportError) as e:
+            log.warning("No translation into %s: %s", target, e)
+        return None
+
     def _translator_to(self, target: str):
+        """Translator for the remote user's voice (no shared context with the room), one per language."""
         if target not in self.me_translators:
-            tr = None
-            try:
-                if self.args.translator == "deepl":
-                    from .translate import DeepLTranslator
-
-                    tr = DeepLTranslator(target)
-                elif self.args.translator == "claude":
-                    from .translate import ClaudeTranslator
-
-                    tr = ClaudeTranslator(target, self.args.claude_model)
-            except (RuntimeError, ImportError) as e:
-                log.warning("No translation for the remote voice: %s", e)
-            self.me_translators[target] = tr
+            self.me_translators[target] = self._new_translator(target)
         return self.me_translators[target]
 
     def _me_stt(self, audio: np.ndarray, _language=None) -> tuple[str, str]:

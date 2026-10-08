@@ -257,6 +257,45 @@ def test_me_sentences_are_spoken_in_order():
     assert asyncio.run(main()) == ["first", "second"]
 
 
+def test_parse_lang_message():
+    from reachy_meetings_backend.captions import parse_lang
+
+    assert parse_lang({"type": "lang", "meeting": "auto", "target": "EN"}) == ("auto", "en")
+    assert parse_lang({"type": "lang", "meeting": "fr"}) == ("fr", None)
+    assert parse_lang({"type": "lang", "meeting": "deutsch", "target": 3}) == (None, None)
+    assert parse_lang({"type": "lang", "target": "../x"}) == (None, None)
+
+
+def test_meeting_lang_choice_over_cli_over_room():
+    import time
+
+    from reachy_meetings_backend.captions import Pipeline
+
+    p = Pipeline.__new__(Pipeline)
+    p.args = type("A", (), {"meeting_lang": None, "lang": None})()
+    p.room_langs = [(time.time(), "en"), (time.time(), "en"), (time.time(), "de")]
+    p.meeting_choice = "auto"
+    assert p.meeting_lang() == "en"
+    p.args.meeting_lang = "it"
+    assert p.meeting_lang() == "it"
+    p.meeting_choice = "fr"
+    assert p.meeting_lang() == "fr"
+
+
+def test_voice_gender_maps_per_language():
+    from reachy_meetings_backend.voice import VoiceOut
+
+    v = VoiceOut.__new__(VoiceOut)
+    v.voices = [("Viktor", "de_DE"), ("Daniel", "en_GB"), ("Samantha", "en_US"), ("Thomas", "fr_FR"),
+                ("Amélie", "fr_CA"), ("Alice", "it_IT")]
+    v.overrides, v.gender = {}, "male"
+    assert [v.voice(lang) for lang in ("de", "en", "fr", "it")] == ["Viktor", "Daniel", "Thomas", "Alice"]
+    v.gender = "female"
+    assert [v.voice(lang) for lang in ("de", "en", "fr", "it")] == [None, "Samantha", "Amélie", "Alice"]
+    v.overrides = {"en": "Daniel"}
+    assert v.voice("en") == "Daniel"
+
+
 def test_read_aiff_plain_and_aifc():
     import struct
 
