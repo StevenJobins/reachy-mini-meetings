@@ -32,6 +32,10 @@ const COLORS = ["#ff9500", "#38bdf8", "#4ade80", "#f472b6", "#a78bfa", "#facc15"
 function load(key, fallback) { try { return localStorage.getItem(key) || fallback; } catch { return fallback; } }
 function save(key, value) { try { value ? localStorage.setItem(key, value) : localStorage.removeItem(key); } catch {} }
 
+// Faces found by the backend (backend/.../vision.py, {"type": "faces"}): set by app.js.
+let facesHandler = null;
+export function onBackendFaces(fn) { facesHandler = fn; }
+
 export function captionsUrl() { return load(URL_KEY, ""); }   // "" = automatic
 
 async function tunnelUrl() {
@@ -311,6 +315,7 @@ export function createCaptions({ three, distM, vfovDeg, cameraModel = null, spea
       else if (msg.type === "summary") onSummary?.(msg);
       else if (msg.type === "vad") onVad?.(msg);
       else if (msg.type === "me") onMe?.(msg);
+      else if (msg.type === "faces") facesHandler?.(msg);
     };
     sock.onclose = (e) => {
       if (e.code === 4001) log("captions: tunnel refused this HF account (backend --allow-hf)");

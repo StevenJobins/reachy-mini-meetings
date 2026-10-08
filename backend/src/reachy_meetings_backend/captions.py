@@ -12,6 +12,8 @@ Protocol (server -> headset, one JSON per message; keep in sync with xr-client):
             "target": str, "doa_deg": float | null, "azimuth_deg": float | null,
             "t_start": s, "t_end": s}
   summary  {"summary": [str], "actions": [{"who": str, "what": str, "when": str}], "next_steps": [str], "t": s}
+  faces    {"people": [{"cx", "cy", "top", "w", "h", "mouth"}], "t": s}   faces in the robot camera found here
+           (vision.py, ~20/s): the page uses them instead of its own, much slower detector
   me       {"text": str, "lang": str, "translation": str | null, "target": str, "t": s}   what the remote
            user said (their headset mic, see below) and what Reachy said for them in the meeting language
   vad      {"speaking": bool, "t": s}   instantly from the neural VAD (~0.1 s), long before any text:
@@ -167,6 +169,10 @@ class CaptionServer:
     def send_vad(self, speaking: bool) -> None:
         websockets.broadcast(self.clients, json.dumps({"type": "vad", "speaking": speaking,
                                                        "t": round(time.time(), 3)}))
+
+    def send_faces(self, people: list, t: float) -> None:
+        if self.clients:
+            websockets.broadcast(self.clients, json.dumps({"type": "faces", "people": people, "t": round(t, 3)}))
 
     def send_me(self, me: dict) -> None:
         websockets.broadcast(self.clients, json.dumps({"type": "me", **me}))
@@ -376,6 +382,12 @@ class Pipeline:
             tasks.append(asyncio.create_task(self.summarizer.run(self.server.send_summary)))
         if self.voice:
             tasks.append(asyncio.create_task(self._me_loop()))
+        if self.args.vision_camera != "none" and not self.args.file:
+            from .vision import FaceStream
+
+            loop = asyncio.get_running_loop()
+            FaceStream(self.args.vision_camera, self.args.vision_hz).start(
+                lambda people, t: loop.call_soon_threadsafe(self.server.send_faces, people, t))
         if self.args.tunnel:
             from . import tunnel
 
@@ -456,6 +468,9 @@ def cli() -> None:
                                                 "(default: Viktor for German, else the best installed one)")
     ap.add_argument("--meeting-lang", help="language Reachy speaks for the remote user (default: the one most "
                                            "spoken in the room lately)")
+    ap.add_argument("--vision-camera", default="Reachy Mini Camera",
+                    help="camera (name substring) for the face detection sent to the page; 'none' = off")
+    ap.add_argument("--vision-hz", type=float, default=20, help="face detections per second sent to the page")
     ap.add_argument("--tunnel", action="store_true",
                     help="wireless headset: Cloudflare quick tunnel, address published for the page (tunnel.py)")
     ap.add_argument("--allow-hf", default="",

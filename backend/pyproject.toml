@@ -18,6 +18,7 @@ dependencies = [
     "onnxruntime",           # Silero VAD: speech vs. noise
     "pyusb", "libusb-package",   # directional mic: XVF3800 settings over USB
     "huggingface_hub",       # tunnel: which HF account this Mac is signed in with
+    "mediapipe", "opencv-python", "cv2-enumerate-cameras",   # faces + mouth in the robot camera (vision.py)
 ]
 
 [project.optional-dependencies]

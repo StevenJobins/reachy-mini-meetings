@@ -85,6 +85,12 @@ Voice: chosen by ear on 2026-10-08, switchable in VR (⋯ → 🗣 Viktor / Siri
 
 Measured (synthetic English sentence fed over the WebSocket, playback stubbed): transcript + DeepL to German + synthesis call in one pass; synthesis of a 4.4 s German sentence takes 0.7 s.
 
+### Faces for speaker following (`vision.py`)
+
+The page decides who is talking from mouth movement (jaw opening over 1.5 s) plus the mic direction. On the headset the face detector reached only ~3 frames/s, too few for that. Now the backend reads the robot camera itself (found by name, `--vision-camera "Reachy Mini Camera"`; macOS, Windows and Linux allow a second reader next to the daemon), runs MediaPipe's FaceLandmarker and sends `{"type": "faces"}` to the page. The page uses them instead of its own detector, which pauses while they arrive.
+
+Measured 2026-10-08 (M-series Mac): detector 54 frames/s at 960x540 (8 ms per frame); sent at `--vision-hz 20`, arriving at 18.6/s, 15 ms after capture. The camera is read in its own thread keeping only the newest frame (reading at the detection rate would let OpenCV queue old frames). `--vision-camera none` turns it off. Needs `mediapipe`, `opencv-python`, `cv2-enumerate-cameras` (in the dependencies).
+
 ### Room audio stream
 
 The robot's own WebRTC audio drops ~55 % of the sound (measured on the page: 0 packets lost, low jitter, but more than half of the audio concealed, with and without this backend running, so it is the daemon's sender). This backend already reads the same microphone cleanly, so it also streams it to the page: binary WebSocket frames, int16 PCM, 16 kHz mono, 40 ms each (~32 KB/s per client). The page plays it with a small jitter buffer and mutes the WebRTC audio while the stream arrives. Between utterances the stream is turned down by 14 dB (`--pause-db`, noise gate driven by the neural VAD; 0 = off), so hum and fans stay out of the headset; voices of other people in the room count as speech and stay audible.

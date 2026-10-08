@@ -10,7 +10,7 @@ import { createScene } from "./scene.js";
 import { HeadMirror, Recenter, headsetToRobot, robotToHeadset } from "./pose.js";
 import { Laugh, WantToTalk } from "./gestures.js";
 import { SpeakerTracker } from "./speaker.js";
-import { captionsUrl, createCaptions, setCaptionsUrl } from "./captions.js";
+import { captionsUrl, createCaptions, onBackendFaces, setCaptionsUrl } from "./captions.js";
 import { createFaces } from "./faces.js";
 import { FaceSpeakers } from "./speakers.js";
 import { createNotes } from "./notes.js";
@@ -107,7 +107,7 @@ function statusText() {
   return [
     `robot ${status.robot}   motors ${status.motors}   ice ${status.ice}   video ${status.video} ${status.videoIn}   send ${status.send} Hz   mic ${status.mic} ${status.micKbps.toFixed(0)} kbps   volume ${status.volume}`,
     `cmd  r/p/y ${f(status.cmd)}   body ${status.body.toFixed(1)}   speaker target ${speaker.target.toFixed(0)} base ${speaker.base.toFixed(0)}   cam ${cam.name} ${cam.hfovDeg.toFixed(0)}x${cam.vfovDeg.toFixed(0)}°   view ${viewMode}${viewMode === "world" ? `/${status.follow ?? "-"}` : ""} delay ${(videoDelayS * 1000).toFixed(0)}ms turn ${(status.turn ?? 0).toFixed(0)}°/s`,
-    `meas r/p/y ${f(status.meas)}   captions ${status.captions}   ${faces.stats()}   robot sound ${status.sound} ${roomAudio.stats()} ${status.audioIn}   doa ${status.doa}`,
+    `meas r/p/y ${f(status.meas)}   captions ${status.captions}   ${backendFacesLive() ? `people (backend) @ ${backendFacesFps} fps` : faces.stats()}   robot sound ${status.sound} ${roomAudio.stats()} ${status.audioIn}   doa ${status.doa}`,
   ].join("\n");
 }
 // Robot sound diagnostics (why is it choppy?): packets lost, jitter, playout buffer, and how much audio
@@ -157,7 +157,7 @@ setInterval(async () => {
 setInterval(() => {
   const mem = performance.memory ? `heap ${(performance.memory.usedJSHeapSize / 1e6).toFixed(0)} MB` : "heap ?";
   log("alive", mem, status.audioIn, `xr ${status.xr}`, `robot ${status.robot}`, `ice ${status.ice}`, `motors ${status.motors}`,
-    `send ${status.send} Hz`, scene.videoStats(), `in ${status.videoIn}`, roomAudio.stats());
+    `send ${status.send} Hz`, scene.videoStats(), `in ${status.videoIn}`, roomAudio.stats(), backendFacesLive() ? `people backend ${backendFacesFps} fps` : faces.stats());
 }, 5000);
 document.addEventListener("visibilitychange", () => log("page", document.visibilityState));
 // Deployed version: the Pages workflow stamps module URLs with the commit (app.js?v=<sha>).
@@ -593,6 +593,7 @@ function focusTrack() {
 // Instant "someone is speaking" from the backend's neural VAD (~0.1 s after the first word, no text yet):
 // the mic directions count right away, and the speaking face in view becomes the focus person.
 function onVadEvent(msg) {
+  if (msg.speaking && awake && performance.now() / 1000 - lastSpeechS > 1.5) log("speech start");   // for measuring the turn delay
   if (!msg.speaking || !awake) return;
   lastSpeechS = performance.now() / 1000;
   flushDoa(lastSpeechS - 0.6);
@@ -689,9 +690,23 @@ function frameFocus() {
   }
   noteTarget(`face p${tr.pid} off ${offX.toFixed(0)}°`);
 }
+function onPeople(list, t) { faceSpeakers.focusPid = focusPid; faceSpeakers.update(list, t, headYawAt(t)); frameFocus(); }
+// Faces come from the backend when it sends them (MediaPipe on the robot's computer, ~20/s, vision.py): on the
+// headset the detector only managed ~3/s, too few to see who moves their mouth. The headset's own detector
+// pauses while they arrive and takes over again 1.5 s after they stop.
+let backendFacesAt = -1e9, backendFacesN = 0, backendFacesFps = 0;
+setInterval(() => { backendFacesFps = backendFacesN; backendFacesN = 0; }, 1000);
+onBackendFaces((msg) => {
+  backendFacesAt = performance.now();
+  backendFacesN++;
+  if (!awake) return;
+  // backend capture time (wall clock) -> this page's clock; both are NTP-synced
+  onPeople(msg.people, performance.now() / 1000 - (Date.now() / 1000 - msg.t));
+});
+const backendFacesLive = () => performance.now() - backendFacesAt < 1500;
 const faces = createFaces({
-  getSource: () => (awake ? scene.videoFrame() : null),
-  onFaces: (list, t) => { faceSpeakers.focusPid = focusPid; faceSpeakers.update(list, t, headYawAt(t)); frameFocus(); },
+  getSource: () => (awake && !backendFacesLive() ? scene.videoFrame() : null),
+  onFaces: onPeople,
   log,
 });
 videoMode = scene.videoMode;

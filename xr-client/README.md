@@ -109,6 +109,7 @@ Tap **Start** in a browser without VR (any laptop): the same three.js scene open
 ### VR interface
 
 - Evening sky with a warm horizon and a glowing floor (no black void); the video window has a dark rounded bezel.
+- Faces: from the backend when it sends them (~20/s, backend/README.md "Faces for speaker following"), else from the headset's own detector (~3/s). The status line shows which (`people (backend) @ 19 fps`). The log marks each `speech start`, to measure how long until Reachy turns.
 - Debug panel, first line: incoming video (`1920x1080 60fps 6.2Mbps VP8 …`); third line: room audio buffer and audio device delay (`stream buf 140ms out 40ms`). Fourth line: VR frame rate and the time per frame for the video upload and rendering (`frame 72 fps   js 4.1ms (video draw 2.3ms, render 1.2ms)`), to find what slows VR down. Both also go to the heartbeat log every 5 s. ⋯ → 🎞 Video switches the frame path (track / canvas / direct, `videosource.js`) for A/B tests.
 - The same line warns when the robot is connected but no camera frame arrived within 10 s: the daemon's WebRTC renegotiation hung ("stuck mid-negotiation" in its log, seen after quick reconnects), reloading the page starts a fresh session.
 - A red line above the dock warns while the caption server is not connected (then Reachy cannot turn to speakers: speaker following needs its speech detection).
