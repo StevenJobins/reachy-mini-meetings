@@ -70,7 +70,6 @@ import numpy as np
 import websockets
 
 from .depth import DepthEstimator
-from .segmenter import Segment, Segmenter
 from .segmenter import Segment, Segmenter, SegmenterCfg
 from .stt import AUTO
 
