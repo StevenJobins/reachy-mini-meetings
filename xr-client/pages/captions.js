@@ -17,6 +17,7 @@ import * as THREE from "three";
 const URL_KEY = "reachy-xr-captions-url";
 const MODE_KEY = "reachy-xr-caption-mode";
 const FACES_KEY = "reachy-xr-show-faces";
+const VOICE_KEY = "reachy-xr-voice-gender";
 const LOCAL_URL = "ws://localhost:8766";
 const TUNNEL_TOPIC = "reachy-meetings-xr-captions";   // keep in sync with backend/.../tunnel.py
 export const MODES = ["both", "translation", "original"];
@@ -269,6 +270,7 @@ export function createCaptions({ three, distM, vfovDeg, speakers, listEl, overla
   }, 500);
 
   let ws = null, tryLocal = true, timer = null;
+  let voiceGender = load(VOICE_KEY, "male");
   async function connect() {
     clearTimeout(timer);
     let url = captionsUrl();
@@ -289,6 +291,7 @@ export function createCaptions({ three, distM, vfovDeg, speakers, listEl, overla
       let token = null;
       try { token = sessionStorage.getItem("hf_token"); } catch {}
       sock.send(JSON.stringify({ type: "auth", hf_token: token }));   // only checked through the tunnel
+      sock.send(JSON.stringify({ type: "voice", gender: voiceGender }));
       tryLocal = url === LOCAL_URL;   // reconnect the same way first
       onStatus({ captions: "on" }); log("captions connected", url);
     };
@@ -311,6 +314,14 @@ export function createCaptions({ three, distM, vfovDeg, speakers, listEl, overla
 
   return {
     /** Reconnect, e.g. after the URL changed. */
+    /** Reachy's voice for "translate me": "male" (Viktor) or "female" (Siri). Remembered, resent on reconnect. */
+    get voiceGender() { return voiceGender; },
+    setVoiceGender(g) {
+      voiceGender = g;
+      save(VOICE_KEY, g);
+      if (ws?.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: "voice", gender: g }));
+    },
+
     /** Your voice for "translate me" (binary int16 PCM, 16 kHz). */
     sendVoice(buf) { if (ws?.readyState === WebSocket.OPEN) ws.send(buf); },
     reconnect() { if (ws) { ws.onclose = null; ws.close(); } tryLocal = true; connect(); },

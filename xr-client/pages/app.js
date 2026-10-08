@@ -367,6 +367,8 @@ const scene = createScene({
       onClick: () => captions.cycleMode() },
     { icon: "📝", label: "Notes", active: () => !!notes?.visible, onClick: () => notes.toggle() },
     { icon: () => (robotMuted ? "🔇" : "🔊"), label: "Sound", active: () => !robotMuted, onClick: () => setRobotMuted(!robotMuted) },
+    { icon: "🗣", label: () => (captions?.voiceGender === "female" ? "Siri" : "Viktor"), more: true,
+      onClick: () => captions.setVoiceGender(captions.voiceGender === "female" ? "male" : "female") },
     { icon: "⟳", label: "Recenter", more: true, onClick: () => { wantRecenter = true; } },
     { icon: "🐞", label: "Debug", more: true, active: () => debugOn, onClick: () => { debugOn = !debugOn; scene.toggleDebug(); } },
     { icon: "✕", label: "Exit VR", more: true, onClick: () => scene.exitVR() },

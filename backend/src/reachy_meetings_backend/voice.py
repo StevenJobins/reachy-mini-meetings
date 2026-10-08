@@ -3,7 +3,9 @@
 The robot's speaker is a USB audio output on the Mac (same device as the mic), so we play to it directly.
 Voice per language: the best installed one. macOS ships only compact voices; much better ones (Premium /
 Enhanced) are free in System Settings > Accessibility > Spoken Content > System voice > Manage Voices, and are
-picked automatically once installed. `--voice de=Markus,en=Ava` overrides.
+picked automatically once installed. `--voice de=Markus,en=Ava` overrides; `system` = the macOS system voice
+(the only way to get a Siri voice: Siri voices are not listed by `say -v ?`, but `say` without -v uses the
+system voice, so set System Settings > Accessibility > Spoken Content > System voice to the Siri voice).
 """
 
 from __future__ import annotations
@@ -24,6 +26,9 @@ log = logging.getLogger(__name__)
 # Novelty and Eloquence voices sound like toys; Anna is the default German one the user found grating.
 SILLY = {"Albert", "Bad News", "Bahh", "Bells", "Boing", "Bubbles", "Cellos", "Good News", "Jester", "Junior",
          "Organ", "Superstar", "Trinoids", "Whisper", "Wobble", "Zarvox", "Fred", "Kathy", "Ralph"}
+# Chosen by ear (2026-10-08). The page switches between them (Voice button); "system" = the macOS system voice,
+# set to Siri. Note: `say -v <unknown name>` silently falls back to another voice, so Siri can't be named.
+GENDER_VOICES = {"male": {"de": "Viktor", "en": "Daniel"}, "female": {"de": "system", "en": "Samantha"}}
 ELOQUENCE = ("Eddy", "Flo", "Grandma", "Grandpa", "Reed", "Rocko", "Sandy", "Shelley")
 
 
@@ -71,9 +76,18 @@ class VoiceOut:
         self.voices = installed_voices()
         self.overrides = dict(kv.split("=", 1) for kv in overrides.split(",") if "=" in kv)
         self.lock = asyncio.Lock()   # one sentence at a time
+        self.gender = "male"
 
     def voice(self, lang: str) -> str | None:
-        return self.overrides.get(lang) or pick_voice(lang, self.voices, self.REGION.get(lang, ""))
+        """Voice name for `say -v`, or None for the system voice."""
+        v = self.overrides.get(lang) or self.overrides.get("*")
+        if not v:
+            g = GENDER_VOICES.get(self.gender, {}).get(lang)
+            if g == "system" or g in {n for n, _ in self.voices}:
+                v = g
+        if v == "system":
+            return None
+        return v or pick_voice(lang, self.voices, self.REGION.get(lang, ""))
 
     def _synth(self, text: str, voice: str | None) -> tuple[np.ndarray, int]:
         with tempfile.TemporaryDirectory() as d:

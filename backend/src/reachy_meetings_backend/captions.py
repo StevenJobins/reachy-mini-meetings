@@ -20,7 +20,8 @@ Protocol (server -> headset, one JSON per message; keep in sync with xr-client):
            WebRTC audio drops ~55 % of the sound (daemon bug, 0 packets lost); the page plays this instead.
            Between utterances it is turned down by --pause-db (noise gate driven by the neural VAD).
 
-Client -> server: {"type": "auth", "hf_token": str} first (checked through the tunnel only); binary frames
+Client -> server: {"type": "auth", "hf_token": str} first (checked through the tunnel only);
+{"type": "voice", "gender": "male" | "female"} picks Reachy's voice (voice.py GENDER_VOICES); binary frames
 (int16 PCM, 16 kHz mono) = the remote user's voice while "translate me" is on: transcribed, translated into
 the meeting language (the language most spoken in the room lately, or --meeting-lang) and spoken by Reachy.
 
@@ -99,6 +100,7 @@ class CaptionServer:
         self.token_users: dict[str, str | None] = {}
         self.clients: set = set()
         self.on_voice = None   # binary frames from a client: the remote user's voice
+        self.on_message = None   # JSON from a client (e.g. {"type": "voice", "gender": "female"})
         self.recent: deque[str] = deque(maxlen=20)  # last finals, replayed to new clients
         self.summary: str | None = None
 
@@ -137,8 +139,14 @@ class CaptionServer:
             if self.summary:
                 await ws.send(self.summary)
             async for msg in ws:
-                if isinstance(msg, bytes) and self.on_voice:
-                    self.on_voice(msg)
+                if isinstance(msg, bytes):
+                    if self.on_voice:
+                        self.on_voice(msg)
+                elif self.on_message:
+                    try:
+                        self.on_message(json.loads(msg))
+                    except ValueError:
+                        pass
         finally:
             self.clients.discard(ws)
 
@@ -226,6 +234,7 @@ class Pipeline:
                     self.me_segmenter = Segmenter()
                 self.server.on_voice = lambda b: self.me_queue.put_nowait(
                     np.frombuffer(b, "<i2").astype(np.float32) / 32768)
+                self.server.on_message = self._client_message
             except (OSError, subprocess.CalledProcessError) as e:
                 log.warning("No voice output: %s", e)
         self.summarizer = None
@@ -290,6 +299,12 @@ class Pipeline:
                 self.server.send(cap)
         if self.summarizer:
             self.summarizer.add(cap)
+
+    def _client_message(self, msg: dict) -> None:
+        if msg.get("type") == "voice" and msg.get("gender") in ("male", "female") and self.voice:
+            if self.voice.gender != msg["gender"]:
+                self.voice.gender = msg["gender"]
+                log.info("Reachy's voice: %s (%s)", msg["gender"], self.voice.voice(self.meeting_lang()) or "system voice")
 
     def meeting_lang(self) -> str:
         """--meeting-lang, else the language most spoken in the room in the last 10 minutes."""
@@ -429,8 +444,9 @@ def cli() -> None:
                          "restored on exit)")
     ap.add_argument("--voice-out", default="Reachy",
                     help="speaker for the remote user's translated voice (device name substring); 'none' = off")
-    ap.add_argument("--voice", default="", help="macOS voice per language, e.g. de=Markus,en=Ava "
-                                                "(default: the best installed one, see voice.py)")
+    ap.add_argument("--voice", default="", help="macOS voice per language, e.g. de=Markus,en=Ava; 'system' = "
+                                                "the system voice (Siri), '*=system' for all languages "
+                                                "(default: Viktor for German, else the best installed one)")
     ap.add_argument("--meeting-lang", help="language Reachy speaks for the remote user (default: the one most "
                                            "spoken in the room lately)")
     ap.add_argument("--tunnel", action="store_true",
