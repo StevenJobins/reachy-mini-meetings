@@ -167,3 +167,83 @@ def test_pick_voice_prefers_premium_and_avoids_anna():
     assert pick_voice("de", voices[:2], "DE") == "Flo (Deutsch (Deutschland))"
     assert pick_voice("en", voices, "US") == "Samantha"
     assert pick_voice("ja", voices) is None
+
+
+# ---------------------------------------------------------------- translate me: early end, order, worker
+def test_early_end_comes_before_final_with_the_same_audio():
+    cfg = SegmenterCfg(early_s=0.3)
+    out = feed(Segmenter(cfg), np.concatenate([noise(1.0), tone(2.0), noise(1.2)]), block=640)
+    early = [s for s in out if s.early]
+    final = [s for s in out if s.final]
+    assert len(early) == 1 and len(final) == 1
+    assert [s.early or s.final for s in out if s.early or s.final] == [True, True]
+    assert out[-1] is final[0]
+    assert early[0].id == final[0].id and len(early[0].audio) == len(final[0].audio)
+
+
+def test_early_end_then_speech_goes_on():
+    cfg = SegmenterCfg(early_s=0.3)   # a 0.5 s pause: tentative end, but no final
+    out = feed(Segmenter(cfg), np.concatenate([noise(1.0), tone(1.0), noise(0.5), tone(1.0), noise(1.2)]),
+               block=640)
+    early = [s for s in out if s.early]
+    final = [s for s in out if s.final]
+    assert len(final) == 1 and len(early) == 2
+    assert len(early[0].audio) < len(final[0].audio) == len(early[1].audio)
+
+
+def test_worker_runs_urgent_jobs_first():
+    import threading
+
+    from reachy_meetings_backend.captions import Worker
+
+    w, gate, order = Worker(), threading.Event(), []
+    w.submit(gate.wait)   # keeps the thread busy while the others queue up
+    futs = [w.submit(lambda n=n: order.append(n), prio) for n, prio in (("room1", 1), ("me", 0), ("room2", 1))]
+    gate.set()
+    for f in futs:
+        f.result(5)
+    assert order == ["me", "room1", "room2"]
+
+
+def test_me_sentences_are_spoken_in_order():
+    import asyncio
+
+    from reachy_meetings_backend.captions import Pipeline
+
+    async def main():
+        p = Pipeline.__new__(Pipeline)
+        p.me_out, said = asyncio.Queue(), []
+
+        async def play(r, t_end):
+            said.append(r)
+        p._me_play = play
+
+        async def job(name, delay):
+            await asyncio.sleep(delay)
+            return name
+        player = asyncio.create_task(p._me_player())
+        for name, delay in (("first", 0.05), ("second", 0.0)):   # the second one is ready first
+            p.me_out.put_nowait((asyncio.create_task(job(name, delay)), 0.0))
+        await asyncio.sleep(0.1)
+        player.cancel()
+        return said
+    assert asyncio.run(main()) == ["first", "second"]
+
+
+def test_read_aiff_plain_and_aifc():
+    import struct
+
+    from reachy_meetings_backend.voice import read_aiff
+
+    pcm = np.array([0, 1000, -1000, 32767], ">i2").tobytes()
+    rate80 = struct.pack(">HQ", 16383 + 14, 22050 << (63 - 14))   # 22050 as an 80-bit float
+
+    def aiff(kind, comp):
+        comm = struct.pack(">hIh", 1, 4, 16) + rate80 + (comp + b"\x00\x00" if kind == b"AIFC" else b"")
+        chunks = b"COMM" + struct.pack(">I", len(comm)) + comm
+        chunks += b"SSND" + struct.pack(">I", 8 + len(pcm)) + b"\0" * 8 + pcm
+        return b"FORM" + struct.pack(">I", 4 + len(chunks)) + kind + chunks
+    for data in (aiff(b"AIFF", b""), aiff(b"AIFC", b"twos")):
+        x, sr = read_aiff(data)
+        assert sr == 22050
+        assert np.allclose(x * 32768, [0, 1000, -1000, 32767])
