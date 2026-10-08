@@ -268,6 +268,7 @@ function setRobotMuted(m) {
 // robot speaker while Reachy is awake. On by default; the big mic button mutes you.
 const mic = createMic({
   onVoice: (buf) => captions?.sendVoice(buf),   // "translate me": your voice -> backend -> Reachy speaks it
+  onVoiceEnd: () => captions?.sendVoiceEnd(),
   getPeerConnection: () => robot.peerConnection,
   onStatus: (s) => { Object.assign(status, s); renderMicButton(); },
   log,
@@ -607,6 +608,10 @@ const scene = createScene({
     { icon: () => (robotMuted ? "volume-x" : "volume-2"), label: "Sound", active: () => !robotMuted, onClick: () => setRobotMuted(!robotMuted) },
     { icon: "audio-lines", label: () => (captions?.voiceGender === "female" ? "Siri" : "Viktor"), more: true,
       onClick: () => captions.setVoiceGender(captions.voiceGender === "female" ? "male" : "female") },
+    { icon: "bot", label: () => `Reachy: ${captions?.meetingLang ?? "auto"}`, more: true,
+      onClick: () => { captions.cycleMeetingLang(); syncLangSelects(); } },
+    { icon: "message-circle", label: () => `Bubbles: ${captions?.bubbleLang ?? "en"}`, more: true,
+      onClick: () => { captions.cycleBubbleLang(); syncLangSelects(); } },
     { icon: () => (viewMode === "world" ? "globe" : "sofa"), label: () => (viewMode === "world" ? "World-locked" : "Comfort"),
       more: true, onClick: () => setViewMode(viewMode === "world" ? "comfort" : "world") },
     { icon: "scan-line", label: () => (scan.active ? `Scan ${status.scan ?? ""}` : "Scan room"), more: true, onClick: startRoomScan },
@@ -863,6 +868,14 @@ $("calib-auto").onclick = () => {
 $("view-mode").onchange = (e) => setViewMode(e.target.value);
 $("caption-mode").value = captions.mode;
 $("caption-mode").onchange = (e) => captions.setMode(e.target.value);
+function syncLangSelects() {
+  $("meeting-lang").value = captions.meetingLang;
+  $("bubble-lang").value = captions.bubbleLang;
+}
+syncLangSelects();
+$("meeting-lang").onchange = (e) => captions.setMeetingLang(e.target.value);
+$("bubble-lang").onchange = (e) => captions.setBubbleLang(e.target.value);
+$("bubble-lang").onfocus = syncLangSelects;   // the backend's default arrives with hello, after page load
 $("show-faces").checked = captions.showFaces;
 $("show-faces").onchange = (e) => { captions.showFaces = e.target.checked; };
 
