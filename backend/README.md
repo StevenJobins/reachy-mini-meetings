@@ -85,11 +85,48 @@ Tests, without models, mic or network: `pytest -q`
 
 ### Your voice in the meeting language ("Translate" button)
 
-With 🌐 *Translate* on, the headset sends your voice to this server (binary frames, int16 PCM, 16 kHz mono) instead of straight to the robot. A second VAD cuts it into sentences; Whisper transcribes each one, DeepL translates it into the **meeting language**, and `say` (macOS speech synthesis) speaks it on the Reachy speaker, played straight to the USB audio device (`voice.py`). The meeting language is the language most spoken in the room over the last 10 minutes; before anyone has spoken it falls back to `--lang`, then `de`; `--meeting-lang` fixes it. The page shows what Reachy said above the dock (`me` message). While Reachy speaks, the room mic is ignored for captions and speech detection (+0.4 s echo), so its own voice neither becomes a bubble nor turns the head.
+With 🌐 *Translate* on, the headset sends your voice to this server (binary frames, int16 PCM, 16 kHz mono) instead of straight to the robot. A second VAD cuts it into sentences; Whisper transcribes each one (your language is detected per sentence, `--lang` does not apply to your voice), DeepL translates it into the **meeting language**, and macOS speech synthesis speaks it on the Reachy speaker, played straight to the USB audio device (`voice.py`). Sentences are spoken strictly in the order you said them. The page shows what Reachy said above the dock (`me` message). While Reachy speaks, the room mic is ignored for captions and speech detection (+0.4 s echo), so its own voice neither becomes a bubble nor turns the head, and the room sound sent to the headset is silent, so the headset mic cannot pick Reachy's voice up again and translate it in a loop. When the page stops sending (Translate off, muted: `voice_end`, or 1 s without frames), the sentence you were saying ends there instead of being glued in front of the next one.
 
-Voice: chosen by ear on 2026-10-08, switchable in VR (⋯ → 🗣 Viktor / Siri): **Viktor** (German, male; English: Daniel) or **Siri** (female; German: the macOS system voice, which must be set to the Siri voice in Spoken Content, because `say -v` cannot name Siri voices: an unknown name silently falls back to "Anna (Premium)", verified by comparing the output files; English: Samantha). Other languages: the best installed voice (Premium > Enhanced > compact; Eloquence voices like Eddy/Flo after that; Anna last, the team found her grating). macOS only ships compact voices; for natural speech, download e.g. a German and an English *Premium* voice under System Settings → Accessibility → Spoken Content → System voice → Manage Voices; they are picked up on the next start. Override: `--voice de=Markus,en=Ava`; off: `--voice-out none`.
+**Languages** (page Settings, and in VR ⋯ → 🤖 *Reachy: …* / 💭 *Bubbles: …*; remembered in the page, resent on every reconnect as `{"type": "lang"}`): what Reachy speaks for you is *auto*, de, en, fr, it or es. *auto* = `--meeting-lang` if given, else the language most spoken in the room over the last 10 minutes, before anyone has spoken `--lang`, then `de`. The bubbles (and the meeting notes) are translated into de, en, fr, it or es, default `--target`. The choice applies to everyone connected (there is one remote user).
 
-Measured (synthetic English sentence fed over the WebSocket, playback stubbed): transcript + DeepL to German + synthesis call in one pass; synthesis of a 4.4 s German sentence takes 0.7 s.
+Voice: chosen by ear on 2026-10-08, switchable in VR (⋯ → 🗣 Viktor / Siri): **Viktor** (German, male; English: Daniel; French: Thomas) or **Siri** (female; German: the macOS system voice, which must be set to the Siri voice in Spoken Content, because `say -v` cannot name Siri voices: an unknown name silently falls back to "Anna (Premium)", verified by comparing the output files; English: Samantha; French: Amélie; Italian: Alice; Spanish: Mónica). Other languages and male Italian/Spanish (no male voice installed apart from the Eloquence ones): the best installed voice (Premium > Enhanced > compact; Eloquence voices like Eddy/Flo after that; Anna last, the team found her grating). macOS only ships compact voices; for natural speech, download e.g. a German and an English *Premium* voice under System Settings → Accessibility → Spoken Content → System voice → Manage Voices; they are picked up on the next start. Override: `--voice de=Markus,en=Ava`; off: `--voice-out none`.
+
+#### Latency (end of your speech → Reachy starts speaking)
+
+The log line `me timing (s)` shows every sentence: when the work started (after the end of speech), Whisper (and how long it waited behind room captions), DeepL, synthesis, playback start. Benchmark, reproducible and silent (test sentences synthesized to files, sent in real time in 40 ms frames like the headset does, playback replaced by a sleep): `scripts/bench_translate_me.py` (`make`, `serve`, `run`, see its docstring). Eight German sentences (0.9–9.7 s, two with a 0.5 s hesitation), meeting language English, DeepL on.
+
+Where the time went (2026-10-08, M-series Mac, measured per stage):
+
+| Stage | Before | After | How |
+|---|---|---|---|
+| Waiting for the end of the sentence | 0.8 s of silence, then everything else | work starts after 0.3 s of silence (`--me-early`); kept if the sentence really ends at 0.8 s (`--me-silence`), redone if you go on | tentative end in the segmenter |
+| Whisper large-v3-turbo, 8 sentences | 1.48–1.52 s (language auto-detected: a second encoder pass) | 0.89–0.91 s | language found by the small model (0.13 s, one encoder pass), turbo told the language |
+| Model swap | mlx-whisper caches one model, so a final after a partial reloaded turbo: +0.1–0.4 s | 0 | each Transcriber keeps its own model |
+| Waiting behind room captions (busy room) | up to 2.5 s (median 0.2) | up to one running room job | priority queue: your sentence goes first |
+| Synthesis | `say` process: 0.9 s (Daniel), 1.6 s (Viktor), 2.1 s (system voice), independent of length | 0.03–0.15 s | NSSpeechSynthesizer in-process, voices kept loaded and warmed at start; identical sound (sample-exact) |
+| DeepL | 0.2 s | 0.2 s | unchanged |
+
+End to end (A/B interleaved, 2 rounds × 8 sentences per row; this Mac was also running the live backend and another backend with depth estimation on the GPU, so absolute numbers are high and noisy: a standalone baseline run earlier gave 3.7 s median in both rooms):
+
+| Version | Room | Median | 90 % | Max | Word errors |
+|---|---|---|---|---|---|
+| before (main) | silent | 7.08 s | 10.88 s | 11.03 s | 0/188 |
+| before (main) | busy (someone talks ~80 % of the time) | 10.60 s | 15.60 s | 16.58 s | 0/188 |
+| faster stages, no early start (`--me-early 0`) | silent | 3.56 s | 5.09 s | 7.72 s | 0/188 |
+| faster stages, no early start | busy | 3.04 s | 4.36 s | 5.28 s | 0/188 |
+| **+ early start (default)** | silent | **2.12 s** | 2.92 s | 3.04 s | 0/188 |
+| **+ early start (default)** | busy | **2.71 s** | 5.69 s | 7.11 s | 0/188 |
+| + end of sentence after 0.6 s instead of 0.8 s | silent | 2.67 s | 3.50 s | 3.67 s | 0/188 |
+| + end of sentence after 0.6 s | busy | 2.88 s | 4.70 s | 6.97 s | 0/188 |
+
+What did **not** help (kept out):
+
+- **Shorter end-of-sentence silence (0.6 s)**: no gain once the work starts early (table above), and more risk of cutting a sentence at a hesitation. Kept 0.8 s.
+- **Whisper `small` for your voice**: 0.21 s instead of 0.8 s, but 1 word error in 94 on these clean synthetic sentences (turbo: 0); real speech is harder, and a wrong word spoken aloud by Reachy is worse than 0.6 s. Kept turbo.
+- **A second Whisper thread for your voice** (both models on the GPU at once, mlx did not crash in this test): your sentence took 2.3–2.6 s instead of 1.3 s while the other thread transcribed the room, about what the priority queue costs anyway, with the thread-safety risk on top.
+- **Synthesis per sentence / streaming**: synthesis is 0.05 s now, nothing left to hide.
+
+The biggest remaining factor is the GPU: with other models running (the depth estimation of another backend instance during these measurements), Whisper took 2–4× longer, before and after these changes.
 
 ### Faces for speaker following (`vision.py`)
 
@@ -130,6 +167,17 @@ Key from https://aistudio.google.com/apikey → `export GEMINI_API_KEY="..."` (m
  "translation": "Good morning, everyone.", "target": "en",
  "azimuth_deg": 25.0,          // speaker direction, robot base frame, + = left, null = unknown
  "t_start": 1759326000.1, "t_end": 1759326002.4}   // wall clock
+```
+
+Headset → server (JSON; the full list with `me`, `vad`, `faces`, `summary` is at the top of `captions.py`):
+
+```jsonc
+{"type": "auth", "hf_token": "..."}                 // first message; only checked through the tunnel
+{"type": "voice", "gender": "male"}                 // Reachy's voice for Translate me: "male" | "female"
+{"type": "lang", "meeting": "auto", "target": "en"} // Reachy's language ("auto" | ISO code), bubble language; both optional
+{"type": "voice_end"}                               // Translate me stopped (off / muted): end the sentence now
+{"type": "log", "lines": ["..."]}                   // page log -> ~/Library/Logs/reachy-headset.log
+// binary: your voice while Translate me is on, int16 PCM 16 kHz mono (the page sends 640 samples = 40 ms each)
 ```
 
 The same `id` arrives several times:
