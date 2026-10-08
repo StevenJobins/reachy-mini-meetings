@@ -109,7 +109,7 @@ export function createScene({ video, vfovDeg, distM, statusText, onHeadsetPose, 
     hudCtx.fillStyle = "rgba(8,10,16,0.82)";
     hudCtx.beginPath(); hudCtx.roundRect(0, 0, hudCanvas.width, hudCanvas.height, 24); hudCtx.fill();
     hudCtx.fillStyle = "#86efac"; hudCtx.font = "26px ui-monospace, monospace";
-    [...statusText().split("\n"), source.stats()].forEach((l, i) => hudCtx.fillText(l, 20, 40 + i * 40));
+    [...statusText().split("\n"), `${source.stats()}   ${perfLine}`].forEach((l, i) => hudCtx.fillText(l, 20, 40 + i * 40));
     hudTex.needsUpdate = true;
   }, 200);
 
@@ -385,7 +385,10 @@ export function createScene({ video, vfovDeg, distM, statusText, onHeadsetPose, 
     }
     lazyQ.setFromAxisAngle(yAxis, lazyYaw);
   }
+  // Frame timing for the debug panel: XR frame rate, and how long the video upload and the rendering take.
+  let perfN = 0, perfFrames = 0, perfUpload = 0, perfRender = 0, perfLine = "", perfT = performance.now();
   renderer.setAnimationLoop((now, frame) => {
+    const t0 = performance.now();
     if (frame) {
       const pose = frame.getViewerPose(renderer.xr.getReferenceSpace());
       if (pose) {
@@ -408,6 +411,7 @@ export function createScene({ video, vfovDeg, distM, statusText, onHeadsetPose, 
         if (b.material.map !== map) { b.material.map = map; b.material.needsUpdate = true; }
       }
     }
+    const tUp = performance.now();
     let map = noVideoTex;
     if (source.mode === "direct") {
       if (video.readyState >= video.HAVE_CURRENT_DATA && video.videoWidth > 0) { videoTex.needsUpdate = true; map = videoTex; }
@@ -417,6 +421,7 @@ export function createScene({ video, vfovDeg, distM, statusText, onHeadsetPose, 
       if (source.hasFrame) map = canvasTex;
     }
     if (screenMat.map !== map) { screenMat.map = map; screenMat.needsUpdate = true; }
+    const upMs = performance.now() - tUp;
     for (const b of buttons) b.userData.refresh();
     layoutDock();
     updateWarning();
@@ -426,7 +431,14 @@ export function createScene({ video, vfovDeg, distM, statusText, onHeadsetPose, 
     else if (haveTarget) robotView.quaternion.slerp(target, 0.5);   // pose stream ~30 Hz -> smooth at display rate
     if (frame) updatePointers(frame);
     onFrame?.(now);
+    const tR = performance.now();
     renderer.render(scene, camera);
+    perfFrames++; perfUpload += upMs; perfRender += performance.now() - tR; perfN += performance.now() - t0;
+    if (t0 - perfT > 2000) {
+      const n = perfFrames || 1;
+      perfLine = `frame ${(perfFrames * 1000 / (t0 - perfT)).toFixed(0)} fps   js ${(perfN / n).toFixed(1)}ms (video draw ${(perfUpload / n).toFixed(1)}ms, render ${(perfRender / n).toFixed(1)}ms)`;
+      perfFrames = perfUpload = perfRender = perfN = 0; perfT = t0;
+    }
   });
 
   return {
@@ -446,10 +458,12 @@ export function createScene({ video, vfovDeg, distM, statusText, onHeadsetPose, 
     },
 
     /** One line about the camera path (for the heartbeat log). */
-    videoStats() { return source.stats(); },
+    videoStats() { return `${source.stats()}   ${perfLine}`; },
 
     /** Current camera frame for image analysis (face detection): the fixed-size frame canvas, else the <video>. */
     videoFrame() { return source.mode !== "direct" && source.hasFrame ? source.canvas : video; },
+
+    get videoMode() { return source.mode; },
 
     /** Switch how camera frames reach the VR window (track -> canvas -> direct). Returns the new mode. */
     cycleVideo() { return source.cycle(); },

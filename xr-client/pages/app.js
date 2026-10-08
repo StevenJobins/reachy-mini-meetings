@@ -340,6 +340,7 @@ const robot = createRobot({
 
 let captions = null, notes = null;   // created after the scene (they need its three.js groups)
 let debugOn = false;                 // VR debug panel (More -> Debug)
+let videoMode = "";                  // label of the Video button, set after the scene exists
 const scene = createScene({
   video,
   vfovDeg: cfg.vfovDeg,
@@ -370,6 +371,7 @@ const scene = createScene({
     { icon: "🗣", label: () => (captions?.voiceGender === "female" ? "Siri" : "Viktor"), more: true,
       onClick: () => captions.setVoiceGender(captions.voiceGender === "female" ? "male" : "female") },
     { icon: "⟳", label: "Recenter", more: true, onClick: () => { wantRecenter = true; } },
+    { icon: "🎞", label: () => `Video: ${videoMode}`, more: true, onClick: () => { videoMode = scene.cycleVideo(); } },   // A/B the frame paths (videosource.js)
     { icon: "🐞", label: "Debug", more: true, active: () => debugOn, onClick: () => { debugOn = !debugOn; scene.toggleDebug(); } },
     { icon: "✕", label: "Exit VR", more: true, onClick: () => scene.exitVR() },
   ],
@@ -513,6 +515,7 @@ const faces = createFaces({
   onFaces: (list, t) => { faceSpeakers.focusPid = focusPid; faceSpeakers.update(list, t, headYawAt(t)); frameFocus(); },
   log,
 });
+videoMode = scene.videoMode;
 notes = createNotes({ three: scene.three, recenter, distM: cfg.distM, cardEl: $("notes") });
 scene.addDraggable(notes.panel, () => notes.moved());   // grab the notes and put them where you like
 captions = createCaptions({

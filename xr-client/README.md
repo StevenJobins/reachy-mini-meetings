@@ -107,7 +107,7 @@ Tap **Start** in a browser without VR (any laptop): the same three.js scene open
 ### VR interface
 
 - Evening sky with a warm horizon and a glowing floor (no black void); the video window has a dark rounded bezel.
-- Debug panel, first line: incoming video (`1920x1080 60fps 6.2Mbps VP8 …`); third line: room audio buffer and audio device delay (`stream buf 140ms out 40ms`). Both also go to the heartbeat log every 5 s.
+- Debug panel, first line: incoming video (`1920x1080 60fps 6.2Mbps VP8 …`); third line: room audio buffer and audio device delay (`stream buf 140ms out 40ms`). Fourth line: VR frame rate and the time per frame for the video upload and rendering (`frame 72 fps   js 4.1ms (video draw 2.3ms, render 1.2ms)`), to find what slows VR down. Both also go to the heartbeat log every 5 s. ⋯ → 🎞 Video switches the frame path (track / canvas / direct, `videosource.js`) for A/B tests.
 - A red line above the dock warns while the caption server is not connected (then Reachy cannot turn to speakers: speaker following needs its speech detection).
 - Dock below the view, round buttons (9 cm at 1.1 m) with the big mic button (12 cm) in the middle, so it is within ±20° of the view centre (on the far left it was ~30° out, almost outside the FOV): 🙋 Talk · 🌐 Translate (Reachy says what you say in the meeting language, see backend/README.md) · 💬 Both/Translated/Original · 🎤 · 📝 Notes · 🔇/🔊 Sound · ⋯ More → 🗣 Viktor/Siri (Reachy's voice for Translate) · ⟳ Recenter · 🐞 Debug (status panel at the top) · ✕ Exit VR. Active toggles are highlighted. (*Switch video* was removed from the UI; the modes in `videosource.js` still exist.)
 

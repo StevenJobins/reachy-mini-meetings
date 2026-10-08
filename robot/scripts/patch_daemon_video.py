@@ -5,7 +5,8 @@ to 1 kbit/s and up to 8 Mbit/s, and below 2 Mbit/s it scales the picture down to
 the headset. There is no daemon option for this, so this script edits media_server.py of the installed app
 (an app update overwrites it: run the script again). Restart the daemon (Reachy Mini Control) afterwards.
 
-    python robot/scripts/patch_daemon_video.py             # bitrate 3-15 Mbit/s (start 6)
+    python robot/scripts/patch_daemon_video.py             # bitrate 3-15 Mbit/s (start 6), video 30 fps
+    python robot/scripts/patch_daemon_video.py --fps 0     # keep the camera's 60 fps
     python robot/scripts/patch_daemon_video.py --h264      # + H264 (Apple hardware encoder instead of VP8 software)
     python robot/scripts/patch_daemon_video.py --revert    # original file back
 """
@@ -18,6 +19,25 @@ DEFAULT = Path.home() / ("Library/Application Support/com.pollen-robotics.reachy
                          "site-packages/reachy_mini/media/media_server.py")
 ANCHOR = '        webrtcsink.set_property("run-signalling-server", True)\n'
 BEGIN, END = "        # >>> reachy-meetings video patch\n", "        # <<< reachy-meetings video patch\n"
+# WebRTC branch (macOS path): raw 1080p60 frames go straight into webrtcsink
+FPS_ANCHOR = "            # Feed raw video, let webrtcsink handle encoding\n            queue_webrtc.link(webrtcsink)\n"
+FPS_BEGIN, FPS_END = "            # >>> reachy-meetings fps patch\n", "            # <<< reachy-meetings fps patch\n"
+
+
+def fps_block(fps: int) -> str:
+    # 60 fps of 1080p was too much for the headset (VR dropped to ~19 fps while decoding and uploading it) and
+    # splits the bitrate over twice the frames; 30 fps gives sharper frames at the same bitrate.
+    return (FPS_BEGIN
+            + '            rate = Gst.ElementFactory.make("videorate")\n'
+            + '            rate.set_property("drop-only", True)\n'
+            + '            caps = Gst.ElementFactory.make("capsfilter")\n'
+            + f'            caps.set_property("caps", Gst.Caps.from_string("video/x-raw,framerate={fps}/1"))\n'
+            + "            pipeline.add(rate)\n"
+            + "            pipeline.add(caps)\n"
+            + "            queue_webrtc.link(rate)\n"
+            + "            rate.link(caps)\n"
+            + "            caps.link(webrtcsink)\n"
+            + FPS_END)
 
 
 def block(h264: bool) -> str:
@@ -37,6 +57,7 @@ def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--file", type=Path, default=DEFAULT)
     ap.add_argument("--h264", action="store_true")
+    ap.add_argument("--fps", type=int, default=30, help="video frame rate to the headset; 0 = camera rate (60)")
     ap.add_argument("--revert", action="store_true")
     args = ap.parse_args()
     f, orig = args.file, args.file.with_suffix(".py.orig")
@@ -45,14 +66,16 @@ def main() -> None:
         print("restored", f)
         return
     src = f.read_text()
-    if BEGIN in src:   # already patched: replace the old block
-        src = src[:src.index(BEGIN)] + src[src.index(END) + len(END):]
-    elif not orig.exists():
+    if not orig.exists():
         shutil.copy(f, orig)
-    if ANCHOR not in src:
+    src = orig.read_text()   # always patch the original, so running it again changes the settings cleanly
+    if ANCHOR not in src or FPS_ANCHOR not in src:
         raise SystemExit(f"anchor not found in {f}: daemon version changed, patch by hand")
-    f.write_text(src.replace(ANCHOR, ANCHOR + block(args.h264)))
-    print(f"patched {f} (h264={args.h264}); restart the daemon")
+    src = src.replace(ANCHOR, ANCHOR + block(args.h264))
+    if args.fps:
+        src = src.replace(FPS_ANCHOR, "            # Feed raw video, let webrtcsink handle encoding\n" + fps_block(args.fps))
+    f.write_text(src)
+    print(f"patched {f} (h264={args.h264}, fps={args.fps or 'camera'}); restart the daemon")
 
 
 if __name__ == "__main__":

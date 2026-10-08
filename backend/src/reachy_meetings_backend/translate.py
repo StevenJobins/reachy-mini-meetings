@@ -25,6 +25,10 @@ class DeepLTranslator:
         if not key:
             raise RuntimeError("DEEPL_AUTH_KEY is not set (key: deepl.com/your-account/keys)")
         self._deepl = deepl
+        # Live use: better no translation than one 30 s late. Defaults (10 s timeout, 5 retries) held the
+        # bubble and Reachy's voice back for half a minute while the Mac's WLAN hung (2026-10-08 log).
+        deepl.http_client.min_connection_timeout = 3
+        deepl.http_client.max_network_retries = 1
         self.client = deepl.Translator(key)  # picks the right endpoint from the key
         # DeepL wants a variant for some targets
         self.target = {"EN": "EN-US", "PT": "PT-PT"}.get(target.upper(), target.upper())
