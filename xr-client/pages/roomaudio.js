@@ -20,7 +20,10 @@ class RoomAudio extends AudioWorkletProcessor {
     this.playing = false; this.last = 0; this.underruns = 0; this.frames = 0; this.skip = 0;
     this.port.onmessage = ({ data }) => {
       for (let i = 0; i < data.length; i++) { this.buf[this.w] = data[i]; this.w = (this.w + 1) % this.buf.length; }
-      this.n = Math.min(this.buf.length, this.n + data.length);
+      this.n += data.length;
+      // overflow (a stall longer than the buffer, then a burst): keep the newest audio, read pointer behind it.
+      // Only capping n left r where it was: a hidden extra delay of up to 4 s (code review 2026-10-08).
+      if (this.n > this.buf.length) { this.n = this.buf.length; this.r = this.w; }
     };
   }
   process(inputs, outputs) {

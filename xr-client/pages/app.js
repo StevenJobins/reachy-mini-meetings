@@ -11,7 +11,7 @@ import { HeadMirror, Recenter, headsetToRobot, qinv, qmul, robotToHeadset } from
 import { RoomScan } from "./roomscan.js";
 import { Laugh, WantToTalk } from "./gestures.js";
 import { SpeakerTracker } from "./speaker.js";
-import { captionsUrl, createCaptions, onBackendFaces, setCaptionsUrl } from "./captions.js";
+import { captionsUrl, createCaptions, extraTunnelKeys, onBackendFaces, setCaptionsUrl, setExtraTunnelKeys } from "./captions.js";
 import { createFaces } from "./faces.js";
 import { FaceSpeakers } from "./speakers.js";
 import { createNotes } from "./notes.js";
@@ -306,9 +306,10 @@ function toggleMic() {
 }
 
 // "Reachy, volume 5" from anyone in the room, in any language -> robot speaker volume 50 %.
-const volumeDone = new Set();
+const volumeDone = new Set();   // "<backend session>:<caption id>": ids restart at 0 with every backend start
 function onFinalCaption(msg) {
-  if (volumeDone.has(msg.id)) return;
+  const key = `${captions?.session}:${msg.id}`;
+  if (volumeDone.has(key)) return;
   const v = volumeCommand(msg);
   if (v === null) {
     // A volume word without a command: say why, so a failed "Reachy, volume 9" can be diagnosed.
@@ -316,7 +317,7 @@ function onFinalCaption(msg) {
     if (why) log(`volume word heard, no command (${why}): "${msg.text}"`);
     return;
   }
-  volumeDone.add(msg.id);
+  volumeDone.add(key);
   log(`voice command: volume ${v}% ("${msg.text}")`);
   applyVolume(v, "voice").then((val) => { if (val !== null) flash(`🔊 Reachy volume ${val}%`); });
 }
@@ -673,9 +674,10 @@ function onVadEvent(msg) {
   const doaRel = last ? 90 - last[1] * 180 / Math.PI : null;   // relative to the head, + = left
   const tr = faceSpeakers.pick(doaRel);   // mouth movement + mic direction
   if (tr && tr.seen === faceSpeakers.lastT) {
-    if (tr.pid !== focusPid) speaker.speakers.push([lastSpeechS, speaker.target]);
+    const prev = focusPid;
     focusPid = tr.pid;
     frameFocus();
+    if (tr.pid !== prev) speaker.speakers.push([lastSpeechS, speaker.target]);   // the NEW speaker's direction ("I want to talk")
   } else if (!faceSpeakers.tracks.some((t) => (faceSpeakers.lastT ?? 0) - t.seen < 1.5)
              && (!focusLast || (faceSpeakers.lastT ?? 0) - focusLast.t > 1.5)
              && (doaRel == null || Math.abs(doaRel) < 35)) {
@@ -688,14 +690,20 @@ function onVadEvent(msg) {
 }
 
 function onSpeechCaption(msg, track) {
+  // Only steer on captions about speech going on NOW: a final comes ~0.8 s + Whisper after the last word, its
+  // translation even seconds later; steering on those pulled the head back to the previous speaker while
+  // the next one already talked (code review 2026-10-08).
+  const age = Date.now() / 1000 - (captions?.clockOffsetS ?? 0) - msg.t_end;   // s since the caption's speech ended
+  if ((msg.final && msg.translation) || age > 1.2) return;
   lastSpeechS = performance.now() / 1000;
   if (!awake) return;
   // the caption confirms speech for its whole duration: use the mic directions from that time
   flushDoa(lastSpeechS - (msg.t_end - msg.t_start) - 0.7);
   if (!track) return;
-  if (track.pid !== focusPid) speaker.speakers.push([lastSpeechS, speaker.target]);   // for "I want to talk"
+  const prev = focusPid;
   focusPid = track.pid;
   frameFocus();
+  if (track.pid !== prev) speaker.speakers.push([lastSpeechS, speaker.target]);   // the NEW speaker's direction ("I want to talk")
 }
 
 // Framing: Reachy keeps the person who spoke last (also while everyone is quiet) in the picture, head
@@ -705,7 +713,11 @@ let focusPid = null, basePitch = 0, targetPitch = 0;
 const frameUp = () => cam.upDeg(0.5, 1 / 3);   // head 1/3 from the top = this far above the axis (deg)
 /** Robot head yaw when a camera frame was taken (t = capture time, s): frames lag the pose stream by ~0.1-0.2 s,
  *  and using the current yaw for an old frame overshoots while the robot turns. */
-function headYawAt(t, latencyS = 0.12) {
+// Faces from the headset detector are stamped when the frame was grabbed from a lagging <video> (~0.12 s behind
+// the pose stream); backend faces are stamped at capture: subtracting 0.12 s again turned a robot turning at
+// 80 °/s into ~10° error (code review 2026-10-08). Set per source in onBackendFaces / onPeople.
+let faceLatencyS = 0.12;
+function headYawAt(t, latencyS = faceLatencyS) {
   const h = speaker.headHist;
   for (let i = h.length - 1; i >= 0; i--) if (h[i][0] <= t - latencyS) return h[i][1];
   return h.length ? h[0][1] : status.meas[2];
@@ -714,7 +726,7 @@ function headYawAt(t, latencyS = 0.12) {
 /** Same for the pitch: correcting an old frame's face position against the CURRENT pitch made the head
  *  overshoot and nod up and down (headset log 2026-10-08: target -26° -> -4° -> -26° -> +17° within 12 s). */
 const pitchHist = [];   // [t, measured pitch]
-function headPitchAt(t, latencyS = 0.12) {
+function headPitchAt(t, latencyS = faceLatencyS) {
   for (let i = pitchHist.length - 1; i >= 0; i--) if (pitchHist[i][0] <= t - latencyS) return pitchHist[i][1];
   return pitchHist.length ? pitchHist[0][1] : status.meas[1];
 }
@@ -772,13 +784,15 @@ onBackendFaces((msg) => {
   backendFacesAt = performance.now();
   backendFacesN++;
   if (!awake) return;
-  // backend capture time (wall clock) -> this page's clock; both are NTP-synced
-  onPeople(msg.people, performance.now() / 1000 - (Date.now() / 1000 - msg.t));
+  // backend capture time -> this page's clock, via the backend clock from its hello (no NTP assumption)
+  const age = Math.max(0, Date.now() / 1000 - (captions?.clockOffsetS ?? 0) - msg.t);
+  faceLatencyS = 0;   // stamped at capture (see headYawAt)
+  onPeople(msg.people, performance.now() / 1000 - age);
 });
 const backendFacesLive = () => performance.now() - backendFacesAt < 1500;
 const faces = createFaces({
   getSource: () => (awake && !backendFacesLive() ? scene.videoFrame() : null),
-  onFaces: onPeople,
+  onFaces: (list, t) => { faceLatencyS = 0.12; onPeople(list, t); },
   log,
 });
 videoMode = scene.videoMode;
@@ -804,6 +818,8 @@ captions = createCaptions({
   onStatus: (s) => Object.assign(status, s),
 });
 $("captions-url").value = captionsUrl();
+$("tunnel-keys").value = extraTunnelKeys();
+$("tunnel-keys").onchange = (e) => { setExtraTunnelKeys(e.target.value); captions.reconnect(); };
 $("captions-url").onchange = (e) => { setCaptionsUrl(e.target.value.trim()); captions.reconnect(); };
 $("view-mode").value = viewMode;
 captions.onDepth = onDepth;

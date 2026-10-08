@@ -39,10 +39,34 @@ export function onBackendFaces(fn) { facesHandler = fn; }
 
 export function captionsUrl() { return load(URL_KEY, ""); }   // "" = automatic
 
-async function tunnelUrl() {
+// The ntfy topic is public: anyone could post their own address and collect the sign-in token the page sends
+// (code review 2026-10-08). So only addresses signed by a trusted backend key are used (backend tunnel.py:
+// ECDSA P-256 over "url|ts", the key is logged when the backend starts). Another laptop's key: Settings.
+const TRUSTED_KEYS = [
+  "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEEndlhU0PUWdMn1Wbq4jJIFed2LAUrTExKrItI6k0dqPF0Hjq6DR/p7QzjsOetW9pfEA89bi0gZES5gWawzlbvA==",   // Dominic's Mac
+];
+const KEYS_KEY = "reachy-xr-trusted-tunnel-keys";
+export function extraTunnelKeys() { return load(KEYS_KEY, ""); }
+export function setExtraTunnelKeys(text) { save(KEYS_KEY, text.trim()); }
+const TUNNEL_HOST = /^wss:\/\/[a-z0-9-]+\.trycloudflare\.com$/;
+const MAX_AGE_S = 13 * 3600;   // the backend reposts every 30 min; ntfy keeps messages 12 h
+const b64 = (s) => Uint8Array.from(atob(s), (c) => c.charCodeAt(0));
+
+async function tunnelUrl(log) {
   const r = await fetch(`https://ntfy.sh/${TUNNEL_TOPIC}/json?poll=1&since=latest`, { cache: "no-store" });
   const line = (await r.text()).trim().split("\n").pop();
-  return line ? JSON.parse(line).message : null;
+  if (!line) return null;
+  let m;
+  try { m = JSON.parse(JSON.parse(line).message); } catch { log("captions: tunnel address not signed, ignored"); return null; }
+  const trusted = [...TRUSTED_KEYS, ...extraTunnelKeys().split(/[\s,]+/).filter(Boolean)];
+  if (!TUNNEL_HOST.test(m?.url ?? "") || !trusted.includes(m.key) || Math.abs(Date.now() / 1000 - m.ts) > MAX_AGE_S) {
+    log("captions: tunnel address rejected (host, key or age)"); return null;
+  }
+  const key = await crypto.subtle.importKey("spki", b64(m.key), { name: "ECDSA", namedCurve: "P-256" }, false, ["verify"]);
+  const ok = await crypto.subtle.verify({ name: "ECDSA", hash: "SHA-256" }, key, b64(m.sig),
+    new TextEncoder().encode(`${m.url}|${m.ts}`));
+  if (!ok) { log("captions: tunnel address signature invalid, ignored"); return null; }
+  return m.url;
 }
 export function setCaptionsUrl(url) { save(URL_KEY, url); }
 
@@ -251,6 +275,16 @@ export function createCaptions({ three, distM, vfovDeg, cameraModel = null, spea
     }
   }
 
+  // Backend session (caption ids restart at 0 when it restarts) and its clock (backend times -> this page).
+  let session = null, clockOffsetS = 0;
+  function onHello(msg) {
+    if (typeof msg.t === "number") clockOffsetS = Date.now() / 1000 - msg.t;   // incl. ~one network delay
+    if (msg.session && msg.session !== session) {
+      if (session) { finals.length = 0; renderPage(); log("captions: new backend session"); }
+      session = msg.session;
+    }
+  }
+
   function onCaption(msg) {
     if (msg.final) {
       const i = finals.findIndex((m) => m.id === msg.id);
@@ -285,12 +319,15 @@ export function createCaptions({ three, distM, vfovDeg, cameraModel = null, spea
 
   let ws = null, tryLocal = true, timer = null;
   let voiceGender = load(VOICE_KEY, "male");
+  let generation = 0;   // a reconnect() during the tunnel lookup must not leave two live sockets
   async function connect() {
     clearTimeout(timer);
+    const gen = ++generation;
     let url = captionsUrl();
     if (!url) {
       if (tryLocal) url = LOCAL_URL;
-      else url = await tunnelUrl().catch((e) => { log("captions: tunnel lookup failed:", e?.message ?? e); return null; });
+      else url = await tunnelUrl(log).catch((e) => { log("captions: tunnel lookup failed:", e?.message ?? e); return null; });
+      if (gen !== generation) return;
       tryLocal = !tryLocal;
       if (!url) { onStatus({ captions: "off" }); timer = setTimeout(connect, 3000); return; }
     }
@@ -298,6 +335,7 @@ export function createCaptions({ three, distM, vfovDeg, cameraModel = null, spea
     try { ws = new WebSocket(url); } catch (e) {
       log("captions:", e?.message ?? e);
       onStatus({ captions: "bad url" });
+      timer = setTimeout(connect, 3000);   // keep trying (a stored URL may be fixed in Settings)
       return;
     }
     const sock = ws;
@@ -312,7 +350,8 @@ export function createCaptions({ three, distM, vfovDeg, cameraModel = null, spea
     sock.onmessage = (e) => {
       if (typeof e.data !== "string") { onAudio?.(e.data); return; }
       const msg = JSON.parse(e.data);
-      if (msg.type === "caption") onCaption(msg);
+      if (msg.type === "hello") onHello(msg);
+      else if (msg.type === "caption") onCaption(msg);
       else if (msg.type === "summary") onSummary?.(msg);
       else if (msg.type === "vad") onVad?.(msg);
       else if (msg.type === "me") onMe?.(msg);
@@ -329,6 +368,10 @@ export function createCaptions({ three, distM, vfovDeg, cameraModel = null, spea
 
   return {
     /** Reconnect, e.g. after the URL changed. */
+    /** Backend session id (changes when the backend restarts) and backend clock: Date.now()/1000 - offset. */
+    get session() { return session; },
+    get clockOffsetS() { return clockOffsetS; },
+
     /** Reachy's voice for "translate me": "male" (Viktor) or "female" (Siri). Remembered, resent on reconnect. */
     get voiceGender() { return voiceGender; },
     setVoiceGender(g) {

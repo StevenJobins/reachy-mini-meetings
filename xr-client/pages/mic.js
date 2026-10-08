@@ -106,6 +106,7 @@ export function createMic({ getPeerConnection, onStatus, onVoice = () => {}, log
         }
         track = stream.getAudioTracks()[0];
         try {
+          audioCtx?.close().catch(() => {});   // device change: Chrome limits the number of AudioContexts
           audioCtx = new AudioContext();
           audioCtx.resume().catch(() => {});   // may start suspended outside a tap
           analyser = audioCtx.createAnalyser();
