@@ -34,6 +34,7 @@ import logging
 import os
 import signal
 import time
+import urllib.request
 from collections import deque
 from concurrent.futures import ThreadPoolExecutor
 
@@ -69,9 +70,26 @@ class NoiseGate:
         return chunk * ramp
 
 
+def hf_username(token: str) -> str | None:
+    """Hugging Face account of a sign-in token (the page's OAuth token), or None if invalid."""
+    for url, key in (("https://huggingface.co/oauth/userinfo", "preferred_username"),
+                     ("https://huggingface.co/api/whoami-v2", "name")):
+        req = urllib.request.Request(url, headers={"Authorization": f"Bearer {token}"})
+        try:
+            with urllib.request.urlopen(req, timeout=10) as r:
+                return json.load(r).get(key)
+        except (OSError, ValueError):
+            continue
+    return None
+
+
 class CaptionServer:
-    def __init__(self, host: str, port: int, target: str) -> None:
+    def __init__(self, host: str, port: int, target: str, allow_hf: set[str] | None = None) -> None:
         self.host, self.port, self.target = host, port, target
+        # Clients through the tunnel (Cloudflare adds a cf-ray header) must first send
+        # {"type": "auth", "hf_token": ...} of one of these accounts. Local / LAN clients need nothing.
+        self.allow_hf = {u.lower() for u in allow_hf or ()}
+        self.token_users: dict[str, str | None] = {}
         self.clients: set = set()
         self.recent: deque[str] = deque(maxlen=20)  # last finals, replayed to new clients
         self.summary: str | None = None
@@ -81,7 +99,27 @@ class CaptionServer:
             log.info("Captions on ws://%s:%d", self.host, self.port)
             await asyncio.Future()
 
+    async def _authorized(self, ws) -> bool:
+        if "cf-ray" not in ws.request.headers:
+            return True
+        try:
+            msg = json.loads(await asyncio.wait_for(ws.recv(), 10))
+            token = msg.get("hf_token") if msg.get("type") == "auth" else None
+        except (asyncio.TimeoutError, ValueError, AttributeError, websockets.ConnectionClosed):
+            token = None
+        if token and token not in self.token_users:
+            self.token_users[token] = await asyncio.to_thread(hf_username, token)
+        user = self.token_users.get(token) if token else None
+        if user and user.lower() in self.allow_hf:
+            log.info("Tunnel client signed in as %s", user)
+            return True
+        log.warning("Tunnel client rejected (HF account %s)", user or "none")
+        await ws.close(4001, "sign in with an allowed Hugging Face account")
+        return False
+
     async def _handle(self, ws) -> None:
+        if not await self._authorized(ws):
+            return
         self.clients.add(ws)
         try:
             await ws.send(json.dumps({"type": "hello", "version": PROTOCOL_VERSION,
@@ -129,7 +167,7 @@ class Pipeline:
         # Language per utterance, detected by the fast partial model, so the big model needn't detect it
         # again (that costs ~1 s): auto language at no extra delay.
         self.seg_lang: dict[int, str] = {}
-        self.server = CaptionServer(args.host, args.port, args.target)
+        self.server = CaptionServer(args.host, args.port, args.target, args.allow_hf)
         try:
             from .vad import SileroVad
 
@@ -226,6 +264,10 @@ class Pipeline:
             tasks.append(asyncio.create_task(self.doa.run()))
         if self.summarizer:
             tasks.append(asyncio.create_task(self.summarizer.run(self.server.send_summary)))
+        if self.args.tunnel:
+            from . import tunnel
+
+            tasks.append(asyncio.create_task(tunnel.run(self.args.port)))
         src = asyncio.create_task(source.run(chunks))
         jobs: set[asyncio.Task] = set()
 
@@ -288,6 +330,13 @@ def cli() -> None:
     ap.add_argument("--no-focus-mic", dest="focus_mic", action="store_false",
                     help="leave the robot's mic array as it is (default: stronger noise suppression, "
                          "restored on exit)")
+    ap.add_argument("--tunnel", action="store_true",
+                    help="wireless headset: Cloudflare quick tunnel, address published for the page (tunnel.py)")
+    ap.add_argument("--allow-hf", default="",
+                    help="Hugging Face accounts allowed through the tunnel, comma-separated "
+                         "(default: the account this Mac is signed in with)")
+    ap.add_argument("--require-mic", action="store_true",
+                    help="exit if the --mic device is missing instead of using the default mic (autostart)")
     ap.add_argument("--host", default="0.0.0.0")
     ap.add_argument("--port", type=int, default=8766)
     ap.add_argument("-v", "--verbose", action="store_true")
@@ -303,6 +352,21 @@ def cli() -> None:
 
     logging.basicConfig(level=logging.DEBUG if args.verbose else logging.INFO,
                         format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+    if args.require_mic and not args.file:
+        from .audio import find_input_device
+
+        if find_input_device(args.mic) is None:
+            log.error("No input device matching %r", args.mic)
+            raise SystemExit(1)
+    args.allow_hf = {u.strip() for u in args.allow_hf.split(",") if u.strip()}
+    if args.tunnel and not args.allow_hf:
+        try:
+            from huggingface_hub import whoami
+
+            args.allow_hf = {whoami()["name"]}
+        except Exception as e:   # not signed in / offline: nobody gets in through the tunnel
+            log.warning("No HF account for the tunnel (%s); use --allow-hf", e)
+        log.info("Tunnel open for HF accounts: %s", ", ".join(sorted(args.allow_hf)) or "nobody")
     for noisy in ("websockets", "faster_whisper", "httpx", "httpx2", "huggingface_hub", "deepl"):
         logging.getLogger(noisy).setLevel(logging.WARNING)
     signal.signal(signal.SIGTERM, signal.default_int_handler)   # pkill / kill = Ctrl-C: still restore the mic array

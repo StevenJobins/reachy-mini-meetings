@@ -7,15 +7,18 @@
 // visible it waits at the top of the window in the mic direction. One bubble per person; detected heads
 // get a thin frame (toggle in Settings).
 //
-// The page is served over https, so Chrome only allows ws://localhost (headset: adb reverse tcp:8766 tcp:8766).
-// Wireless: expose the caption server over wss (e.g. cloudflared) and paste the URL in Settings.
+// Where the server is: an address set in Settings, else automatically ws://localhost:8766 (laptop browser, or
+// headset with adb reverse tcp:8766 tcp:8766) and, if that fails, the wireless tunnel (`reachy-captions
+// --tunnel`) whose current wss address the backend posts to ntfy.sh (backend/.../tunnel.py). The tunnel only
+// lets in an allowed Hugging Face account: the page sends its HF sign-in right after connecting.
 
 import * as THREE from "three";
 
 const URL_KEY = "reachy-xr-captions-url";
 const MODE_KEY = "reachy-xr-caption-mode";
 const FACES_KEY = "reachy-xr-show-faces";
-const DEFAULT_URL = "ws://localhost:8766";
+const LOCAL_URL = "ws://localhost:8766";
+const TUNNEL_TOPIC = "reachy-meetings-xr-captions";   // keep in sync with backend/.../tunnel.py
 export const MODES = ["both", "translation", "original"];
 const SHOW_S = 8;           // a final bubble stays this long after its last update
 const PARTIAL_S = 5;        // a partial without updates disappears after this
@@ -27,7 +30,13 @@ const COLORS = ["#ff9500", "#38bdf8", "#4ade80", "#f472b6", "#a78bfa", "#facc15"
 function load(key, fallback) { try { return localStorage.getItem(key) || fallback; } catch { return fallback; } }
 function save(key, value) { try { value ? localStorage.setItem(key, value) : localStorage.removeItem(key); } catch {} }
 
-export function captionsUrl() { return load(URL_KEY, DEFAULT_URL); }
+export function captionsUrl() { return load(URL_KEY, ""); }   // "" = automatic
+
+async function tunnelUrl() {
+  const r = await fetch(`https://ntfy.sh/${TUNNEL_TOPIC}/json?poll=1&since=latest`, { cache: "no-store" });
+  const line = (await r.text()).trim().split("\n").pop();
+  return line ? JSON.parse(line).message : null;
+}
 export function setCaptionsUrl(url) { save(URL_KEY, url); }
 
 /** What a bubble shows in the given mode: {main, sub}. */
@@ -259,31 +268,49 @@ export function createCaptions({ three, distM, vfovDeg, speakers, listEl, overla
     if (changed) renderPage();
   }, 500);
 
-  let ws = null;
-  function connect() {
-    const url = captionsUrl();
+  let ws = null, tryLocal = true, timer = null;
+  async function connect() {
+    clearTimeout(timer);
+    let url = captionsUrl();
+    if (!url) {
+      if (tryLocal) url = LOCAL_URL;
+      else url = await tunnelUrl().catch((e) => { log("captions: tunnel lookup failed:", e?.message ?? e); return null; });
+      tryLocal = !tryLocal;
+      if (!url) { onStatus({ captions: "off" }); timer = setTimeout(connect, 3000); return; }
+    }
     onStatus({ captions: "connecting" });
     try { ws = new WebSocket(url); } catch (e) {
       log("captions:", e?.message ?? e);
       onStatus({ captions: "bad url" });
       return;
     }
-    ws.onopen = () => { onStatus({ captions: "on" }); log("captions connected", url); };
-    ws.binaryType = "arraybuffer";   // binary frames = room audio (see backend/README.md)
-    ws.onmessage = (e) => {
+    const sock = ws;
+    sock.onopen = () => {
+      let token = null;
+      try { token = sessionStorage.getItem("hf_token"); } catch {}
+      sock.send(JSON.stringify({ type: "auth", hf_token: token }));   // only checked through the tunnel
+      tryLocal = url === LOCAL_URL;   // reconnect the same way first
+      onStatus({ captions: "on" }); log("captions connected", url);
+    };
+    sock.binaryType = "arraybuffer";   // binary frames = room audio (see backend/README.md)
+    sock.onmessage = (e) => {
       if (typeof e.data !== "string") { onAudio?.(e.data); return; }
       const msg = JSON.parse(e.data);
       if (msg.type === "caption") onCaption(msg);
       else if (msg.type === "summary") onSummary?.(msg);
       else if (msg.type === "vad") onVad?.(msg);
     };
-    ws.onclose = () => { onStatus({ captions: "off" }); setTimeout(connect, 3000); };
+    sock.onclose = (e) => {
+      if (e.code === 4001) log("captions: tunnel refused this HF account (backend --allow-hf)");
+      onStatus({ captions: e.code === 4001 ? "not allowed" : "off" });
+      timer = setTimeout(connect, e.code === 4001 ? 5000 : tryLocal ? 3000 : 300);
+    };
   }
   connect();
 
   return {
     /** Reconnect, e.g. after the URL changed. */
-    reconnect() { if (ws) { ws.onclose = null; ws.close(); } connect(); },
+    reconnect() { if (ws) { ws.onclose = null; ws.close(); } tryLocal = true; connect(); },
     follow,
     get mode() { return mode; },
     setMode(m) {

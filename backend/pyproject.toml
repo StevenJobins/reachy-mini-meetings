@@ -17,6 +17,7 @@ dependencies = [
     "deepl",                 # translation (DeepL API)
     "onnxruntime",           # Silero VAD: speech vs. noise
     "pyusb", "libusb-package",   # directional mic: XVF3800 settings over USB
+    "huggingface_hub",       # tunnel: which HF account this Mac is signed in with
 ]
 
 [project.optional-dependencies]

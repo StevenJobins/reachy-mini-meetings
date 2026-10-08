@@ -67,6 +67,14 @@ Make a test file: `say -v Anna -o t.aiff "Guten Morgen zusammen." && afconvert -
 
 Headset over USB: `adb reverse tcp:8766 tcp:8766`
 
+### Wireless headset (`--tunnel`)
+
+The page is served from GitHub Pages over https, so the headset can only reach this server over `wss` with a valid certificate; `ws://localhost` only works on the Mac itself or over USB. `reachy-captions --tunnel` opens a Cloudflare quick tunnel (`brew install cloudflared`, no account) and posts its address (random, new on every start) to the ntfy.sh topic `reachy-meetings-xr-captions`; the page looks it up there (`tunnel.py`, `captions.js`). Nothing to enter on the headset.
+
+Access: the address is public, so clients through the tunnel must first send their Hugging Face sign-in (`{"type": "auth", "hf_token": ...}`, the page does it automatically); the server checks the account with Hugging Face and closes the connection (code 4001) unless it is allowed. Default: the account this Mac is signed in with (`huggingface-cli login`); teammates: `--allow-hf name1,name2`. Local and LAN clients are not checked (as before). Tested: no sign-in → nothing sent, closed after 10 s; wrong token → 4001; the Mac's account → hello, captions, audio.
+
+`--require-mic` exits at once when the Reachy mic is missing (instead of falling back to the Mac mic), for running it as a background service that is restarted until the robot is plugged in.
+
 Tests, without models, mic or network: `pytest -q`
 
 ### Room audio stream
