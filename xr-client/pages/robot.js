@@ -16,10 +16,15 @@ function cleanUrlForLogin() {
   if (location.search || location.hash || path !== location.pathname) history.replaceState(null, "", path);
 }
 
+const CONNECT_TIMEOUT_S = 15;
+
 export function createRobot({ clientId, onStatus, onMeasuredHead, onDoa = () => {}, log }) {
   const reachy = new ReachyMini({ clientId, appName: "Reachy Meetings XR", videoJitterBufferTargetMs: 0 });
   let streaming = false, lastPitch = null;   // measured head pitch (deg, + = down)
 
+  // Reload / close: end the session, else the daemon keeps the robot locked for this (gone) page and the
+  // reloaded page finds it busy.
+  addEventListener("pagehide", () => { reachy.stopSession().catch(() => {}); });
   reachy.addEventListener("iceStateChange", (e) => onStatus({ ice: e.detail?.state }));
   reachy.addEventListener("sessionStopped", (e) => {
     streaming = false;
@@ -70,13 +75,29 @@ export function createRobot({ clientId, onStatus, onMeasuredHead, onDoa = () => 
     /** Connect to the robot. Single free robot -> picked automatically; several -> first free one. */
     async connect() {
       onStatus({ robot: "connecting" });
-      const res = await reachy.autoConnect({
-        wakeOnConnect: false,   // the robot stays asleep until the user taps Start (wake())
-        pickRobot: async (robots) => {
-          log("robots:", robots.map((r) => `${r.name ?? r.id}${r.busy ? " (busy)" : ""}`).join(", "));
-          return robots.find((r) => !r.busy)?.id ?? null;   // TODO picker when the team has several robots
-        },
+      // A session request that reaches the daemon while it is still starting is accepted (the robot gets
+      // locked for us) but its video session never starts: the page waited forever and every new attempt
+      // found the robot busy ("No reachable robots"; daemon log "Pending sessions: 1", 2026-10-08). So give
+      // up after CONNECT_TIMEOUT_S, end that session (frees the lock) and let the caller retry.
+      let timer;
+      const timeout = new Promise((_, reject) => {
+        timer = setTimeout(() => reject(new Error("Reachy did not answer (session stuck), retrying")), CONNECT_TIMEOUT_S * 1000);
       });
+      let res;
+      try {
+        res = await Promise.race([reachy.autoConnect({
+          wakeOnConnect: false,   // the robot stays asleep until the user taps Start (wake())
+          pickRobot: async (robots) => {
+            log("robots:", robots.map((r) => `${r.name ?? r.id}${r.busy ? " (busy)" : ""}`).join(", "));
+            return robots.find((r) => !r.busy)?.id ?? null;   // TODO picker when the team has several robots
+          },
+        }), timeout]);
+      } catch (e) {
+        await reachy.stopSession().catch(() => {});
+        throw e;
+      } finally {
+        clearTimeout(timer);
+      }
       reachy.subscribePose();
       streaming = true;
       onStatus({ robot: res.robotName ?? res.robotId });

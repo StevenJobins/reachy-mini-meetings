@@ -881,14 +881,22 @@ video.hidden = true;   // camera "off" while the robot sleeps
 robot.attachVideo(video);
 
 // ---------------------------------------------------------------- UI flow
+let connectRetry = null;
 async function connect() {
+  clearTimeout(connectRetry);
+  if (robot.connected) return;
   show("busy", "Connecting to Reachy Mini…");
   try {
     const res = await robot.connect();
     show("asleep", `Connected to ${res.robotName ?? "Reachy Mini"}. Tap Wake up.`);
   } catch (e) {
     log("connect failed:", e?.message ?? e);
-    show("failed", `Could not connect: ${e?.message ?? e}. Is the robot on and its daemon signed in to Hugging Face?`);
+    const busy = /no reachable robots/i.test(e?.message ?? "");
+    show("failed", busy
+      ? "Reachy is busy: another device (or a page that hangs) has it. Close the page on other devices; retrying…"
+      : `Could not connect: ${e?.message ?? e}. Is the robot on and its daemon signed in to Hugging Face? Retrying…`);
+    clearTimeout(connectRetry);
+    connectRetry = setTimeout(connect, 5000);   // the robot may come back (daemon restart, other device leaves)
   }
 }
 
