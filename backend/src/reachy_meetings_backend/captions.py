@@ -44,16 +44,19 @@ from __future__ import annotations
 import argparse
 import asyncio
 import base64
+import itertools
 import json
 import logging
 import os
+import queue
 import signal
 import subprocess
+import threading
 import time
 import urllib.request
 import uuid
 from collections import deque
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import Future
 from pathlib import Path
 
 import numpy as np
@@ -61,6 +64,8 @@ import websockets
 
 from .depth import DepthEstimator
 from .segmenter import Segment, Segmenter
+from .segmenter import Segment, Segmenter, SegmenterCfg
+from .stt import AUTO
 
 log = logging.getLogger("reachy_captions")
 
@@ -101,6 +106,31 @@ def hf_username(token: str) -> str | None:
         except (OSError, ValueError):
             continue
     return None
+
+
+class Worker:
+    """One thread for all Whisper jobs (the models are not thread-safe); a lower `prio` runs first, so the
+    remote user's sentence doesn't wait behind queued room captions (measured: up to 2.5 s in a busy room)."""
+
+    def __init__(self) -> None:
+        self.jobs: queue.PriorityQueue = queue.PriorityQueue()
+        self.seq = itertools.count()   # FIFO within one priority
+        threading.Thread(target=self._run, daemon=True).start()
+
+    def submit(self, fn, prio: int = 1) -> Future:
+        fut: Future = Future()
+        self.jobs.put((prio, next(self.seq), fn, fut))
+        return fut
+
+    def _run(self) -> None:
+        while True:
+            _, _, fn, fut = self.jobs.get()
+            if not fut.set_running_or_notify_cancel():   # cancelled while waiting
+                continue
+            try:
+                fut.set_result(fn())
+            except BaseException as e:
+                fut.set_exception(e)
 
 
 class CaptionServer:
@@ -219,7 +249,7 @@ class Pipeline:
         self.stt = Transcriber(args.model, args.lang, args.engine)
         self.stt_partial = (Transcriber(args.partial_model, args.lang, args.engine)
                             if args.partial_model != "none" else None)
-        self.worker = ThreadPoolExecutor(1)  # Whisper runs one job at a time
+        self.worker = Worker()  # Whisper runs one job at a time
         self.pending = 0
         self.finalized: set[int] = set()
         self.partial_tr: dict[int, tuple[float, int]] = {}   # id -> (time, text length) of last partial translation
@@ -255,7 +285,8 @@ class Pipeline:
         # The remote user's voice -> meeting language -> Reachy's speaker (voice.py)
         self.voice = None
         self.me_segmenter = None
-        self.me_queue: asyncio.Queue = asyncio.Queue()
+        self.me_queue: asyncio.Queue = asyncio.Queue()   # voice frames, None = the user stopped sending
+        self.me_out: asyncio.Queue = asyncio.Queue()     # (prepare task, speech end) in speaking order
         self.me_translators: dict = {}
         self.room_langs: deque[tuple[float, str]] = deque(maxlen=50)   # (time, lang) of room utterances
         self.speaking_until = 0.0   # Reachy talks: its own voice must not become captions or turn the head
@@ -264,14 +295,14 @@ class Pipeline:
 
             try:
                 self.voice = VoiceOut(args.voice_out, args.voice)
+                me_cfg = SegmenterCfg(silence_s=args.me_silence, early_s=args.me_early)
                 try:
                     from .vad import SileroVad
 
-                    self.me_segmenter = Segmenter(vad=SileroVad())   # own VAD state for the second stream
+                    self.me_segmenter = Segmenter(me_cfg, vad=SileroVad())   # own VAD state for the second stream
                 except (ImportError, OSError):
-                    self.me_segmenter = Segmenter()
-                self.server.on_voice = lambda b: self.me_queue.put_nowait(
-                    np.frombuffer(b, "<i2").astype(np.float32) / 32768)
+                    self.me_segmenter = Segmenter(me_cfg)
+                self.server.on_voice = self._me_voice
             except (OSError, subprocess.CalledProcessError) as e:
                 log.warning("No voice output: %s", e)
         self.server.on_message = self._client_message
@@ -286,7 +317,7 @@ class Pipeline:
             except RuntimeError as e:
                 log.warning("No summary: %s", e)
 
-    async def _stt(self, model, audio, language=None, timing: dict | None = None) -> tuple[str, str]:
+    async def _stt(self, model, audio, language=None, timing: dict | None = None, prio: int = 1) -> tuple[str, str]:
         self.pending += 1
         queued = time.time()
 
@@ -295,7 +326,7 @@ class Pipeline:
                 timing["wait"] = time.time() - queued   # time spent behind other Whisper jobs
             return model(audio, language)
         try:
-            return await asyncio.get_running_loop().run_in_executor(self.worker, job)
+            return await asyncio.wrap_future(self.worker.submit(job, prio))
         finally:
             self.pending -= 1
 
@@ -381,41 +412,92 @@ class Pipeline:
             self.me_translators[target] = tr
         return self.me_translators[target]
 
-    async def _me_final(self, seg: Segment, t_final: float) -> None:
-        # Latency per stage (logged as "me timing"): end of speech -> final cut (VAD silence) -> STT
-        # (queue + compute) -> translation -> synthesis -> playback start
-        t_end = t_final - self.me_segmenter.cfg.silence_s
-        timing: dict = {}
-        text, lang = await self._stt(self.stt, seg.audio, timing=timing)
+    def _me_stt(self, audio: np.ndarray, _language=None) -> tuple[str, str]:
+        """The remote user's speech, in whatever language they speak (never --lang). The fast model finds the
+        language (one encoder pass, ~0.1 s), so the big one needn't detect it again (~0.6 s)."""
+        lang = self.stt_partial.detect_language(audio) if self.stt_partial else AUTO
+        return self.stt(audio, lang)
+
+    async def _me_prepare(self, seg: Segment) -> dict | None:
+        """Transcribe, translate and synthesize one sentence of the remote user; played later, in order."""
+        t0, timing = time.time(), {}
+        text, lang = await self._stt(self._me_stt, seg.audio, timing=timing, prio=0)
         t_stt = time.time()
         if not text:
-            return
+            return None
         target = self.meeting_lang()
         tr = self._translator_to(target) if lang != target else None
         translation = await tr(text, remember=False) if tr else None
         t_tr = time.time()
         say, out_lang = (translation, target) if translation else (text, lang)
-        log.info("[me %s->%s] %s -> %s", lang, out_lang, text, say)
-        self.server.send_me({"text": text, "lang": lang, "translation": translation,
-                             "target": target, "t": round(time.time(), 3)})
+        audio, sr, voice = await self.voice.synth(say, out_lang)
+        return {"text": text, "lang": lang, "translation": translation, "target": target, "say": say,
+                "out_lang": out_lang, "audio": audio, "sr": sr, "voice": voice, "audio_s": len(seg.audio) / 16000,
+                "times": (t0, t_stt, t_tr, time.time(), timing.get("wait", 0.0))}
+
+    async def _me_play(self, r: dict, t_end: float) -> None:
+        log.info("[me %s->%s] %s -> %s", r["lang"], r["out_lang"], r["text"], r["say"])
+        self.server.send_me({k: r[k] for k in ("text", "lang", "translation", "target")} | {"t": round(time.time(), 3)})
+        t0, t_stt, t_tr, t_syn, wait = r["times"]
 
         def started(dur: float) -> None:
             now = time.time()
             self.speaking_until = now + dur + 0.4   # + room echo
-            log.info("me timing (s): cut %.2f  stt %.2f (wait %.2f)  translate %.2f  synth %.2f  "
-                     "-> playback %.2f after speech end (%.1f s audio)", t_final - t_end, t_stt - t_final,
-                     timing.get("wait", 0), t_tr - t_stt, now - t_tr, now - t_end, len(seg.audio) / 16000)
-        await self.voice.speak(say, out_lang, on_start=started)
+            log.info("me timing (s): start %.2f  stt %.2f (wait %.2f)  translate %.2f  synth %.2f  "
+                     "-> playback %.2f after speech end (%.1f s audio, %s, %.1f s)", t0 - t_end, t_stt - t0, wait,
+                     t_tr - t_stt, t_syn - t_tr, now - t_end, r["audio_s"], r["voice"] or "system voice", dur)
+        await self.voice.play(r["audio"], r["sr"], on_start=started)
+
+    async def _me_player(self) -> None:
+        """Speaks the prepared sentences strictly in the order they were said."""
+        while True:
+            task, t_end = await self.me_out.get()
+            try:
+                r = await task
+                if r:
+                    await self._me_play(r, t_end)
+            except asyncio.CancelledError:
+                if not task.cancelled():
+                    raise
+            except Exception:
+                log.exception("Translate me: sentence failed")
 
     async def _me_loop(self) -> None:
-        jobs: set[asyncio.Task] = set()
+        """The remote user's voice -> sentences. Work on a sentence starts at the tentative end (early_s of
+        silence) and is kept if the sentence really ends there (silence_s), so Whisper, DeepL and the synthesis
+        mostly run while we still wait for the end of the sentence."""
+        cfg = self.me_segmenter.cfg
+        prepared: dict[int, tuple[int, asyncio.Task, float]] = {}   # seg id -> (samples, task, speech end)
         while True:
-            chunk = await self.me_queue.get()
-            for seg in self.me_segmenter.push(chunk):
-                if seg.final:
-                    t = asyncio.create_task(self._me_final(seg, time.time()))
-                    jobs.add(t)
-                    t.add_done_callback(jobs.discard)
+            timeout = False
+            try:
+                chunk = await asyncio.wait_for(self.me_queue.get(), 1.0)
+            except asyncio.TimeoutError:
+                chunk, timeout = None, True
+            now = time.time()
+            if chunk is None:   # no voice for 1 s (translate off, muted, connection lost) or voice_end
+                seg = self.me_segmenter.flush()
+                segs, silence = ([seg] if seg else []), (1.0 if timeout else 0.0)
+            else:
+                segs, silence = self.me_segmenter.push(chunk), cfg.silence_s
+            for seg in segs:
+                if seg.early:
+                    old = prepared.pop(seg.id, None)
+                    if old:
+                        old[1].cancel()
+                    prepared[seg.id] = (len(seg.audio), asyncio.create_task(self._me_prepare(seg)), now - cfg.early_s)
+                elif seg.final:
+                    n, task, t_end = prepared.pop(seg.id, (0, None, 0.0))
+                    if n != len(seg.audio):   # speech went on after the tentative end: start over
+                        if task:
+                            task.cancel()
+                        task, t_end = asyncio.create_task(self._me_prepare(seg)), now - silence
+                    self.me_out.put_nowait((task, t_end))
+                    for sid in [i for i in prepared if i < seg.id]:   # tentative ends of dropped blips
+                        prepared.pop(sid)[1].cancel()
+
+    def _me_voice(self, frame: bytes | None) -> None:
+        self.me_queue.put_nowait(None if frame is None else np.frombuffer(frame, "<i2").astype(np.float32) / 32768)
 
     async def run(self) -> None:
         from .audio import FileSource, MicSource
@@ -428,7 +510,7 @@ class Pipeline:
         if self.summarizer:
             tasks.append(asyncio.create_task(self.summarizer.run(self.server.send_summary)))
         if self.voice:
-            tasks.append(asyncio.create_task(self._me_loop()))
+            tasks += [asyncio.create_task(self._me_loop()), asyncio.create_task(self._me_player())]
         if self.args.vision_camera != "none" and not self.args.file:
             from .vision import FaceStream
 
@@ -462,7 +544,12 @@ class Pipeline:
             else:
                 segs = self.segmenter.push(chunk)
             speaking = self.segmenter.active or self.segmenter.prob > 0.4
-            self.server.send_audio(self.gate(chunk, speaking, time.time()) if self.gate else chunk)
+            if time.time() < self.speaking_until:
+                # Reachy speaks the remote user's words: keep its voice out of the stream to the headset, or
+                # the headset mic (Translate me) could pick it up again and translate it in a loop
+                self.server.send_audio(np.zeros_like(chunk))
+            else:
+                self.server.send_audio(self.gate(chunk, speaking, time.time()) if self.gate else chunk)
             now = time.time()
             if self.segmenter.active != vad_on or (vad_on and now - vad_sent > 0.25):
                 vad_on, vad_sent = self.segmenter.active, now
@@ -513,6 +600,11 @@ def cli() -> None:
     ap.add_argument("--voice", default="", help="macOS voice per language, e.g. de=Markus,en=Ava; 'system' = "
                                                 "the system voice (Siri), '*=system' for all languages "
                                                 "(default: Viktor for German, else the best installed one)")
+    ap.add_argument("--me-silence", type=float, default=0.8,
+                    help="Translate me: silence (s) that ends a sentence of the remote user")
+    ap.add_argument("--me-early", type=float, default=0.3,
+                    help="Translate me: start transcribing/translating after this much silence, before the "
+                         "sentence is known to be over (0 = off)")
     ap.add_argument("--meeting-lang", help="language Reachy speaks for the remote user (default: the one most "
                                            "spoken in the room lately)")
     ap.add_argument("--vision-camera", default="Reachy Mini Camera",
