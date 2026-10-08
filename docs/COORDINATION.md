@@ -28,6 +28,10 @@ better (lower RMS over more views), replace it and note the numbers here.
   `{"type": "depth", ...}`, format documented in `backend/README.md` once it exists. Meant for deforming the
   video sphere grid (`scene.js`), which Simon designed for it.
 
+## Open notes for Simon
+
+- Code review 2026-10-08 found a merge leftover in `app.js` (`setViewMode`, ~line 470): the function is missing its closing `}`, so the camera-model handler and the calibration capture code are inside it and get re-bound with fresh state on every view-mode toggle (a running auto-capture can no longer be stopped, the file counter restarts). Not touched by Dominic's side, your area.
+
 ## Status (newest first, one line each: date, who, what, branch)
 
 - 2026-10-08 Dominic/Claude: bug sweep, "Translate me" latency (5-10 s) + language choice (what Reachy speaks,
