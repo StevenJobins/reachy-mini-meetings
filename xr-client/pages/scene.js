@@ -7,6 +7,7 @@
 import * as THREE from "three";
 import { createVideoSource } from "./videosource.js";
 import { CameraModel } from "./camera.js";
+import { drawDockButton, drawMicButton } from "./icons.js";
 
 export function createScene({ video, vfovDeg, cameraModel = null, distM, statusText, onHeadsetPose, onSelect, onEnd, onFrame, vrButtons = [], warning = () => "", windowMode = "world", log = console.log }) {
   const renderer = new THREE.WebGLRenderer({ antialias: true });
@@ -169,7 +170,7 @@ export function createScene({ video, vfovDeg, cameraModel = null, distM, statusT
   const val = (v) => (typeof v === "function" ? v() : v);
   let moreOpen = false;
   const entries = [...vrButtons.filter((b) => !b.more && b.kind !== "mic"),
-    { icon: () => (moreOpen ? "✕" : "⋯"), label: () => (moreOpen ? "Less" : "More"), onClick: () => { moreOpen = !moreOpen; } },
+    { icon: () => (moreOpen ? "x" : "ellipsis"), label: () => (moreOpen ? "Less" : "More"), onClick: () => { moreOpen = !moreOpen; } },
     ...vrButtons.filter((b) => b.more), ...vrButtons.filter((b) => b.kind === "mic")];
   const DOCK_Z = -1.1, DOCK_Y = -0.3, BD = 0.09, MIC_D = 0.12, STEP = 0.11, ROW = 0.125;   // metres
   const buttons = entries.map((b) => {
@@ -178,18 +179,7 @@ export function createScene({ video, vfovDeg, cameraModel = null, distM, statusT
     const draw = (hover) => (ctx, w, h) => {
       ctx.clearRect(0, 0, w, h);
       if (isMic) return drawMicButton(ctx, w, h, b.muted(), hover, val(b.label));
-      const active = !!val(b.active), r = w / 2 - 8, cy = r + 8;
-      ctx.fillStyle = hover ? "#ff9500" : active ? "rgba(255,149,0,0.28)" : "rgba(22,24,34,0.9)";
-      ctx.beginPath(); ctx.arc(w / 2, cy, r, 0, 2 * Math.PI); ctx.fill();
-      ctx.strokeStyle = hover ? "rgba(255,255,255,0)" : active ? "rgba(255,149,0,0.95)" : "rgba(255,255,255,0.22)";
-      ctx.lineWidth = 6; ctx.stroke();
-      ctx.textAlign = "center"; ctx.textBaseline = "middle";
-      ctx.font = "110px system-ui, 'Noto Color Emoji', sans-serif";
-      ctx.fillStyle = hover ? "#111" : "#fff";
-      ctx.fillText(val(b.icon) ?? "", w / 2, cy + 6);
-      ctx.font = "600 46px system-ui, sans-serif"; ctx.textBaseline = "alphabetic";
-      ctx.fillStyle = active ? "#ffb347" : "#eef0f4";
-      ctx.fillText(val(b.label), w / 2, h - 10);
+      drawDockButton(ctx, w, h, { icon: val(b.icon), text: val(b.label), active: !!val(b.active), hover });
     };
     const d = isMic ? MIC_D : BD;
     const tex = [canvasTexture(256, 320, draw(false)), canvasTexture(256, 320, draw(true))];
@@ -632,25 +622,6 @@ function canvasTexture(w, h, draw) {
   const tex = new THREE.CanvasTexture(c);
   tex.colorSpace = THREE.SRGBColorSpace;
   return tex;
-}
-
-/** Round mic button: red with a crossed-out mic when muted, like a video call. */
-function drawMicButton(ctx, w, h, muted, hover, label) {
-  const r = w / 2 - 10, cx = w / 2, cy = r + 10;
-  ctx.fillStyle = muted ? (hover ? "#ff6b6b" : "#e5484d") : (hover ? "#ff9500" : "rgba(40,40,46,0.95)");
-  ctx.beginPath(); ctx.arc(cx, cy, r, 0, 2 * Math.PI); ctx.fill();
-  ctx.strokeStyle = "#fff"; ctx.fillStyle = "#fff"; ctx.lineWidth = 12; ctx.lineCap = "round";
-  ctx.beginPath(); ctx.roundRect(cx - 24, cy - 70, 48, 88, 24); ctx.fill();          // capsule
-  ctx.beginPath(); ctx.arc(cx, cy - 10, 46, 0.15 * Math.PI, 0.85 * Math.PI); ctx.stroke(); // holder
-  ctx.beginPath(); ctx.moveTo(cx, cy + 36); ctx.lineTo(cx, cy + 62); ctx.stroke();          // stem
-  if (muted) {
-    ctx.strokeStyle = muted ? "#e5484d" : "#fff"; ctx.lineWidth = 26;
-    ctx.beginPath(); ctx.moveTo(cx - 62, cy - 70); ctx.lineTo(cx + 62, cy + 62); ctx.stroke();
-    ctx.strokeStyle = "#fff"; ctx.lineWidth = 12;
-    ctx.beginPath(); ctx.moveTo(cx - 62, cy - 70); ctx.lineTo(cx + 62, cy + 62); ctx.stroke();
-  }
-  ctx.fillStyle = "#eee"; ctx.font = "600 40px system-ui, sans-serif"; ctx.textAlign = "center"; ctx.textBaseline = "alphabetic";
-  ctx.fillText(label, cx, h - 4);
 }
 
 /**
