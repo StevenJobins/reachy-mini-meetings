@@ -4,6 +4,9 @@ Feed it 16 kHz mono float32 chunks of any size. It emits:
   Segment(final=False)  after `first_partial_s`, then every `partial_every_s` while someone talks
                         -> live bubble text
   Segment(final=True)   after `silence_s` of silence (or `max_s`) -> final text + translation
+  Segment(early=True)   (only if `early_s` > 0) after `early_s` of silence: the utterance as it would end
+                        now, so slow work can start before the final; the final has the same audio length
+                        unless speech resumed in between
 
 With a neural VAD (vad.SileroVad, the default in captions.py) a frame is speech above `speech_prob`
 (and keeps the utterance going above `keep_prob`). Without one, it falls back to loudness: noise floor
@@ -27,6 +30,7 @@ class Segment:
     audio: np.ndarray   # everything from speech start (incl. pre-roll) until now
     t_start: float      # stream time in s
     t_end: float
+    early: bool = False   # tentative end (see early_s), final is False
 
 
 @dataclass
@@ -42,6 +46,7 @@ class SegmenterCfg:
     max_s: float = 15.0            # force a cut in monologues
     first_partial_s: float = 0.5   # first live text this early: the bubble appears quickly
     partial_every_s: float = 0.6
+    early_s: float = 0.0           # > 0: emit a tentative end after this much silence (0 = off)
 
 
 def frame_db(frame: np.ndarray) -> float:
@@ -120,20 +125,31 @@ class Segmenter:
         dur = self._t - self._t_start
         if self._quiet * dt >= c.silence_s or dur >= c.max_s:
             return self._finish()
+        if c.early_s > 0 and self._quiet == max(1, round(c.early_s / dt)):
+            audio = self._audio()
+            if audio is not None:
+                return Segment(self._next_id, False, audio, self._t_start,
+                               self._t_start + len(audio) / SAMPLE_RATE, early=True)
         if self._since_partial >= (c.partial_every_s if self._had_partial else c.first_partial_s):
             self._since_partial = 0.0
             self._had_partial = True
             return Segment(self._next_id, False, np.concatenate(self._speech), self._t_start, self._t)
         return None
 
+    def _audio(self) -> np.ndarray | None:
+        """The utterance so far without its trailing silence, None if too short (cough, click)."""
+        speech = self._speech
+        trail = min(self._quiet, len(speech) - 1)
+        if (len(speech) - trail - self._preroll_n) * FRAME / SAMPLE_RATE < self.cfg.min_s:
+            return None
+        return np.concatenate(speech[:len(speech) - trail])
+
     def _finish(self) -> Segment | None:
-        speech, self._speech = self._speech, None
+        audio = self._audio()
+        self._speech = None
         self._loud = 0
         sid = self._next_id
         self._next_id += 1
-        # trailing silence is not part of the utterance
-        trail = min(self._quiet, len(speech) - 1)
-        audio = np.concatenate(speech[:len(speech) - trail])
-        if (len(speech) - trail - self._preroll_n) * FRAME / SAMPLE_RATE < self.cfg.min_s:
+        if audio is None:
             return None
         return Segment(sid, True, audio, self._t_start, self._t_start + len(audio) / SAMPLE_RATE)
