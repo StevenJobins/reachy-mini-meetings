@@ -9,9 +9,10 @@
 const SRC_RATE = 16000;
 
 // AudioWorklet at 16 kHz: plain ring buffer, no resampling. Starts at TARGET, refills after an underrun (with a
-// short fade, no click), and corrects clock drift by dropping single samples (inaudible) when above SLACK.
+// short fade, no click), and corrects clock drift and bursts by dropping single samples when above SLACK (1 in 25: 0.4 s extra delay is gone in
+// ~10 s; 1 in 100 took 40 s, and the tunnel's TCP bursts kept the buffer near HARD = extra delay).
 const WORKLET = `
-const TARGET = ${0.12 * SRC_RATE}, SLACK = ${0.2 * SRC_RATE}, HARD = ${0.6 * SRC_RATE};
+const TARGET = ${0.12 * SRC_RATE}, SLACK = ${0.2 * SRC_RATE}, HARD = ${0.45 * SRC_RATE};
 class RoomAudio extends AudioWorkletProcessor {
   constructor() {
     super();
@@ -33,7 +34,7 @@ class RoomAudio extends AudioWorkletProcessor {
         out[i] = this.last;
         continue;
       }
-      if (this.n > SLACK && ++this.skip >= 100) { this.skip = 0; this.r = (this.r + 1) % L; this.n--; }   // drift
+      if (this.n > SLACK && ++this.skip >= 25) { this.skip = 0; this.r = (this.r + 1) % L; this.n--; }   // drift
       this.last = out[i] = this.buf[this.r];
       this.r = (this.r + 1) % L; this.n--;
     }
@@ -90,6 +91,10 @@ export function createRoomAudio({ log }) {
     /** Audio arrived within the last 2 s: the stream is usable, so the WebRTC robot audio can stay off. */
     get live() { return performance.now() - lastPush < 2000; },
 
-    stats() { return this.live ? `stream buf ${bufMs.toFixed(0)}ms underruns ${underruns}` : "stream off"; },
+    stats() {
+      if (!this.live) return "stream off";
+      const outMs = ctx ? ((ctx.baseLatency ?? 0) + (ctx.outputLatency ?? 0)) * 1000 : 0;   // audio device / OS delay
+      return `stream buf ${bufMs.toFixed(0)}ms out ${outMs.toFixed(0)}ms underruns ${underruns}`;
+    },
   };
 }
