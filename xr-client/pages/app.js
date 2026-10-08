@@ -60,13 +60,13 @@ addEventListener("error", (e) => log("ERROR", e.message, `${e.filename}:${e.line
 addEventListener("unhandledrejection", (e) => log("UNHANDLED", e.reason?.message ?? e.reason));
 
 // ---------------------------------------------------------------- status
-const status = { user: "-", robot: "-", motors: "-", ice: "-", video: "-", xr: "off", send: 0, cmd: [0, 0, 0], body: 0, meas: [0, 0, 0], captions: "-", audioIn: "", sound: "muted", doa: "none", mic: "off", volume: "-", micKbps: 0 };
+const status = { user: "-", robot: "-", motors: "-", ice: "-", video: "-", xr: "off", send: 0, cmd: [0, 0, 0], body: 0, meas: [0, 0, 0], captions: "-", audioIn: "", sound: "muted", doa: "none", mic: "off", volume: "-", micKbps: 0, videoIn: "" };
 let sentCount = 0;
 setInterval(() => { status.send = sentCount; sentCount = 0; }, 1000);
 function statusText() {
   const f = (v) => v.map((x) => x.toFixed(1).padStart(6)).join(" ");
   return [
-    `robot ${status.robot}   motors ${status.motors}   ice ${status.ice}   video ${status.video}   send ${status.send} Hz   mic ${status.mic} ${status.micKbps.toFixed(0)} kbps   volume ${status.volume}`,
+    `robot ${status.robot}   motors ${status.motors}   ice ${status.ice}   video ${status.video} ${status.videoIn}   send ${status.send} Hz   mic ${status.mic} ${status.micKbps.toFixed(0)} kbps   volume ${status.volume}`,
     `cmd  r/p/y ${f(status.cmd)}   body ${status.body.toFixed(1)}   speaker target ${speaker.target.toFixed(0)} base ${speaker.base.toFixed(0)}`,
     `meas r/p/y ${f(status.meas)}   captions ${status.captions}   ${faces.stats()}   robot sound ${status.sound} ${roomAudio.stats()} ${status.audioIn}   doa ${status.doa}`,
   ].join("\n");
@@ -95,11 +95,30 @@ setInterval(async () => {
   } catch {}
 }, 2000);
 
+// Video diagnostics (why is it soft?): what actually arrives. The daemon's webrtcsink scales the picture down
+// when its bitrate estimate drops below 2 Mbit/s (robot/scripts/patch_daemon_video.py raises the floor).
+let videoPrev = null;
+setInterval(async () => {
+  const pc = robot.peerConnection;
+  if (!pc) return;
+  try {
+    const stats = await pc.getStats();
+    stats.forEach((r) => {
+      if (r.type !== "inbound-rtp" || r.kind !== "video") return;
+      const dt = videoPrev ? (r.timestamp - videoPrev.timestamp) / 1000 : 0;
+      const kbps = dt > 0 ? (r.bytesReceived - videoPrev.bytesReceived) * 8 / 1000 / dt : 0;
+      const codec = stats.get(r.codecId)?.mimeType?.replace("video/", "") ?? "?";
+      status.videoIn = `${r.frameWidth ?? "?"}x${r.frameHeight ?? "?"} ${(r.framesPerSecond ?? 0).toFixed(0)}fps ${(kbps / 1000).toFixed(1)}Mbps ${codec} ${r.decoderImplementation ?? ""}`;
+      videoPrev = r;
+    });
+  } catch {}
+}, 2000);
+
 // Heartbeat every 5 s: if the page dies, the last lines show memory, video and connection state.
 setInterval(() => {
   const mem = performance.memory ? `heap ${(performance.memory.usedJSHeapSize / 1e6).toFixed(0)} MB` : "heap ?";
   log("alive", mem, status.audioIn, `xr ${status.xr}`, `robot ${status.robot}`, `ice ${status.ice}`, `motors ${status.motors}`,
-    `send ${status.send} Hz`, scene.videoStats());
+    `send ${status.send} Hz`, scene.videoStats(), `in ${status.videoIn}`, roomAudio.stats());
 }, 5000);
 document.addEventListener("visibilitychange", () => log("page", document.visibilityState));
 // Deployed version: the Pages workflow stamps module URLs with the commit (app.js?v=<sha>).
@@ -206,6 +225,7 @@ function setRobotMuted(m) {
 // Two-way audio, like a video call: your mic (headset, or the laptop's mic in the browser) goes to the
 // robot speaker while Reachy is awake. On by default; the big mic button mutes you.
 const mic = createMic({
+  onVoice: (buf) => captions?.sendVoice(buf),   // "translate me": your voice -> backend -> Reachy speaks it
   getPeerConnection: () => robot.peerConnection,
   onStatus: (s) => { Object.assign(status, s); renderMicButton(); },
   log,
@@ -341,6 +361,8 @@ const scene = createScene({
     { kind: "mic", muted: () => mic.muted || status.mic !== "on", label: () => (mic.muted ? "Muted" : status.mic === "on" ? "Mic on" : "Mic off"), onClick: toggleMic },
     { icon: "🙋", label: "Talk", onClick: wantToTalk },
     { icon: "😂", label: "Laugh", onClick: () => userLaughed("vr button") },
+    { icon: "🌐", label: () => (mic.translate ? "Translating" : "Translate"), active: () => mic.translate,
+      onClick: () => mic.setTranslate(!mic.translate) },
     { icon: "💬", label: () => ({ both: "Both", translation: "Translated", original: "Original" })[captions?.mode ?? "both"],
       onClick: () => captions.cycleMode() },
     { icon: "📝", label: "Notes", active: () => !!notes?.visible, onClick: () => notes.toggle() },
@@ -502,6 +524,8 @@ captions = createCaptions({
   onFinal: onFinalCaption,
   onSpeech: onSpeechCaption,
   onVad: onVadEvent,
+  // what Reachy said for you (translate me): shown above the dock for a moment
+  onMe: (msg) => { log("me:", msg.text, "->", msg.translation ?? "(no translation)"); scene.info(`🗣 ${msg.translation ?? msg.text}`, 6000); },
   onAudio: (buf) => roomAudio.push(buf),
   log,
   onStatus: (s) => Object.assign(status, s),

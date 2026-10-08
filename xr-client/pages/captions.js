@@ -96,7 +96,7 @@ function draw(ctx, b, mode) {
   for (const l of subLines) { ctx.fillText(l, x, y); y += 40; }
 }
 
-export function createCaptions({ three, distM, vfovDeg, speakers, listEl, overlayEl, onSummary, onFinal, onSpeech, onVad, onAudio, log, onStatus }) {
+export function createCaptions({ three, distM, vfovDeg, speakers, listEl, overlayEl, onSummary, onFinal, onSpeech, onVad, onMe, onAudio, log, onStatus }) {
   const bubbles = new Map();                // id -> { msg, mesh, ctx, tex, until, trackId, pid, color, label, last }
   const screenH = 2 * distM * Math.tan(vfovDeg / 2 * Math.PI / 180);
   const screenW = screenH * 16 / 9;
@@ -299,6 +299,7 @@ export function createCaptions({ three, distM, vfovDeg, speakers, listEl, overla
       if (msg.type === "caption") onCaption(msg);
       else if (msg.type === "summary") onSummary?.(msg);
       else if (msg.type === "vad") onVad?.(msg);
+      else if (msg.type === "me") onMe?.(msg);
     };
     sock.onclose = (e) => {
       if (e.code === 4001) log("captions: tunnel refused this HF account (backend --allow-hf)");
@@ -310,6 +311,8 @@ export function createCaptions({ three, distM, vfovDeg, speakers, listEl, overla
 
   return {
     /** Reconnect, e.g. after the URL changed. */
+    /** Your voice for "translate me" (binary int16 PCM, 16 kHz). */
+    sendVoice(buf) { if (ws?.readyState === WebSocket.OPEN) ws.send(buf); },
     reconnect() { if (ws) { ws.onclose = null; ws.close(); } tryLocal = true; connect(); },
     follow,
     get mode() { return mode; },

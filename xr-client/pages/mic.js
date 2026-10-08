@@ -4,9 +4,20 @@
 // (headset mic, or the Mac's mic when testing from the browser). The SDK negotiates an audio sender to
 // the robot and feeds it a silent placeholder; we swap our mic track onto that sender. A watchdog
 // re-attaches it after reconnects (the SDK then builds a new peer connection with a new sender).
+//
+// "Translate me": your voice goes to the caption backend instead (onVoice: int16 PCM, 16 kHz mono, 40 ms frames),
+// which translates it into the meeting language and lets Reachy say it; the robot gets silence meanwhile.
 
-export function createMic({ getPeerConnection, onStatus, log }) {
-  let stream = null, track = null, muted = false, wanted = false, attachedTo = null;
+const VOICE_WORKLET = `
+class VoiceTap extends AudioWorkletProcessor {
+  process(inputs) { const ch = inputs[0][0]; if (ch) this.port.postMessage(ch.slice(0)); return true; }
+}
+registerProcessor("voice-tap", VoiceTap);
+`;
+
+export function createMic({ getPeerConnection, onStatus, onVoice = () => {}, log }) {
+  let stream = null, track = null, muted = false, wanted = false, attachedTo = null, translate = false;
+  let voiceCtx = null;
   let audioCtx = null, analyser = null, levelBuf = null, lastBytes = 0, kbps = 0, packets = 0, announced = false;
 
   // Diagnostics: how loud the mic is (0..1) and how much audio actually leaves towards the robot.
@@ -39,10 +50,11 @@ export function createMic({ getPeerConnection, onStatus, log }) {
     if (!wanted || !track || !pc) { attachedTo = null; report(); return; }
     const sender = audioSender(pc);
     if (!sender) { attachedTo = null; report(); return; }
-    if (sender.track !== track) {
+    const want = translate ? null : track;   // translating: Reachy speaks for you, your own voice stays off
+    if (sender.track !== want) {
       try {
-        await sender.replaceTrack(track);
-        log("mic: sending to the robot speaker");
+        await sender.replaceTrack(want);
+        log(want ? "mic: sending to the robot speaker" : "mic: translating, nothing direct to the robot");
       } catch (e) {
         log("mic: replaceTrack failed:", e?.message ?? e);
         attachedTo = null; report(); return;
@@ -52,6 +64,26 @@ export function createMic({ getPeerConnection, onStatus, log }) {
     report();
   }
   setInterval(attach, 2000);   // reconnects, late SDP negotiation
+
+  /** Your voice at 16 kHz for the backend (Chrome resamples the mic into a 16 kHz context). */
+  async function startTap() {
+    if (voiceCtx || !stream) return;
+    voiceCtx = new AudioContext({ sampleRate: 16000 });
+    await voiceCtx.audioWorklet.addModule(URL.createObjectURL(new Blob([VOICE_WORKLET], { type: "text/javascript" })));
+    const node = new AudioWorkletNode(voiceCtx, "voice-tap");
+    const frame = new Int16Array(640);
+    let n = 0;
+    node.port.onmessage = ({ data }) => {
+      if (!translate || muted) { n = 0; return; }
+      for (const v of data) {
+        frame[n++] = Math.max(-32768, Math.min(32767, v * 32768));
+        if (n === frame.length) { onVoice(frame.slice().buffer); n = 0; }
+      }
+    };
+    voiceCtx.createMediaStreamSource(stream).connect(node);
+    voiceCtx.resume().catch(() => {});
+  }
+  function stopTap() { voiceCtx?.close().catch(() => {}); voiceCtx = null; }
 
   const api = {
     get muted() { return muted; },
@@ -89,7 +121,9 @@ export function createMic({ getPeerConnection, onStatus, log }) {
           if (wanted) setTimeout(() => { if (wanted && !track) api.start(); }, 500);
         };
         log("mic:", track.label || "default microphone");
+        stopTap();   // new stream: rebuild the voice tap on it
       }
+      if (translate) startTap().catch((e) => log("mic: voice tap failed:", e?.message ?? e));
       await attach();
       return true;
     },
@@ -101,6 +135,7 @@ export function createMic({ getPeerConnection, onStatus, log }) {
       attachedTo = null;
       stream?.getTracks().forEach((t) => t.stop());
       audioCtx?.close().catch(() => {});
+      stopTap();
       stream = null; track = null; audioCtx = null; analyser = null; announced = false; lastBytes = 0;
       report();
     },
@@ -115,6 +150,16 @@ export function createMic({ getPeerConnection, onStatus, log }) {
     },
 
     get kbps() { return kbps; },
+
+    get translate() { return translate; },
+    /** Translate me on/off (call from a tap: starts audio). */
+    setTranslate(on) {
+      translate = on;
+      if (on) startTap().catch((e) => log("mic: voice tap failed:", e?.message ?? e));
+      else stopTap();
+      log("mic: translate", on ? "on" : "off");
+      attach();
+    },
 
     setMuted(m) {
       muted = m;

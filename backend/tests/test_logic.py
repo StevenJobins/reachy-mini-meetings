@@ -156,3 +156,14 @@ def test_noise_gate_quiet_in_pauses_full_in_speech_no_jumps():
     assert tail.min() > 0.99                          # sentence tail kept (hold)
     later = [g(one, False, 0.2 + 0.04 * i)[-1] for i in range(1, 20)]
     assert all(b <= a + 1e-6 for a, b in pairwise(later)) and later[-1] < 0.25   # smooth release
+
+
+def test_pick_voice_prefers_premium_and_avoids_anna():
+    from reachy_meetings_backend.voice import pick_voice
+
+    voices = [("Anna", "de_DE"), ("Flo (Deutsch (Deutschland))", "de_DE"), ("Petra (Premium)", "de_DE"),
+              ("Bells", "en_US"), ("Samantha", "en_US"), ("Daniel", "en_GB")]
+    assert pick_voice("de", voices, "DE") == "Petra (Premium)"
+    assert pick_voice("de", voices[:2], "DE") == "Flo (Deutsch (Deutschland))"
+    assert pick_voice("en", voices, "US") == "Samantha"
+    assert pick_voice("ja", voices) is None

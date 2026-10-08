@@ -168,9 +168,11 @@ export function createScene({ video, vfovDeg, distM, statusText, onHeadsetPose, 
   const warn = new THREE.Mesh(new THREE.PlaneGeometry(0.64, 0.036), new THREE.MeshBasicMaterial({ map: warnTex, transparent: true }));
   warn.position.set(0, DOCK_Y + MIC_D * 0.625 + 0.035, DOCK_Z);
   ui.add(warn);
-  let warnText = null;
+  let warnText = null, infoText = "", infoUntil = 0;
   function updateWarning() {
-    const t = warning() || "";
+    const w0 = warning() || "";
+    const t = w0 || (performance.now() < infoUntil ? infoText : "");
+    const bg = w0 ? "rgba(120,20,24,0.88)" : "rgba(22,24,34,0.9)";
     if (t === warnText) return;
     warnText = t;
     warn.visible = !!t;
@@ -179,10 +181,10 @@ export function createScene({ video, vfovDeg, distM, statusText, onHeadsetPose, 
     if (!t) return;
     ctx.font = "600 44px system-ui, sans-serif";
     const tw = Math.min(w, ctx.measureText(t).width + 60);
-    ctx.fillStyle = "rgba(120,20,24,0.88)";
+    ctx.fillStyle = bg;
     ctx.beginPath(); ctx.roundRect((w - tw) / 2, 0, tw, h, h / 2); ctx.fill();
     ctx.fillStyle = "#fff"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
-    ctx.fillText(t, w / 2, h / 2 + 2);
+    ctx.fillText(t.length > 70 ? `${t.slice(0, 68)}…` : t, w / 2, h / 2 + 2);
     warnTex.needsUpdate = true;
   }
   function layoutDock() {
@@ -467,6 +469,9 @@ export function createScene({ video, vfovDeg, distM, statusText, onHeadsetPose, 
       addEventListener("resize", resize);
       addEventListener("keydown", onKey);
     },
+
+    /** Short message above the dock (a warning takes precedence). */
+    info(text, ms = 5000) { infoText = text; infoUntil = performance.now() + ms; },
 
     /** Bring the video window and the dock back in front of you (after a recenter). */
     recenterView() { gliding = true; },

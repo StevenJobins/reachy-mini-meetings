@@ -77,6 +77,14 @@ Access: the address is public, so clients through the tunnel must first send the
 
 Tests, without models, mic or network: `pytest -q`
 
+### Your voice in the meeting language ("Translate" button)
+
+With 🌐 *Translate* on, the headset sends your voice to this server (binary frames, int16 PCM, 16 kHz mono) instead of straight to the robot. A second VAD cuts it into sentences; Whisper transcribes each one, DeepL translates it into the **meeting language**, and `say` (macOS speech synthesis) speaks it on the Reachy speaker, played straight to the USB audio device (`voice.py`). The meeting language is the language most spoken in the room over the last 10 minutes; before anyone has spoken it falls back to `--lang`, then `de`; `--meeting-lang` fixes it. The page shows what Reachy said above the dock (`me` message). While Reachy speaks, the room mic is ignored for captions and speech detection (+0.4 s echo), so its own voice neither becomes a bubble nor turns the head.
+
+Voice: the best installed one per language (Premium > Enhanced > compact; Eloquence voices like Eddy/Flo after that; Anna last, the team found her grating). macOS only ships compact voices; for natural speech, download e.g. a German and an English *Premium* voice under System Settings → Accessibility → Spoken Content → System voice → Manage Voices; they are picked up on the next start. Override: `--voice de=Markus,en=Ava`; off: `--voice-out none`.
+
+Measured (synthetic English sentence fed over the WebSocket, playback stubbed): transcript + DeepL to German + synthesis call in one pass; synthesis of a 4.4 s German sentence takes 0.7 s.
+
 ### Room audio stream
 
 The robot's own WebRTC audio drops ~55 % of the sound (measured on the page: 0 packets lost, low jitter, but more than half of the audio concealed, with and without this backend running, so it is the daemon's sender). This backend already reads the same microphone cleanly, so it also streams it to the page: binary WebSocket frames, int16 PCM, 16 kHz mono, 40 ms each (~32 KB/s per client). The page plays it with a small jitter buffer and mutes the WebRTC audio while the stream arrives. Between utterances the stream is turned down by 14 dB (`--pause-db`, noise gate driven by the neural VAD; 0 = off), so hum and fans stay out of the headset; voices of other people in the room count as speech and stay audible.
