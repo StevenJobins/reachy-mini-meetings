@@ -95,6 +95,21 @@ tests/                   pure-logic tests
 
 The daemon gives the camera (1080p60) to webrtcsink without settings: start 2 Mbit/s, max 8, and below 2 Mbit/s webrtcsink scales the picture down to 720p/360p, which looked washed out in the headset. There is no daemon option, so the script patches `media_server.py` of the installed desktop app (backup `media_server.py.orig`): bitrate 3–15 Mbit/s (start 6). `--fps 30` adds a `videorate` to 30 fps in the WebRTC branch, but **don't use it**: with it, every headset session hung "stuck mid-negotiation" (daemon log: `signaling_state have-local-offer`, ICE `new`) about a minute after connecting, 4 times in 6 minutes, none with the bitrate-only patch. Why it was tried: with full 1080p60 arriving, VR dropped to ~19 fps (debug panel: video rx 60 fps, tex 19 fps, send 19 Hz); the page now limits the texture uploads to 30/s instead (`videosource.js`). The script always starts from the backup, so running it again with other options replaces the old patch. `--h264` also forces H264 (Apple hardware encoder `vtenc_h264_hw` is available; VP8 runs in software at its fastest/lowest setting). `--revert` restores the original. Restart the daemon afterwards (quit and reopen Reachy Mini Control); run it again after an app update. Check the result in the VR debug panel (incoming resolution, fps, bitrate, codec).
 
+## Camera calibration with the real camera: `scripts/calibrate_camera_apriltag.py`
+
+`xr-client/pages/camera.json` (loaded by the page, "Camera model: Auto") comes from this measurement, 2026-10-08: the real Reachy camera at the stream resolution 1920x1080 (read next to the daemon, AVFoundation), 6x6 AprilTag grid (tag36h11), 24 views, RMS 2.3 px.
+
+| | measured | before |
+|---|---|---|
+| field of view (camera.js, edges incl. distortion) | **88.9° × 57.5°** | estimate 54° vertical; Pollen factory ~82° × 61° |
+| fx / fy | 992 / 993 px (square pixels) | factory × crop 1.115: 1116 |
+| principal point | 946, 549 (14 px left, 8 px below centre) | |
+| distortion | k1 −0.050, k2 0.084, k3 −0.048: small in the 1080p crop | |
+
+Model: the standard 5 coefficients, padded to camera.js's 12; the rational model fitted no better (same RMS), so more terms would only extrapolate at the edges. camera.js reproduces cv2.projectPoints with these values to 0.001 px (checked).
+
+Traps the script handles: OpenCV returns the AprilTag corners in a different order than the printed grid (first run 133 px error); the stated gap/tag ratio 2.49/8.3 = 0.30 left ~10 px error in every view, the fit has its minimum at 0.57 (fx = fy there), and the FOV barely depends on it (56.8–57.4° vertical for 0.53–0.60). Rerun from saved images: `--from-images --out <dir> --camera-json xr-client/pages/camera.json`.
+
 ## Open TODOs
 
 - [ ] **Verify the axis signs on the real robot** (roll/pitch/yaw, antennas), then fix the comment in `bridge/protocol.py`
