@@ -36,7 +36,10 @@ SILLY = {"Albert", "Bad News", "Bahh", "Bells", "Boing", "Bubbles", "Cellos", "G
          "Organ", "Superstar", "Trinoids", "Whisper", "Wobble", "Zarvox", "Fred", "Kathy", "Ralph"}
 # Chosen by ear (2026-10-08). The page switches between them (Voice button); "system" = the macOS system voice,
 # set to Siri. Note: `say -v <unknown name>` silently falls back to another voice, so Siri can't be named.
-GENDER_VOICES = {"male": {"de": "Viktor", "en": "Daniel"}, "female": {"de": "system", "en": "Samantha"}}
+# Other languages: the installed voices of that gender (no male Italian / Spanish voice besides the Eloquence
+# toys is installed on this Mac, so those fall back to the best voice, see pick_voice).
+GENDER_VOICES = {"male": {"de": "Viktor", "en": "Daniel", "fr": "Thomas"},
+                 "female": {"de": "system", "en": "Samantha", "fr": "Amélie", "it": "Alice", "es": "Mónica"}}
 ELOQUENCE = ("Eddy", "Flo", "Grandma", "Grandpa", "Reed", "Rocko", "Sandy", "Shelley")
 
 

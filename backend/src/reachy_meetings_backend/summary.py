@@ -62,12 +62,16 @@ class Summarizer:
         self.key = os.environ.get("GEMINI_API_KEY")
         if not self.key:
             raise RuntimeError("GEMINI_API_KEY is not set (free key: aistudio.google.com/apikey)")
-        self.system = SYSTEM.format(target=target)
+        self.set_target(target)
         self.model = model
         self.every_s = every_s
         self.lines: list[str] = []
         self.new = 0
         self.latest: dict | None = None
+
+    def set_target(self, target: str) -> None:
+        """Language of the notes (the bubble language, switchable from the page)."""
+        self.system = SYSTEM.format(target=target)
 
     def add(self, caption: dict) -> None:
         if not caption["text"]:
