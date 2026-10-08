@@ -150,7 +150,7 @@ class VoiceOut:
         self.thread = ThreadPoolExecutor(1)   # all synthesis on one thread (AppKit objects stay on it)
         self.appkit: AppKitSynth | None = None
         self.appkit_system = False
-        self.thread.submit(self._init_appkit)
+        self.ready = self.thread.submit(self._init_appkit)   # a few s, measured up to 30 s on a busy Mac
 
     def _init_appkit(self) -> None:
         try:
@@ -186,7 +186,10 @@ class VoiceOut:
     async def synth(self, text: str, lang: str) -> tuple[np.ndarray, int, str | None]:
         """(audio, sample rate, voice name) of `text`, not played yet."""
         voice = self.voice(lang)
-        audio, sr = await asyncio.wrap_future(self.thread.submit(self._synth, text, voice))
+        if self.ready.done():
+            audio, sr = await asyncio.wrap_future(self.thread.submit(self._synth, text, voice))
+        else:   # still checking / warming up the voices: `say` meanwhile instead of waiting behind it
+            audio, sr = await asyncio.to_thread(say_synth, text, voice)
         return audio, sr, voice
 
     async def play(self, audio: np.ndarray, sr: int, on_start=None) -> float:
