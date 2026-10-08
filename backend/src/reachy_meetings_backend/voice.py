@@ -102,12 +102,21 @@ class VoiceOut:
         async with self.lock:
             voice = self.voice(lang)
             audio, sr = await asyncio.to_thread(self._synth, text, voice)
-            dev = find_output_device(self.device_name)   # looked up each time: the robot may be re-plugged
+            dev = find_output_device(self.device_name)   # looked up each time (after a re-init the index can change)
             if dev is None:
                 log.warning("No output device matching %r, using the default speaker", self.device_name)
             dur = len(audio) / sr
             log.info("Speaking (%s, %s, %.1f s): %s", lang, voice or "default voice", dur, text)
             if on_start:
                 on_start(dur)
-            await asyncio.to_thread(lambda: (sd.play(audio, sr, device=dev), sd.wait()))
+            try:
+                await asyncio.to_thread(lambda: (sd.play(audio, sr, device=dev), sd.wait()))
+            except Exception as e:   # stale device after re-plugging: let MicSource re-initialize, then retry once
+                from .audio import RESTART
+
+                log.warning("Playback failed (%s), re-initializing audio and retrying", e)
+                RESTART.set()
+                await asyncio.sleep(3)
+                dev = find_output_device(self.device_name)
+                await asyncio.to_thread(lambda: (sd.play(audio, sr, device=dev), sd.wait()))
             return dur

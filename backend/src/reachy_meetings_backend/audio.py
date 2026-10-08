@@ -9,6 +9,8 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import threading
+import time
 import wave
 
 import numpy as np
@@ -29,26 +31,57 @@ def find_input_device(name: str | None) -> int | None:
     return None
 
 
+# Unplug + replug of the robot: PortAudio keeps its device list from start-up and the input callback just
+# stops (no exception), so captions, speech detection and room audio stopped for good (code review 2026-10-08).
+# MicSource watches the callback and reopens; a failed playback (voice.py) asks for the same via RESTART.
+RESTART = threading.Event()
+_pa_lock = threading.Lock()
+
+
+def reinit_portaudio() -> None:
+    """Fresh device list (after re-plugging): all open streams must be closed before."""
+    with _pa_lock:
+        sd._terminate()
+        sd._initialize()
+
+
 class MicSource:
-    def __init__(self, device: str | None, block_s: float = 0.04) -> None:   # small blocks: low audio latency
+    def __init__(self, device: str | None, block_s: float = 0.04, silent_s: float = 2.0) -> None:   # small blocks: low audio latency
+        self.name = device
         self.device = find_input_device(device)
         if device and self.device is None:
             log.warning("No input device matching %r, using the default mic", device)
         self.block = int(block_s * SAMPLE_RATE)
+        self.silent_s = silent_s
 
     async def run(self, out: asyncio.Queue) -> None:
         loop = asyncio.get_running_loop()
+        last = [time.time()]
 
         def callback(indata, frames, t, status):
             if status:
                 log.debug("mic: %s", status)
+            last[0] = time.time()
             loop.call_soon_threadsafe(out.put_nowait, indata[:, 0].copy())
 
-        name = sd.query_devices(self.device, "input")["name"]
-        with sd.InputStream(samplerate=SAMPLE_RATE, channels=1, dtype="float32",
-                            blocksize=self.block, device=self.device, callback=callback):
-            log.info("Listening on %r", name)
-            await asyncio.Future()  # until cancelled
+        first = True
+        while True:
+            if not first:
+                await asyncio.to_thread(reinit_portaudio)
+                self.device = find_input_device(self.name)
+                if self.name and self.device is None:
+                    await asyncio.sleep(2)   # still unplugged
+                    continue
+            first = False
+            RESTART.clear()
+            name = sd.query_devices(self.device, "input")["name"]
+            last[0] = time.time()
+            with sd.InputStream(samplerate=SAMPLE_RATE, channels=1, dtype="float32",
+                                blocksize=self.block, device=self.device, callback=callback):
+                log.info("Listening on %r", name)
+                while time.time() - last[0] < self.silent_s and not RESTART.is_set():
+                    await asyncio.sleep(0.5)
+            log.warning("Mic %r stopped delivering audio (unplugged?) or restart requested: reopening", name)
 
 
 class FileSource:
