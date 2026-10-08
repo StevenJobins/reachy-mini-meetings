@@ -18,7 +18,7 @@ function cleanUrlForLogin() {
 
 export function createRobot({ clientId, onStatus, onMeasuredHead, onDoa = () => {}, log }) {
   const reachy = new ReachyMini({ clientId, appName: "Reachy Meetings XR", videoJitterBufferTargetMs: 0 });
-  let streaming = false;
+  let streaming = false, lastPitch = null;   // measured head pitch (deg, + = down)
 
   reachy.addEventListener("iceStateChange", (e) => onStatus({ ice: e.detail?.state }));
   reachy.addEventListener("sessionStopped", (e) => {
@@ -36,6 +36,7 @@ export function createRobot({ clientId, onStatus, onMeasuredHead, onDoa = () => 
     const h = e.detail?.head;
     if (!h || h.length !== 16) return;
     const { roll, pitch, yaw } = matrixToRpy([h.slice(0, 4), h.slice(4, 8), h.slice(8, 12), h.slice(12, 16)]);
+    lastPitch = pitch;
     onMeasuredHead(roll, pitch, yaw);
   });
 
@@ -84,6 +85,12 @@ export function createRobot({ clientId, onStatus, onMeasuredHead, onDoa = () => 
 
     get connected() { return streaming; },
 
+    /** The Hugging Face sign-in token (for the caption server's tunnel). The SDK keeps it in memory; its
+     *  sessionStorage copy was missing on the headset, so the tunnel refused it as "no account". */
+    get token() {
+      try { return reachy._token ?? sessionStorage.getItem("hf_token"); } catch { return reachy._token ?? null; }
+    },
+
     /** Live RTCPeerConnection (null between sessions; replaced on reconnect, so re-read it each time). */
     get peerConnection() { return reachy.peerConnection; },
 
@@ -98,6 +105,12 @@ export function createRobot({ clientId, onStatus, onMeasuredHead, onDoa = () => 
     async wake() {
       onStatus({ motors: "waking" });
       await reachy.ensureAwake(3000);
+      // ensureAwake only looks at the motor mode: after a daemon restart the motors came up enabled with the
+      // head still in the sleep pose (pitch ~26° down), so it did nothing and Reachy stayed slumped (2026-10-08).
+      if (lastPitch != null && lastPitch > 18) {
+        log(`wake: motors on but head in sleep pose (pitch ${lastPitch.toFixed(0)}°), playing wake-up`);
+        await reachy.wakeUp({ timeoutMs: 5000 }).catch((e) => log("wake-up:", e?.message ?? e));
+      }
       onStatus({ motors: "awake" });
     },
 

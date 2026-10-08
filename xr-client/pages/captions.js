@@ -97,7 +97,7 @@ function draw(ctx, b, mode) {
   for (const l of subLines) { ctx.fillText(l, x, y); y += 40; }
 }
 
-export function createCaptions({ three, distM, vfovDeg, speakers, listEl, overlayEl, onSummary, onFinal, onSpeech, onVad, onMe, onAudio, log, onStatus }) {
+export function createCaptions({ three, distM, vfovDeg, speakers, listEl, overlayEl, onSummary, onFinal, onSpeech, onVad, onMe, onAudio, getToken, log, onStatus }) {
   const bubbles = new Map();                // id -> { msg, mesh, ctx, tex, until, trackId, pid, color, label, last }
   const screenH = 2 * distM * Math.tan(vfovDeg / 2 * Math.PI / 180);
   const screenW = screenH * 16 / 9;
@@ -288,8 +288,7 @@ export function createCaptions({ three, distM, vfovDeg, speakers, listEl, overla
     }
     const sock = ws;
     sock.onopen = () => {
-      let token = null;
-      try { token = sessionStorage.getItem("hf_token"); } catch {}
+      const token = getToken?.() ?? null;
       sock.send(JSON.stringify({ type: "auth", hf_token: token }));   // only checked through the tunnel
       sock.send(JSON.stringify({ type: "voice", gender: voiceGender }));
       tryLocal = url === LOCAL_URL;   // reconnect the same way first

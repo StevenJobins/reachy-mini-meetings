@@ -465,6 +465,9 @@ export function createScene({ video, vfovDeg, distM, statusText, onHeadsetPose, 
 
     get videoMode() { return source.mode; },
 
+    /** A camera frame is on the VR window (not the "No camera image yet" placeholder). */
+    get hasVideo() { return screenMat.map !== noVideoTex; },
+
     /** Switch how camera frames reach the VR window (track -> canvas -> direct). Returns the new mode. */
     cycleVideo() { return source.cycle(); },
 

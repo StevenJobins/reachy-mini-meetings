@@ -62,6 +62,7 @@ addEventListener("unhandledrejection", (e) => log("UNHANDLED", e.reason?.message
 // ---------------------------------------------------------------- status
 const status = { user: "-", robot: "-", motors: "-", ice: "-", video: "-", xr: "off", send: 0, cmd: [0, 0, 0], body: 0, meas: [0, 0, 0], captions: "-", audioIn: "", sound: "muted", doa: "none", mic: "off", volume: "-", micKbps: 0, videoIn: "" };
 let sentCount = 0;
+let connectedAt = Infinity;   // when the robot session came up (for the "no camera image" warning)
 setInterval(() => { status.send = sentCount; sentCount = 0; }, 1000);
 function statusText() {
   const f = (v) => v.map((x) => x.toFixed(1).padStart(6)).join(" ");
@@ -319,6 +320,7 @@ const robot = createRobot({
   log,
   onStatus: (s) => {
     for (const k of ["robot", "ice", "motors"]) if (k in s && s[k] !== status[k]) log(k, "->", s[k]);
+    if ("robot" in s && s.robot !== status.robot) connectedAt = ["connecting", "stopped", "reconnecting", "-"].includes(s.robot) ? Infinity : performance.now();
     Object.assign(status, s);
   },
   onMeasuredHead: (roll, pitch, yaw) => {
@@ -376,7 +378,9 @@ const scene = createScene({
     { icon: "✕", label: "Exit VR", more: true, onClick: () => scene.exitVR() },
   ],
   // Without the caption server there is no speech detection, so Reachy cannot turn to whoever speaks.
-  warning: () => (status.captions === "on" ? ""
+  warning: () => (robot.connected && !scene.hasVideo && performance.now() - connectedAt > 10000
+    ? "⚠ No camera image: the video connection hangs, reload the page"
+    : status.captions === "on" ? ""
     : status.captions === "not allowed" ? "⚠ Caption server refused this Hugging Face account"
     : "⚠ No caption server: no captions, Reachy won't turn to speakers"),
   onFrame: () => captions?.follow(),
@@ -532,6 +536,7 @@ captions = createCaptions({
   // what Reachy said for you (translate me): shown above the dock for a moment
   onMe: (msg) => { log("me:", msg.text, "->", msg.translation ?? "(no translation)"); scene.info(`🗣 ${msg.translation ?? msg.text}`, 6000); },
   onAudio: (buf) => roomAudio.push(buf),
+  getToken: () => robot.token,
   log,
   onStatus: (s) => Object.assign(status, s),
 });
