@@ -80,6 +80,10 @@ tests/                   pure-logic tests
 - Audio: float32, 16 kHz. `push_audio_sample` is non-blocking. `get_DoA()` returns `(rad, speech)`, where 0 = left, π/2 = front, π = right.
 - `media.get_frame()` returns a (H, W, 3) uint8 array, and `media.get_frame_jpeg()` exists too.
 
+## Sharper video: `scripts/patch_daemon_video.py`
+
+The daemon gives the camera (1080p60) to webrtcsink without settings: start 2 Mbit/s, max 8, and below 2 Mbit/s webrtcsink scales the picture down to 720p/360p, which looked washed out in the headset. There is no daemon option, so the script patches `media_server.py` of the installed desktop app (backup `media_server.py.orig`): bitrate 3–15 Mbit/s (start 6). `--h264` also forces H264 (Apple hardware encoder `vtenc_h264_hw` is available; VP8 runs in software at its fastest/lowest setting). `--revert` restores the original. Restart the daemon afterwards (quit and reopen Reachy Mini Control); run it again after an app update. Check the result in the VR debug panel (incoming resolution, fps, bitrate, codec).
+
 ## Open TODOs
 
 - [ ] **Verify the axis signs on the real robot** (roll/pitch/yaw, antennas), then fix the comment in `bridge/protocol.py`
