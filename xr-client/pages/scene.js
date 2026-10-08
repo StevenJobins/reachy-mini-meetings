@@ -449,6 +449,7 @@ export function createScene({ video, vfovDeg, distM, statusText, onHeadsetPose, 
     ui.quaternion.copy(lazyQ);
     if (windowMode === "comfort") robotView.quaternion.copy(lazyQ);
     else if (haveTarget) robotView.quaternion.copy(target);   // already interpolated + time-aligned by the app
+    else robotView.quaternion.copy(lazyQ);   // no trustworthy robot pose: stand in front of the user like comfort
     vignette.material.opacity += (vignetteGoal - vignette.material.opacity) * (vignetteGoal > vignette.material.opacity ? 0.35 : 0.06);
     vignette.visible = vignette.material.opacity > 0.01;
     if (frame) updatePointers(frame);
@@ -524,6 +525,9 @@ export function createScene({ video, vfovDeg, distM, statusText, onHeadsetPose, 
 
     /** Robot head orientation in the XR world, as {x, y, z, w}. */
     setRobotHead(q) { target.set(q.x, q.y, q.z, q.w); haveTarget = true; },
+
+    /** World-locked mode without a trustworthy robot pose: the window stands in front of the user instead. */
+    clearRobotHead() { haveTarget = false; },
 
     /** For overlays (speech bubbles): the room, and the group that moves with the video window. */
     three: { scene, robotView },

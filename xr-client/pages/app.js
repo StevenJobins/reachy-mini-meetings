@@ -78,7 +78,7 @@ function statusText() {
   const f = (v) => v.map((x) => x.toFixed(1).padStart(6)).join(" ");
   return [
     `robot ${status.robot}   motors ${status.motors}   ice ${status.ice}   video ${status.video} ${status.videoIn}   send ${status.send} Hz   mic ${status.mic} ${status.micKbps.toFixed(0)} kbps   volume ${status.volume}`,
-    `cmd  r/p/y ${f(status.cmd)}   body ${status.body.toFixed(1)}   speaker target ${speaker.target.toFixed(0)} base ${speaker.base.toFixed(0)}   view ${viewMode} delay ${(videoDelayS * 1000).toFixed(0)}ms turn ${(status.turn ?? 0).toFixed(0)}°/s`,
+    `cmd  r/p/y ${f(status.cmd)}   body ${status.body.toFixed(1)}   speaker target ${speaker.target.toFixed(0)} base ${speaker.base.toFixed(0)}   view ${viewMode}${viewMode === "world" ? `/${status.follow ?? "-"}` : ""} delay ${(videoDelayS * 1000).toFixed(0)}ms turn ${(status.turn ?? 0).toFixed(0)}°/s`,
     `meas r/p/y ${f(status.meas)}   captions ${status.captions}   ${faces.stats()}   robot sound ${status.sound} ${roomAudio.stats()} ${status.audioIn}   doa ${status.doa}`,
   ].join("\n");
 }
@@ -198,6 +198,8 @@ function stepBase(dt, nowS) {
 
 /** Mirrored pose + "I want to talk" gesture -> robot. Body swing stays inside the head/body window. */
 function send(t, nowS) {
+  cmdHist.push([nowS, t.roll, t.pitch - basePitch, t.yaw - speaker.base]);   // for the world-locked sanity check
+  if (cmdHist.length > 150) cmdHist.shift();
   const g = talk.step(nowS);
   const l = laugh.step(nowS);
   const bodyYaw = Math.max(t.yaw - 60, Math.min(t.yaw + 60, t.bodyYaw + g.bodyOffset));
@@ -364,6 +366,7 @@ let viewMode = "world";
 try { if (localStorage.getItem(VIEW_KEY) === "comfort") viewMode = "comfort"; } catch {}
 if (params.get("window")) viewMode = params.get("window") === "robot" || params.get("window") === "world" ? "world" : "comfort";
 const poseHist = [];                 // [t, roll, pitch, yaw] (deg, relative to the base), arrival time
+const cmdHist = [];                  // same for what we commanded
 const CAPTURE_ENCODE_S = 0.045;      // camera exposure/readout + H.264 encode on the robot side (estimate)
 let videoDelayS = 0.12;              // shown frame age relative to the pose stream, updated from getStats
 let vjb = null;                      // previous jitter-buffer / decode counters
@@ -384,8 +387,7 @@ setInterval(async () => {
 }, 1000);
 
 /** Head pose (relative to the base) at time t, interpolated between the stored samples. */
-function poseAt(t) {
-  const h = poseHist;
+function poseAt(t, h = poseHist) {
   if (!h.length) return null;
   if (t <= h[0][0]) return h[0].slice(1);
   for (let i = h.length - 1; i > 0; i--) {
@@ -404,7 +406,8 @@ let lastBase = null;
 function updateView() {
   const nowS = performance.now() / 1000;
   const p = poseAt(nowS - videoDelayS);
-  if (p) scene.setRobotHead(recenter.toWorld(robotToHeadset(p[0], p[1], p[2])));
+  if (p && robotFollows(p, nowS)) scene.setRobotHead(recenter.toWorld(robotToHeadset(p[0], p[1], p[2])));
+  else scene.clearRobotHead();
   const b = [speaker.base, basePitch, nowS];
   if (lastBase && b[2] > lastBase[2]) {
     const rate = Math.hypot(b[0] - lastBase[0], b[1] - lastBase[1]) / (b[2] - lastBase[2]);
@@ -412,6 +415,26 @@ function updateView() {
     status.turn = rate;
   }
   lastBase = b;
+}
+
+// World-locked only while the robot head really does what we command: awake, fresh poses, and the measured
+// pose within FOLLOW_TOL of the command (the robot lags ~0.1-0.4 s, so the command is compared a bit earlier).
+// Otherwise (asleep, sleep pose after a failed wake-up, wake-up motion, stuck, no pose stream) the measured pose
+// says nothing about where the user looks, and the window would hang at the floor or off to the side: then it
+// stands in front of the user like in comfort mode. Hysteresis so it does not flicker on fast head turns.
+const FOLLOW_TOL = 30, FOLLOW_OK = 15;
+let following = false, followSince = 0;
+function robotFollows(p, nowS) {
+  const fresh = poseHist.length && nowS - poseHist[poseHist.length - 1][0] < 0.7;
+  const c = poseAt(nowS - videoDelayS - 0.25, cmdHist);
+  const err = c ? Math.max(...p.map((v, k) => Math.abs(v - c[k]))) : Infinity;
+  const ok = awake && fresh && (following ? err < FOLLOW_TOL : err < FOLLOW_OK);
+  if (ok !== following && nowS - followSince > (ok ? 0.3 : 0.5)) {
+    following = ok; followSince = nowS;
+    log(`view: ${ok ? "world-locked at the robot pose" : `robot not following (${awake ? (fresh ? `off by ${err.toFixed(0)}°` : "no pose") : "asleep"}), window in front of you`}`);
+  } else if (ok === following) followSince = nowS;
+  status.follow = following ? "locked" : "front";
+  return following;
 }
 
 function setViewMode(m) {
