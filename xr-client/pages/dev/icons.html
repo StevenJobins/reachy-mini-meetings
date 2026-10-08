@@ -1,0 +1,38 @@
+<!doctype html>
+<!-- Dev harness, not linked from the app: every dock button state with the real drawing code (icons.js).
+     Serve xr-client/pages and open /dev/icons.html. Does not connect to the robot. -->
+<meta charset="utf-8">
+<title>Dock icons</title>
+<style>
+  body { margin: 0; padding: 24px; background: linear-gradient(#3a4250, #1b1f27); color: #ccd; font: 14px system-ui, sans-serif; }
+  h2 { margin: 20px 0 8px; font-weight: 600; }
+  .row { display: flex; flex-wrap: wrap; gap: 14px; align-items: flex-end; }
+  canvas { width: 128px; height: 160px; }
+  canvas.mic { width: 170px; height: 213px; }
+</style>
+<div id="out"></div>
+<script type="module">
+  import { drawDockButton, drawMicButton } from "../icons.js";
+  const buttons = [
+    ["hand", "Talk"], ["laugh", "Laugh"], ["languages", "Translating", true], ["message-square", "Translated"],
+    ["notebook-pen", "Notes", true], ["volume-2", "Sound", true], ["volume-x", "Sound"], ["ellipsis", "More"], ["x", "Less"],
+    ["audio-lines", "Viktor"], ["globe", "World-locked"], ["sofa", "Comfort"], ["scan-line", "Scan 12/40"], ["house", "Room on", true],
+    ["rotate-ccw", "Recenter"], ["film", "Video: videoframe"], ["bug", "Debug", true], ["x", "Exit VR"], ["🦄", "Unknown"],
+  ];
+  const out = document.getElementById("out");
+  const canvas = (cls, draw) => {
+    const c = document.createElement("canvas");
+    c.width = 256; c.height = 320; c.className = cls;
+    draw(c.getContext("2d"), c.width, c.height);
+    return c;
+  };
+  const section = (title, items) => {
+    const h = document.createElement("h2"); h.textContent = title; out.append(h);
+    const row = document.createElement("div"); row.className = "row"; row.append(...items); out.append(row);
+  };
+  section("Mic", [[false, false, "Mic on"], [false, true, "Mic on"], [true, false, "Muted"], [true, true, "Muted"], [true, false, "Mic off"]]
+    .map(([m, hv, t]) => canvas("mic", (ctx, w, h) => drawMicButton(ctx, w, h, m, hv, t))));
+  for (const [title, opts] of [["Normal", {}], ["Hover", { hover: true }], ["Active (toggles on)", { active: true }]])
+    section(title, buttons.map(([icon, text, act]) => canvas("", (ctx, w, h) => drawDockButton(ctx, w, h, { icon, text, active: opts.active ?? false, hover: !!opts.hover }))));
+  section("As in the app (active where the toggle is on)", buttons.map(([icon, text, act]) => canvas("", (ctx, w, h) => drawDockButton(ctx, w, h, { icon, text, active: !!act }))));
+</script>
