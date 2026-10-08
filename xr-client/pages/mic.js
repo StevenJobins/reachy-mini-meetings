@@ -15,7 +15,7 @@ class VoiceTap extends AudioWorkletProcessor {
 registerProcessor("voice-tap", VoiceTap);
 `;
 
-export function createMic({ getPeerConnection, onStatus, onVoice = () => {}, log }) {
+export function createMic({ getPeerConnection, onStatus, onVoice = () => {}, onVoiceEnd = () => {}, log }) {
   let stream = null, track = null, muted = false, wanted = false, attachedTo = null, translate = false;
   let voiceCtx = null;
   let audioCtx = null, analyser = null, levelBuf = null, lastBytes = 0, kbps = 0, packets = 0, announced = false;
@@ -130,6 +130,7 @@ export function createMic({ getPeerConnection, onStatus, onVoice = () => {}, log
 
     /** Stop sending (robot asleep). The sender gets silence again. */
     stop() {
+      if (translate) onVoiceEnd();
       wanted = false;
       attachedTo?.replaceTrack(null).catch(() => {});
       attachedTo = null;
@@ -154,6 +155,7 @@ export function createMic({ getPeerConnection, onStatus, onVoice = () => {}, log
     get translate() { return translate; },
     /** Translate me on/off (call from a tap: starts audio). */
     setTranslate(on) {
+      if (translate && !on) onVoiceEnd();   // the backend finishes the sentence you were saying
       translate = on;
       if (on) startTap().catch((e) => log("mic: voice tap failed:", e?.message ?? e));
       else stopTap();
@@ -162,6 +164,7 @@ export function createMic({ getPeerConnection, onStatus, onVoice = () => {}, log
     },
 
     setMuted(m) {
+      if (m && !muted && translate) onVoiceEnd();
       muted = m;
       audioCtx?.resume().catch(() => {});
       if (track) track.enabled = !m;   // disabled track = silence, the connection stays up

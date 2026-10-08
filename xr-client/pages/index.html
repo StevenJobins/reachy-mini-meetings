@@ -185,6 +185,13 @@
           <a href="calib-board.html" target="_blank" rel="noopener">Checkerboard ↗</a><span id="calib-count" class="muted"></span></div>
         <label>VR view <select id="view-mode" title="World-locked hides the robot's delay (reprojection); comfort keeps the window calm in front of you">
           <option value="world">World-locked (reprojection, default)</option><option value="comfort">Comfort (window follows you calmly)</option></select></label>
+        <label>Reachy speaks for you <select id="meeting-lang" title="Translate me: the language Reachy says your words in">
+          <option value="auto">Auto: the language most spoken in the room</option><option value="de">German</option>
+          <option value="en">English</option><option value="fr">French</option><option value="it">Italian</option>
+          <option value="es">Spanish</option></select></label>
+        <label>Speech bubbles in <select id="bubble-lang" title="The language the captions are translated into">
+          <option value="de">German</option><option value="en">English</option><option value="fr">French</option>
+          <option value="it">Italian</option><option value="es">Spanish</option></select></label>
         <label>Caption server <input id="captions-url" placeholder="automatic (localhost, else wireless tunnel)"></label>
         <label class="check"><input type="checkbox" id="show-faces"> Show detected faces (frame in the video)</label>
         <div class="row">

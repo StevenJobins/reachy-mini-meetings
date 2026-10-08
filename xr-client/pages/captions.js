@@ -19,6 +19,10 @@ const URL_KEY = "reachy-xr-captions-url";
 const MODE_KEY = "reachy-xr-caption-mode";
 const FACES_KEY = "reachy-xr-show-faces";
 const VOICE_KEY = "reachy-xr-voice-gender";
+const MEETING_KEY = "reachy-xr-meeting-lang";   // the language Reachy speaks for you ("auto" = the room's)
+const BUBBLE_KEY = "reachy-xr-bubble-lang";     // the language the bubbles are translated into
+export const MEETING_LANGS = ["auto", "de", "en", "fr", "it", "es"];
+export const BUBBLE_LANGS = ["de", "en", "fr", "it", "es"];
 const LOCAL_URL = "ws://localhost:8766";
 const TUNNEL_TOPIC = "reachy-meetings-xr-captions";   // keep in sync with backend/.../tunnel.py
 export const MODES = ["both", "translation", "original"];
@@ -284,6 +288,13 @@ export function createCaptions({ three, distM, vfovDeg, cameraModel = null, spea
 
   let ws = null, tryLocal = true, timer = null;
   let voiceGender = load(VOICE_KEY, "male");
+  let meetingLang = load(MEETING_KEY, "auto");
+  let bubbleLang = load(BUBBLE_KEY, "");   // "" = the backend's --target (sent in hello)
+  let serverTarget = "en";
+  function sendLang() {
+    if (ws?.readyState !== WebSocket.OPEN) return;
+    ws.send(JSON.stringify({ type: "lang", meeting: meetingLang, ...(bubbleLang ? { target: bubbleLang } : {}) }));
+  }
   async function connect() {
     clearTimeout(timer);
     let url = captionsUrl();
@@ -304,6 +315,7 @@ export function createCaptions({ three, distM, vfovDeg, cameraModel = null, spea
       const token = getToken?.() ?? null;
       sock.send(JSON.stringify({ type: "auth", hf_token: token }));   // only checked through the tunnel
       sock.send(JSON.stringify({ type: "voice", gender: voiceGender }));
+      sendLang();
       tryLocal = url === LOCAL_URL;   // reconnect the same way first
       onStatus({ captions: "on" }); log("captions connected", url);
     };
@@ -312,6 +324,7 @@ export function createCaptions({ three, distM, vfovDeg, cameraModel = null, spea
       if (typeof e.data !== "string") { onAudio?.(e.data); return; }
       const msg = JSON.parse(e.data);
       if (msg.type === "caption") onCaption(msg);
+      else if (msg.type === "hello") serverTarget = msg.target || serverTarget;
       else if (msg.type === "summary") onSummary?.(msg);
       else if (msg.type === "vad") onVad?.(msg);
       else if (msg.type === "me") onMe?.(msg);
@@ -335,12 +348,23 @@ export function createCaptions({ three, distM, vfovDeg, cameraModel = null, spea
       if (ws?.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: "voice", gender: g }));
     },
 
+    /** What Reachy speaks for you ("auto" = the language most spoken in the room) and what the bubbles are
+     *  translated into. Remembered, resent on every (re)connect ({"type": "lang"}, backend/README.md). */
+    get meetingLang() { return meetingLang; },
+    setMeetingLang(l) { meetingLang = l; save(MEETING_KEY, l === "auto" ? "" : l); sendLang(); },
+    cycleMeetingLang() { this.setMeetingLang(MEETING_LANGS[(MEETING_LANGS.indexOf(meetingLang) + 1) % MEETING_LANGS.length]); },
+    get bubbleLang() { return bubbleLang || serverTarget; },
+    setBubbleLang(l) { bubbleLang = l; save(BUBBLE_KEY, l); sendLang(); },
+    cycleBubbleLang() { this.setBubbleLang(BUBBLE_LANGS[(BUBBLE_LANGS.indexOf(this.bubbleLang) + 1) % BUBBLE_LANGS.length]); },
+
     get connected() { return ws?.readyState === WebSocket.OPEN; },
     /** Page log lines -> the backend's headset log file. */
     sendLog(lines) { if (ws?.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: "log", lines })); },
 
     /** Your voice for "translate me" (binary int16 PCM, 16 kHz). */
     sendVoice(buf) { if (ws?.readyState === WebSocket.OPEN) ws.send(buf); },
+    /** You stopped sending (translate off, muted): the backend ends your sentence now instead of gluing it to the next. */
+    sendVoiceEnd() { if (ws?.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: "voice_end" })); },
     reconnect() { if (ws) { ws.onclose = null; ws.close(); } tryLocal = true; connect(); },
     follow,
     get mode() { return mode; },
