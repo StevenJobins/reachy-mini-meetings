@@ -306,7 +306,7 @@ const scene = createScene({
   distM: cfg.distM,
   statusText,
   onHeadsetPose: (q, now) => {
-    if (wantRecenter) { recenter.set(q); wantRecenter = false; notes.layout(); log("recentered"); }
+    if (wantRecenter) { recenter.set(q); wantRecenter = false; notes.layout(); scene?.recenterView(); log("recentered"); }
     if (!awake || status.xr === "off" || !robot.connected || now - lastSend < 1000 / cfg.sendHz) return;
     const dt = (now - lastSend) / 1000;
     lastSend = now;
@@ -328,6 +328,10 @@ const scene = createScene({
     { icon: "🐞", label: "Debug", more: true, active: () => debugOn, onClick: () => { debugOn = !debugOn; scene.toggleDebug(); } },
     { icon: "✕", label: "Exit VR", more: true, onClick: () => scene.exitVR() },
   ],
+  // Without the caption server there is no speech detection, so Reachy cannot turn to whoever speaks.
+  warning: () => (status.captions === "on" ? ""
+    : status.captions === "not allowed" ? "⚠ Caption server refused this Hugging Face account"
+    : "⚠ No caption server: no captions, Reachy won't turn to speakers"),
   onFrame: () => captions?.follow(),
   log,
   onSelect: () => { wantRecenter = true; },

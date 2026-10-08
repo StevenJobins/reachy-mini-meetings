@@ -7,7 +7,7 @@
 import * as THREE from "three";
 import { createVideoSource } from "./videosource.js";
 
-export function createScene({ video, vfovDeg, distM, statusText, onHeadsetPose, onSelect, onEnd, onFrame, vrButtons = [], windowMode = "head", log = console.log }) {
+export function createScene({ video, vfovDeg, distM, statusText, onHeadsetPose, onSelect, onEnd, onFrame, vrButtons = [], warning = () => "", windowMode = "head", log = console.log }) {
   const renderer = new THREE.WebGLRenderer({ antialias: true });
   renderer.xr.enabled = true;
   renderer.domElement.addEventListener("webglcontextlost", () => log("ERROR webgl context lost (GPU crash / out of memory)"));
@@ -113,39 +113,42 @@ export function createScene({ video, vfovDeg, distM, statusText, onHeadsetPose, 
     hudTex.needsUpdate = true;
   }, 200);
 
-  // ---- head-locked dock below the view: glass pills with icon + label. Entries with `more: true` sit in a
-  // second row that the automatic "More" button opens. label / icon / active may be functions.
-  // {kind: "mic", muted: () => bool}: big round video-call style mic button left of the dock.
+  // ---- dock below the view, standing in the room (it moves with the video window, not with every head turn):
+  // round buttons with icon + label like a video call, the mic in the middle. Entries with `more: true` sit in
+  // a second row that the automatic "More" button opens. label / icon / active may be functions.
+  // {kind: "mic", muted: () => bool}: the big mic button.
+  const ui = new THREE.Group();   // lazily follows the head yaw (see the animation loop)
+  scene.add(ui);
   const val = (v) => (typeof v === "function" ? v() : v);
   let moreOpen = false;
   const entries = [...vrButtons.filter((b) => !b.more && b.kind !== "mic"),
     { icon: () => (moreOpen ? "✕" : "⋯"), label: () => (moreOpen ? "Less" : "More"), onClick: () => { moreOpen = !moreOpen; } },
     ...vrButtons.filter((b) => b.more), ...vrButtons.filter((b) => b.kind === "mic")];
-  const PW = 0.15, PH = 0.044, GAP = 0.012;
+  const DOCK_Z = -1.1, DOCK_Y = -0.3, BD = 0.09, MIC_D = 0.12, STEP = 0.11, ROW = 0.125;   // metres
   const buttons = entries.map((b) => {
     let key = "";
     const isMic = b.kind === "mic";
     const draw = (hover) => (ctx, w, h) => {
-      if (isMic) { ctx.clearRect(0, 0, w, h); return drawMicButton(ctx, w, h, b.muted(), hover, val(b.label)); }
-      const active = !!val(b.active);
       ctx.clearRect(0, 0, w, h);
-      ctx.fillStyle = hover ? "#ff9500" : active ? "rgba(255,149,0,0.22)" : "rgba(22,24,34,0.88)";
-      ctx.beginPath(); ctx.roundRect(4, 4, w - 8, h - 8, (h - 8) / 2); ctx.fill();
-      ctx.strokeStyle = hover ? "rgba(255,255,255,0.0)" : active ? "rgba(255,149,0,0.9)" : "rgba(255,255,255,0.16)";
-      ctx.lineWidth = 3; ctx.stroke();
-      ctx.textBaseline = "middle";
-      ctx.font = "44px system-ui, 'Noto Color Emoji', sans-serif"; ctx.textAlign = "center";
+      if (isMic) return drawMicButton(ctx, w, h, b.muted(), hover, val(b.label));
+      const active = !!val(b.active), r = w / 2 - 8, cy = r + 8;
+      ctx.fillStyle = hover ? "#ff9500" : active ? "rgba(255,149,0,0.28)" : "rgba(22,24,34,0.9)";
+      ctx.beginPath(); ctx.arc(w / 2, cy, r, 0, 2 * Math.PI); ctx.fill();
+      ctx.strokeStyle = hover ? "rgba(255,255,255,0)" : active ? "rgba(255,149,0,0.95)" : "rgba(255,255,255,0.22)";
+      ctx.lineWidth = 6; ctx.stroke();
+      ctx.textAlign = "center"; ctx.textBaseline = "middle";
+      ctx.font = "110px system-ui, 'Noto Color Emoji', sans-serif";
       ctx.fillStyle = hover ? "#111" : "#fff";
-      ctx.fillText(val(b.icon) ?? "", 62, h / 2 + 2);
-      ctx.font = "600 38px system-ui, sans-serif"; ctx.textAlign = "left";
-      ctx.fillStyle = hover ? "#111" : active ? "#ffb347" : "#eef0f4";
-      ctx.fillText(val(b.label), 104, h / 2 + 2);
+      ctx.fillText(val(b.icon) ?? "", w / 2, cy + 6);
+      ctx.font = "600 46px system-ui, sans-serif"; ctx.textBaseline = "alphabetic";
+      ctx.fillStyle = active ? "#ffb347" : "#eef0f4";
+      ctx.fillText(val(b.label), w / 2, h - 10);
     };
-    const [cw, ch, pw, ph] = isMic ? [256, 300, 0.085, 0.1] : [420, 124, PW, PH];
-    const tex = [canvasTexture(cw, ch, draw(false)), canvasTexture(cw, ch, draw(true))];
-    const mesh = new THREE.Mesh(new THREE.PlaneGeometry(pw, ph), new THREE.MeshBasicMaterial({ map: tex[0], transparent: true }));
+    const d = isMic ? MIC_D : BD;
+    const tex = [canvasTexture(256, 320, draw(false)), canvasTexture(256, 320, draw(true))];
+    const mesh = new THREE.Mesh(new THREE.PlaneGeometry(d, d * 1.25), new THREE.MeshBasicMaterial({ map: tex[0], transparent: true }));
     mesh.userData = {
-      onClick: b.onClick, tex, more: !!b.more, mic: isMic,
+      onClick: b.onClick, tex, more: !!b.more, mic: isMic, d,
       refresh() {   // redraw when label / icon / active / mute state changed
         const now = `${val(b.icon)}|${val(b.label)}|${!!val(b.active)}|${b.muted?.() ?? ""}`;
         if (now === key) return;
@@ -154,21 +157,46 @@ export function createScene({ video, vfovDeg, distM, statusText, onHeadsetPose, 
       },
     };
     mesh.userData.refresh();
-    camera.add(mesh);
+    ui.add(mesh);
     return mesh;
   });
+  // Warning above the dock while something essential is missing (e.g. no caption server = no speaker following).
+  const warnCanvas = document.createElement("canvas");
+  warnCanvas.width = 1600; warnCanvas.height = 90;
+  const warnTex = new THREE.CanvasTexture(warnCanvas);
+  warnTex.colorSpace = THREE.SRGBColorSpace;
+  const warn = new THREE.Mesh(new THREE.PlaneGeometry(0.64, 0.036), new THREE.MeshBasicMaterial({ map: warnTex, transparent: true }));
+  warn.position.set(0, DOCK_Y + MIC_D * 0.625 + 0.035, DOCK_Z);
+  ui.add(warn);
+  let warnText = null;
+  function updateWarning() {
+    const t = warning() || "";
+    if (t === warnText) return;
+    warnText = t;
+    warn.visible = !!t;
+    const ctx = warnCanvas.getContext("2d"), w = warnCanvas.width, h = warnCanvas.height;
+    ctx.clearRect(0, 0, w, h);
+    if (!t) return;
+    ctx.font = "600 44px system-ui, sans-serif";
+    const tw = Math.min(w, ctx.measureText(t).width + 60);
+    ctx.fillStyle = "rgba(120,20,24,0.88)";
+    ctx.beginPath(); ctx.roundRect((w - tw) / 2, 0, tw, h, h / 2); ctx.fill();
+    ctx.fillStyle = "#fff"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+    ctx.fillText(t, w / 2, h / 2 + 2);
+    warnTex.needsUpdate = true;
+  }
   function layoutDock() {
     const main = buttons.filter((m) => !m.userData.more && !m.userData.mic);
-    const rows = [main, moreOpen ? buttons.filter((m) => m.userData.more) : []];
+    const mic = buttons.find((m) => m.userData.mic);
+    const more = moreOpen ? buttons.filter((m) => m.userData.more) : [];
     for (const m of buttons) m.visible = false;
-    rows.forEach((row, r) => row.forEach((m, i) => {
-      m.visible = true;
-      m.position.set((i - (row.length - 1) / 2) * (PW + GAP), -0.33 - r * (PH + GAP), -1.1);
-    }));
-    for (const m of buttons.filter((b) => b.userData.mic)) {   // round mic button left of the first row
-      m.visible = true;
-      m.position.set(-((main.length + 1) / 2) * (PW + GAP) - 0.03, -0.33 - 0.025, -1.1);
-    }
+    // first row: mic in the middle, the other buttons split left / right of it
+    const left = main.slice(0, Math.floor(main.length / 2)), right = main.slice(left.length);
+    const gap = mic ? (MIC_D + BD) / 2 + 0.02 : STEP / 2;
+    left.forEach((m, i) => { m.visible = true; m.position.set(-gap - (left.length - 1 - i) * STEP, DOCK_Y, DOCK_Z); });
+    right.forEach((m, i) => { m.visible = true; m.position.set(gap + i * STEP, DOCK_Y, DOCK_Z); });
+    if (mic) { mic.visible = true; mic.position.set(0, DOCK_Y, DOCK_Z); }
+    more.forEach((m, i) => { m.visible = true; m.position.set((i - (more.length - 1) / 2) * STEP, DOCK_Y - ROW - 0.01, DOCK_Z); });
   }
   const visibleButtons = () => buttons.filter((m) => m.visible);
 
@@ -189,7 +217,7 @@ export function createScene({ video, vfovDeg, distM, statusText, onHeadsetPose, 
     m4.fromArray(rayPose.transform.matrix);
     raycaster.ray.origin.setFromMatrixPosition(m4);
     raycaster.ray.direction.set(0, 0, -1).transformDirection(m4);
-    camera.updateMatrixWorld(true);
+    scene.updateMatrixWorld(true);
     return raycaster.intersectObjects(visibleButtons(), false)[0] ?? null;
   }
 
@@ -264,7 +292,7 @@ export function createScene({ video, vfovDeg, distM, statusText, onHeadsetPose, 
   function desktopHit(e) {
     const r = renderer.domElement.getBoundingClientRect();
     mouse.set(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
-    camera.updateMatrixWorld(true);
+    scene.updateMatrixWorld(true);
     raycaster.setFromCamera(mouse, camera);
     return raycaster.intersectObjects(visibleButtons(), false)[0]?.object ?? null;
   }
@@ -333,15 +361,35 @@ export function createScene({ video, vfovDeg, distM, statusText, onHeadsetPose, 
 
   const target = new THREE.Quaternion();
   let haveTarget = false;
-  // windowMode "head": the video window stays centred in front of your eyes and follows head turns (smoothed,
-  // no roll). "robot" (?window=robot): it sits where the robot looks (latency-hiding reprojection).
-  const headQ = new THREE.Quaternion(), followQ = new THREE.Quaternion(), followE = new THREE.Euler(0, 0, 0, "YXZ");
+  // windowMode "head": the video window (and the dock) stand still in the room, so looking around inside the
+  // picture moves nothing. Only after you look clearly elsewhere (> FOLLOW_DEG for FOLLOW_S) they glide back in
+  // front of you, yaw only: content that chases every head movement made the headset uncomfortable.
+  // "robot" (?window=robot): the window sits where the robot looks (latency-hiding reprojection).
+  const FOLLOW_DEG = 30, FOLLOW_S = 0.5, GLIDE_S = 0.25;
+  const headQ = new THREE.Quaternion(), headE = new THREE.Euler(0, 0, 0, "YXZ"), lazyQ = new THREE.Quaternion(), yAxis = new THREE.Vector3(0, 1, 0);
+  let lazyYaw = null, awaySince = null, gliding = false, lastNow = 0;
+  const wrap = (a) => Math.atan2(Math.sin(a), Math.cos(a));
+  function followHead(now) {
+    const dt = Math.min(0.1, Math.max(0, (now - lastNow) / 1000));
+    lastNow = now;
+    const yaw = headE.setFromQuaternion(headQ, "YXZ").y;
+    if (lazyYaw == null) lazyYaw = yaw;
+    const diff = wrap(yaw - lazyYaw);
+    if (Math.abs(diff) > FOLLOW_DEG * Math.PI / 180) awaySince ??= now; else awaySince = null;
+    if (awaySince != null && now - awaySince > FOLLOW_S * 1000) gliding = true;
+    if (gliding) {
+      lazyYaw = wrap(lazyYaw + diff * (1 - Math.exp(-dt / GLIDE_S)));
+      if (Math.abs(diff) < 2 * Math.PI / 180) { gliding = false; awaySince = null; }
+    }
+    lazyQ.setFromAxisAngle(yAxis, lazyYaw);
+  }
   renderer.setAnimationLoop((now, frame) => {
     if (frame) {
       const pose = frame.getViewerPose(renderer.xr.getReferenceSpace());
       if (pose) {
         const o = pose.transform.orientation, p = pose.transform.position;
         headQ.set(o.x, o.y, o.z, o.w); headPos.set(p.x, p.y, p.z);
+        ui.position.copy(headPos);
         onHeadsetPose(o, now);
       }
       if (dragging && dragging.source !== "mouse") {
@@ -369,11 +417,12 @@ export function createScene({ video, vfovDeg, distM, statusText, onHeadsetPose, 
     if (screenMat.map !== map) { screenMat.map = map; screenMat.needsUpdate = true; }
     for (const b of buttons) b.userData.refresh();
     layoutDock();
+    updateWarning();
+    followHead(now);
+    ui.quaternion.copy(lazyQ);
+    if (windowMode === "head") robotView.quaternion.copy(lazyQ);
+    else if (haveTarget) robotView.quaternion.slerp(target, 0.5);   // pose stream ~30 Hz -> smooth at display rate
     if (frame) updatePointers(frame);
-    if (windowMode === "head") {
-      followE.setFromQuaternion(headQ, "YXZ"); followE.z = 0;
-      robotView.quaternion.slerp(followQ.setFromEuler(followE), 0.15);   // calm, but always back in the centre
-    } else if (haveTarget) robotView.quaternion.slerp(target, 0.5);   // pose stream ~30 Hz -> smooth at display rate
     onFrame?.(now);
     renderer.render(scene, camera);
   });
@@ -419,6 +468,9 @@ export function createScene({ video, vfovDeg, distM, statusText, onHeadsetPose, 
       addEventListener("keydown", onKey);
     },
 
+    /** Bring the video window and the dock back in front of you (after a recenter). */
+    recenterView() { gliding = true; },
+
     /** Robot head orientation in the XR world, as {x, y, z, w}. */
     setRobotHead(q) { target.set(q.x, q.y, q.z, q.w); haveTarget = true; },
 
@@ -454,6 +506,6 @@ function drawMicButton(ctx, w, h, muted, hover, label) {
     ctx.strokeStyle = "#fff"; ctx.lineWidth = 12;
     ctx.beginPath(); ctx.moveTo(cx - 62, cy - 70); ctx.lineTo(cx + 62, cy + 62); ctx.stroke();
   }
-  ctx.fillStyle = "#eee"; ctx.font = "bold 30px sans-serif"; ctx.textAlign = "center"; ctx.textBaseline = "alphabetic";
+  ctx.fillStyle = "#eee"; ctx.font = "600 40px system-ui, sans-serif"; ctx.textAlign = "center"; ctx.textBaseline = "alphabetic";
   ctx.fillText(label, cx, h - 4);
 }
