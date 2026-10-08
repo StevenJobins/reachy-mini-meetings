@@ -10,6 +10,10 @@ import { createVideoSource } from "./videosource.js";
 export function createScene({ video, vfovDeg, distM, statusText, onHeadsetPose, onSelect, onEnd, onFrame, vrButtons = [], warning = () => "", windowMode = "world", log = console.log }) {
   const renderer = new THREE.WebGLRenderer({ antialias: true });
   renderer.xr.enabled = true;
+  // The Galaxy XR's native eye buffers are huge: at scale 1 VR ran at 24-35 fps although JS needed ~3 ms per
+  // frame (GPU-bound, headset log 2026-10-08). 0.75 renders ~56 % of the pixels; the 1080p video stays sharp.
+  renderer.xr.setFramebufferScaleFactor(0.75);
+  renderer.xr.setFoveation(1);
   renderer.domElement.addEventListener("webglcontextlost", () => log("ERROR webgl context lost (GPU crash / out of memory)"));
   renderer.xr.setReferenceSpaceType("local");
   const scene = new THREE.Scene();
