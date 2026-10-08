@@ -164,6 +164,7 @@ class CaptionServer:
         self.session = uuid.uuid4().hex[:8]   # caption ids restart with every backend start
         self.on_message = None   # JSON from a client (e.g. {"type": "voice", "gender": "female"})
         self.on_depth = None     # (jpeg bytes, w, h) -> [metres]: room-scan depth (depth.py), blocking
+        self.gpu_worker = None   # the pipeline's Whisper Worker: depth runs on the same thread (one GPU user)
         self.recent: deque[str] = deque(maxlen=20)  # last finals, replayed to new clients
         self.summary: str | None = None
 
@@ -225,7 +226,12 @@ class CaptionServer:
             if not self.on_depth:
                 raise RuntimeError("depth disabled")
             jpeg = base64.b64decode(msg["jpeg"])
-            reply["depth"] = await asyncio.to_thread(self.on_depth, jpeg, int(msg["w"]), int(msg["h"]))
+            # through the Whisper worker (lowest priority): Whisper (MLX) and depth (torch MPS) running on the GPU at
+            # the same time made macOS abort MLX's command buffers ("[METAL] ... Impacting Interactivity"), which
+            # killed the whole backend, several times during room scans (2026-10-08)
+            job = lambda: self.on_depth(jpeg, int(msg["w"]), int(msg["h"]))
+            reply["depth"] = await asyncio.wrap_future(self.gpu_worker.submit(job, 2) if self.gpu_worker
+                                                       else asyncio.get_running_loop().run_in_executor(None, job))
         except Exception as e:
             reply["error"] = str(e)
         try:
@@ -320,6 +326,7 @@ class Pipeline:
         self.server.on_message = self._client_message
         self.depth = DepthEstimator()
         self.server.on_depth = self.depth.estimate
+        self.server.gpu_worker = self.worker
         self.summarizer = None
         if args.summary == "gemini":
             from .summary import Summarizer
