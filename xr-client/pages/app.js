@@ -174,8 +174,9 @@ function send(t, nowS) {
   // Laughing: its antenna wiggle wins over "I want to talk"; the chuckle stays inside the meeting limits.
   const L = mirror.lim;
   const pitch = Math.max(-L.pitchUp, Math.min(L.pitchDown, t.pitch + l.pitch));
+  const roll = Math.max(-L.roll, Math.min(L.roll, t.roll + l.roll));
   const antennas = laugh.active(nowS) ? l.antennas : g.antennas;
-  if (robot.setHead({ ...t, pitch, bodyYaw, antennas })) sentCount++;
+  if (robot.setHead({ ...t, roll, pitch, bodyYaw, antennas })) sentCount++;
   status.cmd = [t.roll, t.pitch, t.yaw];
   status.body = bodyYaw;
 }
@@ -266,14 +267,15 @@ function flash(text) {
 }
 
 /**
- * The headset user laughs -> Reachy laughs (antennas wiggle, head chuckles). Today: the Laugh button (page, VR,
+ * The headset user laughs -> Reachy laughs (burst, "ha-ha" rhythm, settle; see Laugh in gestures.js). Today: the Laugh button (page, VR,
  * key L). The native app will call this from the Galaxy XR face tracking (smile / laugh blendshapes); WebXR in
- * Chrome does not expose face tracking. Works while muted too: it does not depend on the microphone.
+ * Chrome does not expose face tracking; it can pass intensity 0.6-1.4 (e.g. from how wide the smile is).
+ * Works while muted too: it does not depend on the microphone.
  */
-function userLaughed(source = "button") {
+function userLaughed(source = "button", intensity) {
   if (!awake) return;
-  laugh.trigger(performance.now() / 1000);
-  log("laugh", source);
+  laugh.trigger(performance.now() / 1000, intensity);
+  log("laugh", source, `intensity ${laugh.k.toFixed(1)}`);
 }
 
 function wantToTalk() {
