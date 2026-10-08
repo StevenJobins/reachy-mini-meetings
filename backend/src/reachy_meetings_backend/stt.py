@@ -1,5 +1,9 @@
 """Speech-to-text. Not thread-safe: call from one worker thread only.
 
+Each Transcriber keeps its own model in memory. mlx-whisper itself caches only ONE model (ModelHolder), so
+alternating the partial model (small) and the final model (large-v3-turbo) reloaded the big one from disk
+before every final: +0.4-0.6 s per final (measured 2026-10-08, M-series Mac).
+
 Engines:
   mlx             Apple Silicon GPU (mlx-whisper). M1 Pro, 4.5 s German utterance:
                   large-v3-turbo ~1.5 s, small ~0.35 s (+ ~1.3 s if the language is auto-detected)
@@ -15,6 +19,8 @@ import time
 import numpy as np
 
 log = logging.getLogger(__name__)
+
+AUTO = "auto"   # language argument: detect it, even if the Transcriber has a fixed language (--lang)
 
 # Whisper invents text on noise and silence. Drop segments it is unsure about, and the classic phrases
 # it learned from subtitled TV (German: "Untertitelung des ZDF", "Vielen Dank."; English: "Thank you.").
@@ -73,6 +79,12 @@ class Transcriber:
                 repo = f"mlx-community/whisper-{model}-mlx"
             # local path, otherwise mlx-whisper asks the HF hub on every call
             self.repo = snapshot_download(repo)
+            import mlx.core as mx
+            from mlx_whisper.load_models import load_model
+            from mlx_whisper.transcribe import ModelHolder
+
+            self._holder = ModelHolder
+            self._model = load_model(self.repo, dtype=mx.float16)
             self(np.zeros(16000, np.float32))  # download + load now, not on the first utterance
         else:
             from faster_whisper import WhisperModel
@@ -83,9 +95,11 @@ class Transcriber:
         log.info("Whisper %r (%s) ready in %.1fs", model, self.engine, time.time() - t0)
 
     def __call__(self, audio: np.ndarray, language: str | None = None) -> tuple[str, str]:
-        """Returns (text, language). `language` overrides the fixed one (e.g. detected by the partials)."""
-        language = language or self.language
+        """Returns (text, language). `language` overrides the fixed one (e.g. detected by the partials);
+        AUTO detects it in any case."""
+        language = None if language == AUTO else language or self.language
         if self.engine == "mlx":
+            self._holder.model, self._holder.model_path = self._model, self.repo   # no reload (see top)
             r = self._mlx.transcribe(audio, path_or_hf_repo=self.repo, language=language,
                                      condition_on_previous_text=False, verbose=None)
             parts = [s["text"] for s in r["segments"]
@@ -98,3 +112,15 @@ class Transcriber:
                      if plausible(s.text, s.no_speech_prob, s.avg_logprob, s.compression_ratio)]
             lang = info.language
         return " ".join(p.strip() for p in parts).strip(), lang
+
+    def detect_language(self, audio: np.ndarray) -> str:
+        """Spoken language only (one encoder pass, no decoding): ~0.1 s with `small` on the Mac GPU."""
+        if self.engine == "mlx":
+            import mlx.core as mx
+            from mlx_whisper.audio import N_FRAMES, log_mel_spectrogram, pad_or_trim
+
+            mel = pad_or_trim(log_mel_spectrogram(audio, n_mels=self._model.dims.n_mels), N_FRAMES, axis=-2)
+            _, probs = self._model.detect_language(mel.astype(mx.float16))
+            return max(probs, key=probs.get)
+        lang, _, _ = self._fw.detect_language(audio)
+        return lang
