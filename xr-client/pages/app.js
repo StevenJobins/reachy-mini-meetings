@@ -337,6 +337,8 @@ const robot = createRobot({
   },
   onMeasuredHead: (roll, pitch, yaw) => {
     status.meas = [roll, pitch, yaw];
+    pitchHist.push([performance.now() / 1000, pitch]);
+    if (pitchHist.length > 100) pitchHist.shift();
     speaker.pushHeadYaw(performance.now() / 1000, yaw);
     // The VR room turns with the base (speaker yaw + framing pitch): the window shows where the robot looks
     // RELATIVE to the speaker, so it stays centred in front of you while Reachy frames a face.
@@ -578,8 +580,17 @@ function headYawAt(t, latencyS = 0.12) {
   return h.length ? h[0][1] : status.meas[2];
 }
 
+/** Same for the pitch: correcting an old frame's face position against the CURRENT pitch made the head
+ *  overshoot and nod up and down (headset log 2026-10-08: target -26° -> -4° -> -26° -> +17° within 12 s). */
+const pitchHist = [];   // [t, measured pitch]
+function headPitchAt(t, latencyS = 0.12) {
+  for (let i = pitchHist.length - 1; i >= 0; i--) if (pitchHist[i][0] <= t - latencyS) return pitchHist[i][1];
+  return pitchHist.length ? pitchHist[0][1] : status.meas[1];
+}
+
 const PITCH_UP = 35, PITCH_DOWN = 20;   // same as HeadMirror's limits in pose.js
-let focusLast = null;                   // {pid, top, bottom, t, yaw} of the focus face when last seen
+const PITCH_DEAD = 6, PITCH_GAIN = 0.5, EDGE_SEARCH_MAX = 10;   // deg; half the error per face update
+let focusLast = null;                   // {pid, top, bottom, t, yaw, pitch} of the focus face when last seen
 let focusVel = 0;                       // its speed through the room, deg/s (smoothed)
 function frameFocus() {
   if (!awake || focusPid == null) return;
@@ -588,9 +599,9 @@ function frameFocus() {
     // A face cut off at the image edge is no longer detected: if the focus person left at the top (or
     // bottom), keep tilting that way for a moment until their face is back in the picture.
     const t = faceSpeakers.lastT ?? 0;
-    if (focusLast && t - focusLast.t < 2.5) {
-      if (focusLast.top < 0.12) targetPitch = Math.max(-PITCH_UP, targetPitch - 2);
-      else if (focusLast.bottom > 0.9) targetPitch = Math.min(PITCH_DOWN, targetPitch + 2);
+    if (focusLast && t - focusLast.t < 2.5) {   // at most EDGE_SEARCH_MAX beyond where the face was last seen
+      if (focusLast.top < 0.12) targetPitch = Math.max(-PITCH_UP, focusLast.pitch - EDGE_SEARCH_MAX, targetPitch - 1);
+      else if (focusLast.bottom > 0.9) targetPitch = Math.min(PITCH_DOWN, focusLast.pitch + EDGE_SEARCH_MAX, targetPitch + 1);
       noteTarget("edge search");
     }
     return;
@@ -604,7 +615,7 @@ function frameFocus() {
   if (focusLast?.pid === focusPid && t > focusLast.t && t - focusLast.t < 0.5) {
     focusVel += 0.25 * ((yawNow - focusLast.yaw) / (t - focusLast.t) - focusVel);
   } else focusVel = 0;
-  focusLast = { pid: focusPid, top: tr.top, bottom: tr.top + tr.h, t, yaw: yawNow };
+  focusLast = { pid: focusPid, top: tr.top, bottom: tr.top + tr.h, t, yaw: yawNow, pitch: targetPitch };
   const moving = Math.abs(focusVel) > 8;
   // Dead zone around the framing point: a face that is already well placed does not move the head at all.
   if (moving || Math.abs(offX) > 4) {
@@ -613,9 +624,9 @@ function frameFocus() {
     if (Math.abs(yaw - speaker.target) > 2) speaker.target = yaw;
   }
   const up = Math.atan((0.5 - tr.cy) * 2 * tanV) * 180 / Math.PI;   // face above the image centre (deg)
-  if (Math.abs(up - FRAME_UP) > 3) {
-    const pitch = status.meas[1] - (up - FRAME_UP);                 // pitch + = look down
-    targetPitch = Math.max(-PITCH_UP, Math.min(PITCH_DOWN, pitch));
+  if (Math.abs(up - FRAME_UP) > PITCH_DEAD) {
+    const pitch = headPitchAt(t) - (up - FRAME_UP);                 // pitch + = look down
+    targetPitch += PITCH_GAIN * (Math.max(-PITCH_UP, Math.min(PITCH_DOWN, pitch)) - targetPitch);
   }
   noteTarget(`face p${tr.pid} off ${offX.toFixed(0)}°`);
 }
