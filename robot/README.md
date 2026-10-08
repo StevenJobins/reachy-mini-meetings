@@ -40,6 +40,17 @@ python scripts/mock_headset.py
 
 Tests, without robot or daemon: `pytest -q`
 
+## Camera calibration (`scripts/calibrate_camera.py`)
+
+Calibrates exactly the stream the headset sees, for the VR video sphere and the face directions:
+
+1. Wake Reachy up on the page in a desktop browser; open *Settings → Checkerboard* on a tablet or second screen.
+2. Hold the board in front of Reachy at many angles and distances, also in the corners and at the edges of the picture, and press *Capture calibration frame* (or *Auto-capture every 2 s*). 30-40 frames with the whole board visible.
+3. `pip install opencv-python numpy`, then `python scripts/calibrate_camera.py ~/Downloads/reachy-calib-*.png`
+4. It writes `xr-client/pages/camera.json` and warns about too few frames or uncovered regions. Commit it; the page uses it automatically.
+
+Why 30+ frames: simulated with this lens, the corner fit is ~0.2 px either way, but the error over the whole picture was 6-21 px with 16 frames and ~2.6 px with 30-40 well spread frames.
+
 ## Layout
 
 ```

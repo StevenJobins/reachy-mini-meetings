@@ -6,8 +6,9 @@
 
 import * as THREE from "three";
 import { createVideoSource } from "./videosource.js";
+import { CameraModel } from "./camera.js";
 
-export function createScene({ video, vfovDeg, distM, statusText, onHeadsetPose, onSelect, onEnd, onFrame, vrButtons = [], warning = () => "", windowMode = "world", log = console.log }) {
+export function createScene({ video, vfovDeg, cameraModel = null, distM, statusText, onHeadsetPose, onSelect, onEnd, onFrame, vrButtons = [], warning = () => "", windowMode = "world", log = console.log }) {
   const renderer = new THREE.WebGLRenderer({ antialias: true });
   renderer.xr.enabled = true;
   // The Galaxy XR's native eye buffers are huge: at scale 1 VR ran at 24-35 fps although JS needed ~3 ms per
@@ -67,7 +68,7 @@ export function createScene({ video, vfovDeg, distM, statusText, onHeadsetPose, 
   videoTex.minFilter = THREE.LinearFilter;
   videoTex.generateMipmaps = false;
   videoTex.anisotropy = renderer.capabilities.getMaxAnisotropy();
-  const screenH = 2 * distM * Math.tan(vfovDeg / 2 * Math.PI / 180);
+  let cam = cameraModel ?? CameraModel.pinhole(vfovDeg);
   // Shown instead of the video while no camera frame has arrived, so "black" is never ambiguous.
   const noVideoTex = canvasTexture(1024, 576, (ctx, w, h) => {
     ctx.fillStyle = "#1a1a1f"; ctx.fillRect(0, 0, w, h);
@@ -76,15 +77,13 @@ export function createScene({ video, vfovDeg, distM, statusText, onHeadsetPose, 
     ctx.fillStyle = "#bbb"; ctx.font = "32px sans-serif";
     ctx.fillText("Robot Mac: camera permission for the app running the daemon?", w / 2, h / 2 + 40);
   });
+  // The video is shown on a piece of sphere around the eye (radius distM): every grid point of the image sits in
+  // exactly the direction its pixel sees, computed from the camera model (camera.js). That is the projection
+  // and the lens undistortion in one step, and it is the grid the depth extension (WP2) would deform.
   const screenMat = new THREE.MeshBasicMaterial({ map: noVideoTex });
-  const screen = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), screenMat);
-  screen.scale.set(screenH * 16 / 9, screenH, 1);
-  screen.position.set(0, 0, -distM);
-  video.addEventListener("resize", () => {
-    if (video.videoHeight) screen.scale.x = screenH * video.videoWidth / video.videoHeight;
-  });
+  const screen = new THREE.Mesh(screenGeometry(cam, distM), screenMat);
   // Dark rounded bezel with a soft glow behind the video: the window stays findable even without video.
-  const bezel = new THREE.Mesh(new THREE.PlaneGeometry(1.04, 1.07), new THREE.MeshBasicMaterial({
+  const bezel = new THREE.Mesh(screenGeometry(cam, distM + 0.02, 1.04, 1.07), new THREE.MeshBasicMaterial({
     transparent: true, depthWrite: false,
     map: canvasTexture(1040, 620, (ctx, w, h) => {
       ctx.shadowColor = "rgba(255,149,0,0.45)"; ctx.shadowBlur = 40;
@@ -92,7 +91,6 @@ export function createScene({ video, vfovDeg, distM, statusText, onHeadsetPose, 
       ctx.shadowBlur = 0; ctx.strokeStyle = "rgba(255,255,255,0.18)"; ctx.lineWidth = 3; ctx.stroke();
     }),
   }));
-  bezel.position.z = -0.01;
   screen.add(bezel);
   const robotView = new THREE.Group();
   robotView.add(screen);
@@ -501,6 +499,14 @@ export function createScene({ video, vfovDeg, distM, statusText, onHeadsetPose, 
     /** Debug panel (status lines) at the top of the view. */
     toggleDebug() { hud.visible = !hud.visible; },
 
+    /** Use another camera model (calibration loaded or switched): rebuilds the video sphere. */
+    setCamera(c) {
+      cam = c;
+      screen.geometry.dispose(); screen.geometry = screenGeometry(cam, distM);
+      bezel.geometry.dispose(); bezel.geometry = screenGeometry(cam, distM + 0.02, 1.04, 1.07);
+      log(`camera model: ${cam.name}, ${cam.hfovDeg.toFixed(1)}° x ${cam.vfovDeg.toFixed(1)}°`);
+    },
+
     /** "world" (world-locked, latency-hiding) or "comfort" (calm, lazily follows the head). */
     get windowMode() { return windowMode; },
     setWindowMode(m) { windowMode = m === "comfort" ? "comfort" : "world"; lazyYaw = null; log("view:", windowMode); },
@@ -567,4 +573,44 @@ function drawMicButton(ctx, w, h, muted, hover, label) {
   }
   ctx.fillStyle = "#eee"; ctx.font = "600 40px system-ui, sans-serif"; ctx.textAlign = "center"; ctx.textBaseline = "alphabetic";
   ctx.fillText(label, cx, h - 4);
+}
+
+/**
+ * Piece of sphere (radius R, centred on the eye) carrying the video: an N x M grid over the image, each vertex in
+ * the direction its pixel sees (camera model, lens distortion included), uv = the pixel. growX/growY > 1 widens it
+ * around the optical axis (the bezel behind the video). Cells the lens model cannot reach are left out.
+ * Three.js frame: x right, y up, z back; camera frame: x right, y down, z forward.
+ */
+function screenGeometry(cam, R, growX = 1, growY = 1, N = 48, M = 27) {
+  const pos = [], uv = [], idx = [], ok = [];
+  let guess = null;
+  for (let j = 0; j <= M; j++) {
+    for (let i = 0; i <= N; i++) {
+      const u = i / N, v = j / M;
+      let d = cam.unproject(u, v, guess);
+      ok.push(!!d);
+      if (!d) d = [0, 0, 1];
+      else guess = [d[0] / d[2], d[1] / d[2]];
+      if (growX !== 1 || growY !== 1) {
+        const yaw = Math.atan2(d[0], d[2]) * growX, pitch = Math.atan2(d[1], Math.hypot(d[0], d[2])) * growY;
+        d = [Math.sin(yaw) * Math.cos(pitch), Math.sin(pitch), Math.cos(yaw) * Math.cos(pitch)];
+      }
+      pos.push(d[0] * R, -d[1] * R, -d[2] * R);
+      uv.push(u, 1 - v);
+    }
+    guess = null;
+  }
+  const at = (i, j) => j * (N + 1) + i;
+  for (let j = 0; j < M; j++) {
+    for (let i = 0; i < N; i++) {
+      const a = at(i, j), b = at(i + 1, j), c = at(i, j + 1), e = at(i + 1, j + 1);
+      if (ok[a] && ok[b] && ok[c] && ok[e]) idx.push(a, c, b, b, c, e);
+    }
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
+  g.setAttribute("uv", new THREE.Float32BufferAttribute(uv, 2));
+  g.setIndex(idx);
+  g.computeBoundingSphere();
+  return g;
 }

@@ -13,6 +13,7 @@
 // lets in an allowed Hugging Face account: the page sends its HF sign-in right after connecting.
 
 import * as THREE from "three";
+import { CameraModel } from "./camera.js";
 
 const URL_KEY = "reachy-xr-captions-url";
 const MODE_KEY = "reachy-xr-caption-mode";
@@ -97,10 +98,16 @@ function draw(ctx, b, mode) {
   for (const l of subLines) { ctx.fillText(l, x, y); y += 40; }
 }
 
-export function createCaptions({ three, distM, vfovDeg, speakers, listEl, overlayEl, onSummary, onFinal, onSpeech, onVad, onMe, onAudio, getToken, log, onStatus }) {
+export function createCaptions({ three, distM, vfovDeg, cameraModel = null, speakers, listEl, overlayEl, onSummary, onFinal, onSpeech, onVad, onMe, onAudio, getToken, log, onStatus }) {
   const bubbles = new Map();                // id -> { msg, mesh, ctx, tex, until, trackId, pid, color, label, last }
-  const screenH = 2 * distM * Math.tan(vfovDeg / 2 * Math.PI / 180);
-  const screenW = screenH * 16 / 9;
+  // Image coords (u, v 0..1) -> point on the video sphere (radius R, robotView frame), via the camera model,
+  // so bubbles and face frames sit on the person also near the distorted edges of the wide-angle picture.
+  let cam = cameraModel ?? CameraModel.pinhole(vfovDeg);
+  const clamp01 = (x) => Math.max(0, Math.min(1, x));
+  function onScreen(u, v, R) {
+    const d = cam.unproject(u, v) ?? cam.unproject(clamp01(u), clamp01(v)) ?? [0, 0, 1];
+    return new THREE.Vector3(d[0] * R, -d[1] * R, -d[2] * R);
+  }
   const planeH = PLANE_W * H / W;
   const finals = [];                        // for the page list
   let mode = MODES.includes(load(MODE_KEY)) ? load(MODE_KEY) : "both";
@@ -130,7 +137,6 @@ export function createCaptions({ three, distM, vfovDeg, speakers, listEl, overla
 
   function redraw(b) { draw(b.ctx, b, mode); b.tex.needsUpdate = true; }
 
-  const tanHalf = Math.tan((2 * Math.atan(Math.tan(vfovDeg / 2 * Math.PI / 180) * 16 / 9)) / 2);
   let lastAnchor = { cx: 0.5, top: 0.02 };   // where the last speaker was, if nobody is visible
 
   function setSpeaker(b, tr) {
@@ -161,18 +167,18 @@ export function createCaptions({ three, distM, vfovDeg, speakers, listEl, overla
     if (b.last) return b.last;
     // nobody visible yet: towards the voice (mic direction), at the top of the window
     const doa = b.msg.doa_deg;
-    const cx = doa == null ? lastAnchor.cx : 0.5 - Math.tan(doa * Math.PI / 180) / (2 * tanHalf);
+    const cx = doa == null ? lastAnchor.cx : cam.uForYaw(doa);
     return { cx: Math.max(0.1, Math.min(0.9, cx)), top: 0.02 };
   }
 
   /** Position in the video window just above the head (heads cut off at the top: above the window edge). */
   function place(b, jump) {
     const a = anchor(b);
-    const x = Math.max(-0.45, Math.min(0.45, a.cx - 0.5)) * screenW;
-    const y = (0.5 - Math.max(-0.05, a.top)) * screenH + planeH / 2 + 0.03;
-    const target = new THREE.Vector3(x, y, -distM + 0.05 + (b.msg.id % 5) * 0.005);
+    const target = onScreen(Math.max(0.05, Math.min(0.95, a.cx)), Math.max(-0.05, a.top), distM - 0.05 - (b.msg.id % 5) * 0.005);
+    target.y += planeH / 2 + 0.03;
     if (jump || b.mesh.parent !== three.robotView) { three.robotView.add(b.mesh); b.mesh.position.copy(target); }
     else b.mesh.position.lerp(target, 0.25);
+    b.mesh.lookAt(0, 0, 0);   // face the eye (the sphere is centred on it)
   }
 
   // Detected people: thin frame around the (estimated) head in the speaker colour, toggle in Settings.
@@ -191,8 +197,11 @@ export function createCaptions({ three, distM, vfovDeg, speakers, listEl, overla
       const tr = tracks[i];
       box.visible = !!tr;
       if (!tr) return;
-      box.position.set((tr.cx - 0.5) * screenW, (0.5 - tr.cy) * screenH, -distM + 0.04);
-      box.scale.set(tr.w * screenW, tr.h * screenH, 1);
+      const R = distM - 0.04;
+      box.position.copy(onScreen(tr.cx, tr.cy, R));
+      box.scale.set(onScreen(tr.cx - tr.w / 2, tr.cy, R).distanceTo(onScreen(tr.cx + tr.w / 2, tr.cy, R)),
+        onScreen(tr.cx, tr.cy - tr.h / 2, R).distanceTo(onScreen(tr.cx, tr.cy + tr.h / 2, R)), 1);
+      box.lookAt(0, 0, 0);
       box.material.color.set(COLORS[((tr.pid ?? tr.id) - 1) % COLORS.length]);
     });
   }
@@ -339,6 +348,8 @@ export function createCaptions({ three, distM, vfovDeg, speakers, listEl, overla
     },
     cycleMode() { this.setMode(MODES[(MODES.indexOf(mode) + 1) % MODES.length]); return mode; },
     get showFaces() { return showFaces; },
+    /** Another camera model (calibration): bubbles and face frames follow the new projection. */
+    setCamera(c) { cam = c; },
     set showFaces(on) { showFaces = on; save(FACES_KEY, on ? "on" : "off"); },
   };
 }

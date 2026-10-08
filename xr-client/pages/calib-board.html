@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Calibration board</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #fff; color: #444; font: 14px system-ui, sans-serif; }
+  canvas { display: block; width: 100vw; height: 100vh; }
+  p { position: fixed; left: 0; right: 0; bottom: 4px; margin: 0; text-align: center; font-size: 12px; }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<p>10 × 7 squares = 9 × 6 inner corners · keep the whole board in view · tap for full screen</p>
+<script>
+// Checkerboard for robot/scripts/calibrate_camera.py (default --cols 9 --rows 6 inner corners), with a white
+// margin of one square so the detector sees the outer corners. Show it on a tablet / laptop, brightness up.
+const SQ_X = 10, SQ_Y = 7;
+const c = document.getElementById("c"), ctx = c.getContext("2d");
+function draw() {
+  const dpr = devicePixelRatio || 1;
+  c.width = innerWidth * dpr; c.height = innerHeight * dpr;
+  const s = Math.floor(Math.min(c.width / (SQ_X + 2), c.height / (SQ_Y + 2)));
+  const x0 = Math.floor((c.width - SQ_X * s) / 2), y0 = Math.floor((c.height - SQ_Y * s) / 2);
+  ctx.fillStyle = "#fff"; ctx.fillRect(0, 0, c.width, c.height);
+  ctx.fillStyle = "#000";
+  for (let j = 0; j < SQ_Y; j++) for (let i = 0; i < SQ_X; i++) if ((i + j) % 2 === 0) ctx.fillRect(x0 + i * s, y0 + j * s, s, s);
+}
+addEventListener("resize", draw);
+c.onclick = () => document.documentElement.requestFullscreen?.().catch(() => {});
+draw();
+</script>
+</body>
+</html>

@@ -17,6 +17,7 @@ import { createNotes } from "./notes.js";
 import { createRoomAudio } from "./roomaudio.js";
 import { createMic } from "./mic.js";
 import { explainVolume, volumeCommand } from "./voicecmd.js";
+import { CameraModel, factoryLite } from "./camera.js";
 
 // HF OAuth app (huggingface.co/settings/applications), redirect URL = this page's URL.
 const HF_CLIENT_ID = "37472ae1-2bae-4d97-be66-ef7446028c40";
@@ -30,6 +31,33 @@ const cfg = {
 };
 
 const $ = (id) => document.getElementById(id);
+
+// ---------------------------------------------------------------- camera model (lens, see camera.js)
+// Used for the video sphere in VR, bubbles / face frames, and face direction when following. "auto": our
+// checkerboard calibration (camera.json, robot/scripts/calibrate_camera.py) when it exists, else the old
+// 54° pinhole estimate. "factory": Pollen's calibration of the Lite camera (unverified scaling for the stream).
+const CAM_KEY = "reachy-xr-camera-model";
+const cameraModels = { estimate: CameraModel.pinhole(cfg.vfovDeg), factory: factoryLite(), calibrated: null };
+let camChoice = "auto";
+try { camChoice = localStorage.getItem(CAM_KEY) || "auto"; } catch {}
+const pickCamera = () => (camChoice === "factory" ? cameraModels.factory
+  : camChoice === "estimate" ? cameraModels.estimate : cameraModels.calibrated ?? cameraModels.estimate);
+let cam = pickCamera();
+function applyCamera() {
+  cam = pickCamera();
+  scene.setCamera(cam);
+  captions?.setCamera(cam);
+  faceSpeakers.camera = cam;
+}
+fetch("camera.json", { cache: "no-store" })
+  .then((r) => (r.ok ? r.json() : null))
+  .then((j) => {
+    if (!j?.fx) return;
+    cameraModels.calibrated = new CameraModel({ ...j, name: j.name ?? "calibrated" });
+    log(`camera.json: ${cameraModels.calibrated.name}, rms ${j.rms ?? "?"} px`);
+    applyCamera();
+  })
+  .catch(() => {});
 const video = $("video");
 
 // The log also goes to localStorage, so it survives a crashed tab: after a reload the Debug panel
@@ -78,7 +106,7 @@ function statusText() {
   const f = (v) => v.map((x) => x.toFixed(1).padStart(6)).join(" ");
   return [
     `robot ${status.robot}   motors ${status.motors}   ice ${status.ice}   video ${status.video} ${status.videoIn}   send ${status.send} Hz   mic ${status.mic} ${status.micKbps.toFixed(0)} kbps   volume ${status.volume}`,
-    `cmd  r/p/y ${f(status.cmd)}   body ${status.body.toFixed(1)}   speaker target ${speaker.target.toFixed(0)} base ${speaker.base.toFixed(0)}   view ${viewMode}${viewMode === "world" ? `/${status.follow ?? "-"}` : ""} delay ${(videoDelayS * 1000).toFixed(0)}ms turn ${(status.turn ?? 0).toFixed(0)}°/s`,
+    `cmd  r/p/y ${f(status.cmd)}   body ${status.body.toFixed(1)}   speaker target ${speaker.target.toFixed(0)} base ${speaker.base.toFixed(0)}   cam ${cam.name} ${cam.hfovDeg.toFixed(0)}x${cam.vfovDeg.toFixed(0)}°   view ${viewMode}${viewMode === "world" ? `/${status.follow ?? "-"}` : ""} delay ${(videoDelayS * 1000).toFixed(0)}ms turn ${(status.turn ?? 0).toFixed(0)}°/s`,
     `meas r/p/y ${f(status.meas)}   captions ${status.captions}   ${faces.stats()}   robot sound ${status.sound} ${roomAudio.stats()} ${status.audioIn}   doa ${status.doa}`,
   ].join("\n");
 }
@@ -444,6 +472,37 @@ function setViewMode(m) {
   scene.setWindowMode(viewMode);
   try { localStorage.setItem(VIEW_KEY, viewMode); } catch {}
   $("view-mode").value = viewMode;
+$("camera-model").value = camChoice;
+$("camera-model").onchange = (e) => {
+  camChoice = e.target.value;
+  try { localStorage.setItem(CAM_KEY, camChoice); } catch {}
+  if (camChoice === "calibrated" && !cameraModels.calibrated) log("no camera.json yet: using the estimate");
+  applyCamera();
+};
+
+// Calibration frames: full-resolution stills of exactly the stream the headset sees, downloaded as PNG for
+// robot/scripts/calibrate_camera.py. Show the checkerboard (calib-board.html) on a tablet or a second screen.
+let calibCount = 0, calibTimer = null;
+function captureCalibFrame() {
+  if (!video.videoWidth) { log("calibration: no video yet (wake Reachy up first)"); return; }
+  const c = document.createElement("canvas");
+  c.width = video.videoWidth; c.height = video.videoHeight;
+  c.getContext("2d").drawImage(video, 0, 0);
+  c.toBlob((blob) => {
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = `reachy-calib-${String(++calibCount).padStart(2, "0")}-${c.width}x${c.height}.png`;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+    $("calib-count").textContent = `${calibCount} frame${calibCount === 1 ? "" : "s"} (aim for 20+)`;
+  }, "image/png");
+}
+$("calib-shot").onclick = captureCalibFrame;
+$("calib-auto").onclick = () => {
+  if (calibTimer) { clearInterval(calibTimer); calibTimer = null; }
+  else calibTimer = setInterval(captureCalibFrame, 2000);
+  $("calib-auto").textContent = `Auto-capture every 2 s: ${calibTimer ? "on" : "off"}`;
+};
 }
 
 let debugOn = false;                 // VR debug panel (More -> Debug)
@@ -451,6 +510,7 @@ let videoMode = "";                  // label of the Video button, set after the
 const scene = createScene({
   video,
   vfovDeg: cfg.vfovDeg,
+  cameraModel: cam,
   distM: cfg.distM,
   statusText,
   onHeadsetPose: (q, now) => {
@@ -497,8 +557,7 @@ const scene = createScene({
 });
 
 // Speech bubbles over the speaker's head: faces in the camera image + mouth movement + mic direction.
-const hfovDeg = 2 * Math.atan(Math.tan(cfg.vfovDeg / 2 * Math.PI / 180) * 16 / 9) * 180 / Math.PI;
-const faceSpeakers = new FaceSpeakers({ hfovDeg });
+const faceSpeakers = new FaceSpeakers({ hfovDeg: cam.hfovDeg, camera: cam });
 // Someone is speaking (a caption arrived). If we know their face, the robot turns exactly there; the mic
 // direction alone is only used while speech is confirmed. In silence the target stays: Reachy keeps
 // looking at the last person who spoke.
@@ -519,7 +578,7 @@ function flushDoa(fromS) {
   for (const [t, a] of doaBuf) {
     if (t <= doaPushedUntil || t < fromS) continue;
     if (focusTalking) continue;
-    if (focus && Math.abs(90 - a * 180 / Math.PI) < hfovDeg / 2 + 10) continue;
+    if (focus && Math.abs(90 - a * 180 / Math.PI) < cam.hfovDeg / 2 + 10) continue;
     speaker.pushDoa(t, a, true);
   }
   doaPushedUntil = performance.now() / 1000;
@@ -570,8 +629,7 @@ function onSpeechCaption(msg, track) {
 // centred left/right and 1/3 from the top, like a camera operator. World direction of the face =
 // measured head pose + its angle in the image, so the user's own headset rotation stays on top.
 let focusPid = null, basePitch = 0, targetPitch = 0;
-const tanV = Math.tan(cfg.vfovDeg / 2 * Math.PI / 180);
-const FRAME_UP = Math.atan((0.5 - 1 / 3) * 2 * tanV) * 180 / Math.PI;   // head 1/3 from the top = this far above the axis
+const frameUp = () => cam.upDeg(0.5, 1 / 3);   // head 1/3 from the top = this far above the axis (deg)
 /** Robot head yaw when a camera frame was taken (t = capture time, s): frames lag the pose stream by ~0.1-0.2 s,
  *  and using the current yaw for an old frame overshoots while the robot turns. */
 function headYawAt(t, latencyS = 0.12) {
@@ -623,7 +681,8 @@ function frameFocus() {
     const yaw = Math.max(-150, Math.min(150, yawNow + lead));
     if (Math.abs(yaw - speaker.target) > 2) speaker.target = yaw;
   }
-  const up = Math.atan((0.5 - tr.cy) * 2 * tanV) * 180 / Math.PI;   // face above the image centre (deg)
+  const up = cam.upDeg(tr.cx, tr.cy);                             // face above the image centre (deg)
+  const FRAME_UP = frameUp();
   if (Math.abs(up - FRAME_UP) > PITCH_DEAD) {
     const pitch = headPitchAt(t) - (up - FRAME_UP);                 // pitch + = look down
     targetPitch += PITCH_GAIN * (Math.max(-PITCH_UP, Math.min(PITCH_DOWN, pitch)) - targetPitch);
@@ -642,6 +701,7 @@ captions = createCaptions({
   three: scene.three,
   distM: cfg.distM,
   vfovDeg: cfg.vfovDeg,
+  cameraModel: cam,
   speakers: faceSpeakers,
   listEl: $("captions"),
   overlayEl: $("live-caption"),
@@ -659,6 +719,37 @@ captions = createCaptions({
 $("captions-url").value = captionsUrl();
 $("captions-url").onchange = (e) => { setCaptionsUrl(e.target.value.trim()); captions.reconnect(); };
 $("view-mode").value = viewMode;
+$("camera-model").value = camChoice;
+$("camera-model").onchange = (e) => {
+  camChoice = e.target.value;
+  try { localStorage.setItem(CAM_KEY, camChoice); } catch {}
+  if (camChoice === "calibrated" && !cameraModels.calibrated) log("no camera.json yet: using the estimate");
+  applyCamera();
+};
+
+// Calibration frames: full-resolution stills of exactly the stream the headset sees, downloaded as PNG for
+// robot/scripts/calibrate_camera.py. Show the checkerboard (calib-board.html) on a tablet or a second screen.
+let calibCount = 0, calibTimer = null;
+function captureCalibFrame() {
+  if (!video.videoWidth) { log("calibration: no video yet (wake Reachy up first)"); return; }
+  const c = document.createElement("canvas");
+  c.width = video.videoWidth; c.height = video.videoHeight;
+  c.getContext("2d").drawImage(video, 0, 0);
+  c.toBlob((blob) => {
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = `reachy-calib-${String(++calibCount).padStart(2, "0")}-${c.width}x${c.height}.png`;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+    $("calib-count").textContent = `${calibCount} frame${calibCount === 1 ? "" : "s"} (aim for 20+)`;
+  }, "image/png");
+}
+$("calib-shot").onclick = captureCalibFrame;
+$("calib-auto").onclick = () => {
+  if (calibTimer) { clearInterval(calibTimer); calibTimer = null; }
+  else calibTimer = setInterval(captureCalibFrame, 2000);
+  $("calib-auto").textContent = `Auto-capture every 2 s: ${calibTimer ? "on" : "off"}`;
+};
 $("view-mode").onchange = (e) => setViewMode(e.target.value);
 $("caption-mode").value = captions.mode;
 $("caption-mode").onchange = (e) => captions.setMode(e.target.value);

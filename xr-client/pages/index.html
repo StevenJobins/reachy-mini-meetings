@@ -177,6 +177,12 @@
     <details class="card">
       <summary>Settings &amp; debug</summary>
       <div class="settings-body">
+        <label>Camera model (lens) <select id="camera-model" title="How the camera image maps to directions: VR sphere, bubbles, face following">
+          <option value="auto">Auto: calibrated (camera.json) if present, else estimate</option><option value="estimate">Estimate: pinhole, 54° vertical</option>
+          <option value="factory">Pollen factory calibration (unverified for the stream)</option><option value="calibrated">Calibrated (camera.json)</option></select></label>
+        <div class="row" title="Camera calibration: hold the checkerboard in front of Reachy at many angles and distances, then run robot/scripts/calibrate_camera.py on the downloaded frames">
+          <button id="calib-shot">Capture calibration frame</button><button id="calib-auto">Auto-capture every 2 s: off</button>
+          <a href="calib-board.html" target="_blank" rel="noopener">Checkerboard ↗</a><span id="calib-count" class="muted"></span></div>
         <label>VR view <select id="view-mode" title="World-locked hides the robot's delay (reprojection); comfort keeps the window calm in front of you">
           <option value="world">World-locked (reprojection, default)</option><option value="comfort">Comfort (window follows you calmly)</option></select></label>
         <label>Caption server <input id="captions-url" placeholder="automatic (localhost, else wireless tunnel)"></label>

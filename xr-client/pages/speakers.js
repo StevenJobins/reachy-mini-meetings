@@ -9,8 +9,9 @@
 // again where someone was before is that person again, also after the robot looked elsewhere.
 
 export class FaceSpeakers {
-  constructor({ hfovDeg, windowS = 1.5, maxJump = 0.25, ttlS = 1.0, reIdDeg = 25, lostS = 4, focusS = 60, focusDeg = 60, memoryS = 900 } = {}) {
+  constructor({ hfovDeg, camera = null, windowS = 1.5, maxJump = 0.25, ttlS = 1.0, reIdDeg = 25, lostS = 4, focusS = 60, focusDeg = 60, memoryS = 900 } = {}) {
     this.tanHalf = Math.tan((hfovDeg / 2) * Math.PI / 180);
+    this.camera = camera;     // camera.js model (lens distortion); without it: pinhole from hfovDeg
     this.windowS = windowS;   // mouth movement is judged over this window
     this.maxJump = maxJump;   // max face movement between two detections (fraction of the image)
     this.ttlS = ttlS;         // a face not seen for this long is dropped
@@ -99,7 +100,9 @@ export class FaceSpeakers {
   }
 
   /** Horizontal angle of the face centre, + = left. */
-  angleDeg(tr) { return Math.atan((0.5 - tr.cx) * 2 * this.tanHalf) * 180 / Math.PI; }
+  angleDeg(tr) {
+    return this.camera ? this.camera.yawDeg(tr.cx, tr.cy) : Math.atan((0.5 - tr.cx) * 2 * this.tanHalf) * 180 / Math.PI;
+  }
 
   /** Most likely speaker track, or null when no face is visible. doaDeg may be null. */
   pick(doaDeg) {
