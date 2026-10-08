@@ -34,6 +34,7 @@ function save(key, value) { try { value ? localStorage.setItem(key, value) : loc
 
 // Faces found by the backend (backend/.../vision.py, {"type": "faces"}): set by app.js.
 let facesHandler = null;
+let depthHandler = null;   // room-scan depth replies (set via captions.onDepth)
 export function onBackendFaces(fn) { facesHandler = fn; }
 
 export function captionsUrl() { return load(URL_KEY, ""); }   // "" = automatic
@@ -316,6 +317,7 @@ export function createCaptions({ three, distM, vfovDeg, cameraModel = null, spea
       else if (msg.type === "vad") onVad?.(msg);
       else if (msg.type === "me") onMe?.(msg);
       else if (msg.type === "faces") facesHandler?.(msg);
+      else if (msg.type === "depth") depthHandler?.(msg);
     };
     sock.onclose = (e) => {
       if (e.code === 4001) log("captions: tunnel refused this HF account (backend --allow-hf)");
@@ -337,6 +339,14 @@ export function createCaptions({ three, distM, vfovDeg, cameraModel = null, spea
 
     get connected() { return ws?.readyState === WebSocket.OPEN; },
     /** Page log lines -> the backend's headset log file. */
+    /** Room-scan frame -> metric depth on the laptop (backend depth.py). false if not connected. */
+    requestDepth(id, jpegBase64, w, h) {
+      if (ws?.readyState !== WebSocket.OPEN) return false;
+      ws.send(JSON.stringify({ type: "depth", id, w, h, jpeg: jpegBase64 }));
+      return true;
+    },
+    set onDepth(fn) { depthHandler = fn; },
+
     sendLog(lines) { if (ws?.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: "log", lines })); },
 
     /** Your voice for "translate me" (binary int16 PCM, 16 kHz). */

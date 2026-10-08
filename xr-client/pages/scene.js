@@ -80,8 +80,10 @@ export function createScene({ video, vfovDeg, cameraModel = null, distM, statusT
   // The video is shown on a piece of sphere around the eye (radius distM): every grid point of the image sits in
   // exactly the direction its pixel sees, computed from the camera model (camera.js). That is the projection
   // and the lens undistortion in one step, and it is the grid the depth extension (WP2) would deform.
-  const screenMat = new THREE.MeshBasicMaterial({ map: noVideoTex });
+  // transparent only for the draw order: the live video is drawn after the room panorama (always on top of it)
+  const screenMat = new THREE.MeshBasicMaterial({ map: noVideoTex, transparent: true });
   const screen = new THREE.Mesh(screenGeometry(cam, distM), screenMat);
+  screen.renderOrder = 5;
   // Dark rounded bezel with a soft glow behind the video: the window stays findable even without video.
   const bezel = new THREE.Mesh(screenGeometry(cam, distM + 0.02, 1.04, 1.07), new THREE.MeshBasicMaterial({
     transparent: true, depthWrite: false,
@@ -91,10 +93,35 @@ export function createScene({ video, vfovDeg, cameraModel = null, distM, statusT
       ctx.shadowBlur = 0; ctx.strokeStyle = "rgba(255,255,255,0.18)"; ctx.lineWidth = 3; ctx.stroke();
     }),
   }));
+  bezel.renderOrder = 4;
   screen.add(bezel);
   const robotView = new THREE.Group();
   robotView.add(screen);
   scene.add(robotView);
+
+  // ---- room panorama (room scan, WP2): frames Reachy took while looking around, world-locked in the room frame
+  // (the app turns it with the speaker-following base, like the live window). Turn your head and the room is
+  // there at once; only what moves (people) waits for the live video, which is drawn on top. Each patch is the
+  // video sphere of one frame at the robot pose it was taken with; with metric depth from the laptop
+  // (backend depth.py) the patch becomes 3D geometry, so moving the head gives parallax. Soft edges blend the
+  // overlaps; the newest frame lies on top.
+  const ROOM_R = distM + 0.3;   // without depth: just behind the live video sphere
+  const room = new THREE.Group();
+  scene.add(room);
+  const roomPatches = new Map();   // key -> { mesh, depth }
+  let roomSeq = 0, roomOn = true;
+  const feather = canvasTexture(256, 256, (ctx, w, h) => {
+    ctx.fillStyle = "#000"; ctx.fillRect(0, 0, w, h);
+    ctx.filter = "blur(10px)"; ctx.fillStyle = "#fff"; ctx.fillRect(14, 14, w - 28, h - 28);
+  });
+  feather.colorSpace = THREE.NoColorSpace;
+  const roomGeometry = (depth) => (depth ? depthGeometry(cam, depth) : screenGeometry(cam, ROOM_R));
+  function updateRoomLook() {
+    const has = roomOn && roomPatches.size > 0;
+    room.visible = roomOn;
+    floor.visible = !has;      // the scanned room replaces the virtual floor ...
+    bezel.visible = !has;      // ... and the live video blends into it without a frame
+  }
 
   // Head-locked debug panel at the top of the view, hidden unless "Debug" is on (More menu).
   const hudCanvas = document.createElement("canvas");
@@ -499,11 +526,62 @@ export function createScene({ video, vfovDeg, cameraModel = null, distM, statusT
     /** Debug panel (status lines) at the top of the view. */
     toggleDebug() { hud.visible = !hud.visible; },
 
+    /** Copy of the current camera frame (canvas w x h) for the room scan, or null without video. */
+    captureFrame(w = 960, h = 540) {
+      const src = source.mode !== "direct" && source.hasFrame ? source.canvas
+        : video.readyState >= video.HAVE_CURRENT_DATA && video.videoWidth ? video : null;
+      if (!src) return null;
+      const c = document.createElement("canvas");
+      c.width = w; c.height = h;
+      c.getContext("2d").drawImage(src, 0, 0, w, h);
+      return c;
+    },
+
+    /** Add or replace a room patch: image (canvas), robot camera orientation q {x,y,z,w} in the room frame,
+     *  depth grid (metres, 49 x 28) or null. */
+    setRoomPatch(key, image, q, depth = null) {
+      let p = roomPatches.get(key);
+      if (!p) {
+        const mesh = new THREE.Mesh(roomGeometry(depth), new THREE.MeshBasicMaterial({
+          transparent: true, depthWrite: false, alphaMap: feather, side: THREE.DoubleSide }));
+        p = { mesh, depth };
+        roomPatches.set(key, p);
+        room.add(mesh);
+      } else if (p.depth !== depth) {
+        p.mesh.geometry.dispose(); p.mesh.geometry = roomGeometry(depth); p.depth = depth;
+      }
+      const old = p.mesh.material.map;
+      const tex = new THREE.CanvasTexture(image);
+      tex.colorSpace = THREE.SRGBColorSpace; tex.minFilter = THREE.LinearFilter; tex.generateMipmaps = false;
+      p.mesh.material.map = tex; p.mesh.material.needsUpdate = true;
+      old?.dispose();
+      p.mesh.quaternion.set(q.x, q.y, q.z, q.w);
+      p.mesh.renderOrder = 1 + (++roomSeq % 1000) * 1e-4;   // newest on top
+      updateRoomLook();
+    },
+
+    /** Depth for an existing patch arrived (or null: back to the flat sphere). */
+    setRoomPatchDepth(key, depth) {
+      const p = roomPatches.get(key);
+      if (!p) return;
+      p.mesh.geometry.dispose(); p.mesh.geometry = roomGeometry(depth); p.depth = depth;
+    },
+
+    /** The room frame (scanned panorama) in the XR world, {x,y,z,w}. */
+    setRoomFrame(q) { room.quaternion.set(q.x, q.y, q.z, q.w); },
+    setRoomVisible(on) { roomOn = on; updateRoomLook(); },
+    clearRoom() {
+      for (const p of roomPatches.values()) { p.mesh.removeFromParent(); p.mesh.geometry.dispose(); p.mesh.material.map?.dispose(); p.mesh.material.dispose(); }
+      roomPatches.clear(); updateRoomLook();
+    },
+    get roomInfo() { let d = 0; for (const p of roomPatches.values()) if (p.depth) d++; return { patches: roomPatches.size, depth: d, visible: roomOn }; },
+
     /** Use another camera model (calibration loaded or switched): rebuilds the video sphere. */
     setCamera(c) {
       cam = c;
       screen.geometry.dispose(); screen.geometry = screenGeometry(cam, distM);
       bezel.geometry.dispose(); bezel.geometry = screenGeometry(cam, distM + 0.02, 1.04, 1.07);
+      for (const p of roomPatches.values()) { p.mesh.geometry.dispose(); p.mesh.geometry = roomGeometry(p.depth); }
       log(`camera model: ${cam.name}, ${cam.hfovDeg.toFixed(1)}° x ${cam.vfovDeg.toFixed(1)}°`);
     },
 
@@ -605,6 +683,47 @@ function screenGeometry(cam, R, growX = 1, growY = 1, N = 48, M = 27) {
     for (let i = 0; i < N; i++) {
       const a = at(i, j), b = at(i + 1, j), c = at(i, j + 1), e = at(i + 1, j + 1);
       if (ok[a] && ok[b] && ok[c] && ok[e]) idx.push(a, c, b, b, c, e);
+    }
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
+  g.setAttribute("uv", new THREE.Float32BufferAttribute(uv, 2));
+  g.setIndex(idx);
+  g.computeBoundingSphere();
+  return g;
+}
+
+/**
+ * Room patch with metric depth: the same grid as screenGeometry, each vertex at its measured distance along its
+ * pixel's ray (depth = metres along the optical axis, (N+1) x (M+1) values, row-major). Cells across a depth
+ * jump (> 25 %, e.g. a person in front of a wall) are left out instead of stretched: an honest hole beats a
+ * rubber sheet when the head moves (disocclusion).
+ */
+function depthGeometry(cam, depth, N = 48, M = 27) {
+  const pos = [], uv = [], idx = [], ok = [], dd = [];
+  let guess = null;
+  for (let j = 0; j <= M; j++) {
+    for (let i = 0; i <= N; i++) {
+      const d = cam.unproject(i / N, j / M, guess);
+      const z = Math.max(0.3, Math.min(15, depth[j * (N + 1) + i] ?? 0));
+      ok.push(!!d && depth[j * (N + 1) + i] > 0);
+      dd.push(z);
+      const [X, Y, Z] = d ?? [0, 0, 1];
+      if (d) guess = [X / Z, Y / Z];
+      const r = z / Math.max(0.05, Z);   // along the ray to depth z
+      pos.push(X * r, -Y * r, -Z * r);
+      uv.push(i / N, 1 - j / M);
+    }
+    guess = null;
+  }
+  const at = (i, j) => j * (N + 1) + i;
+  for (let j = 0; j < M; j++) {
+    for (let i = 0; i < N; i++) {
+      const q = [at(i, j), at(i + 1, j), at(i, j + 1), at(i + 1, j + 1)];
+      if (!q.every((k) => ok[k])) continue;
+      const zs = q.map((k) => dd[k]);
+      if (Math.max(...zs) / Math.min(...zs) > 1.25) continue;
+      idx.push(q[0], q[2], q[1], q[1], q[2], q[3]);
     }
   }
   const g = new THREE.BufferGeometry();

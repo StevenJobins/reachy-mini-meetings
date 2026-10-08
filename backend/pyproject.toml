@@ -23,6 +23,7 @@ dependencies = [
 
 [project.optional-dependencies]
 claude = ["anthropic>=1.0"]  # paid alternative to DeepL
+depth = ["torch", "transformers>=4.45", "pillow"]  # room-scan depth (Depth Anything V2 metric), depth.py
 dev = ["pytest", "ruff"]
 
 [project.scripts]

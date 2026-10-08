@@ -7,7 +7,8 @@
 
 import { createRobot } from "./robot.js";
 import { createScene } from "./scene.js";
-import { HeadMirror, Recenter, headsetToRobot, robotToHeadset } from "./pose.js";
+import { HeadMirror, Recenter, headsetToRobot, qinv, qmul, robotToHeadset } from "./pose.js";
+import { RoomScan } from "./roomscan.js";
 import { Laugh, WantToTalk } from "./gestures.js";
 import { SpeakerTracker } from "./speaker.js";
 import { captionsUrl, createCaptions, onBackendFaces, setCaptionsUrl } from "./captions.js";
@@ -106,7 +107,7 @@ function statusText() {
   const f = (v) => v.map((x) => x.toFixed(1).padStart(6)).join(" ");
   return [
     `robot ${status.robot}   motors ${status.motors}   ice ${status.ice}   video ${status.video} ${status.videoIn}   send ${status.send} Hz   mic ${status.mic} ${status.micKbps.toFixed(0)} kbps   volume ${status.volume}`,
-    `cmd  r/p/y ${f(status.cmd)}   body ${status.body.toFixed(1)}   speaker target ${speaker.target.toFixed(0)} base ${speaker.base.toFixed(0)}   cam ${cam.name} ${cam.hfovDeg.toFixed(0)}x${cam.vfovDeg.toFixed(0)}°   view ${viewMode}${viewMode === "world" ? `/${status.follow ?? "-"}` : ""} delay ${(videoDelayS * 1000).toFixed(0)}ms turn ${(status.turn ?? 0).toFixed(0)}°/s`,
+    `cmd  r/p/y ${f(status.cmd)}   body ${status.body.toFixed(1)}   speaker target ${speaker.target.toFixed(0)} base ${speaker.base.toFixed(0)}   cam ${cam.name} ${cam.hfovDeg.toFixed(0)}x${cam.vfovDeg.toFixed(0)}°   room ${scene.roomInfo.patches}${scan.active ? ` scanning ${status.scan ?? ""}` : ""} depth ${scene.roomInfo.depth}${depthError ? "(off)" : ""}   view ${viewMode}${viewMode === "world" ? `/${status.follow ?? "-"}` : ""} delay ${(videoDelayS * 1000).toFixed(0)}ms turn ${(status.turn ?? 0).toFixed(0)}°/s`,
     `meas r/p/y ${f(status.meas)}   captions ${status.captions}   ${backendFacesLive() ? `people (backend) @ ${backendFacesFps} fps` : faces.stats()}   robot sound ${status.sound} ${roomAudio.stats()} ${status.audioIn}   doa ${status.doa}`,
   ].join("\n");
 }
@@ -351,8 +352,8 @@ function wantToTalk() {
 setInterval(() => {
   if (!awake || status.xr !== "off" || !robot.connected) return;
   const dt = 1 / 50;
-  const baseYaw = stepBase(dt, performance.now() / 1000);
-  send(mirror.step([0, basePitch, baseYaw], dt), performance.now() / 1000);
+  const scanRaw = scanTarget();
+  send(mirror.step(scanRaw ?? [0, basePitch, stepBase(dt, performance.now() / 1000)], dt), performance.now() / 1000);
 }, 1000 / 50);
 
 const robot = createRobot({
@@ -373,6 +374,8 @@ const robot = createRobot({
     // Stored with its arrival time; the window uses the pose from when the shown frame was captured (below).
     poseHist.push([performance.now() / 1000, roll, pitch - basePitch, yaw - speaker.base]);
     if (poseHist.length > 90) poseHist.shift();
+    absHist.push([performance.now() / 1000, roll, pitch, yaw]);   // absolute: window + room panorama
+    if (absHist.length > 90) absHist.shift();
   },
   onDoa: (angle, speech) => {
     status.doa = `${(90 - angle * 180 / Math.PI).toFixed(0)}° ${speech ? "SPEECH" : "quiet"}`;   // relative to the head, + = left
@@ -397,6 +400,7 @@ try { if (localStorage.getItem(VIEW_KEY) === "comfort") viewMode = "comfort"; } 
 if (params.get("window")) viewMode = params.get("window") === "robot" || params.get("window") === "world" ? "world" : "comfort";
 const poseHist = [];                 // [t, roll, pitch, yaw] (deg, relative to the base), arrival time
 const cmdHist = [];                  // same for what we commanded
+const absHist = [];                  // [t, roll, pitch, yaw] absolute (robot frame), arrival time
 const CAPTURE_ENCODE_S = 0.045;      // camera exposure/readout + H.264 encode on the robot side (estimate)
 let videoDelayS = 0.12;              // shown frame age relative to the pose stream, updated from getStats
 let vjb = null;                      // previous jitter-buffer / decode counters
@@ -435,8 +439,13 @@ function poseAt(t, h = poseHist) {
 let lastBase = null;
 function updateView() {
   const nowS = performance.now() / 1000;
+  // Room frame: the robot's world turned by the base (speaker direction + framing pitch), so that looking straight
+  // ahead = looking at the speaker. The scanned room and the live window both live in it.
+  const roomQ = recenter.toWorld(qinv(robotToHeadset(0, basePitch, speaker.base)));
+  scene.setRoomFrame(roomQ);
   const p = poseAt(nowS - videoDelayS);
-  if (p && robotFollows(p, nowS)) scene.setRobotHead(recenter.toWorld(robotToHeadset(p[0], p[1], p[2])));
+  const a = poseAt(nowS - videoDelayS, absHist);
+  if (p && a && robotFollows(p, nowS)) scene.setRobotHead(qmul(roomQ, robotToHeadset(a[0], a[1], a[2])));
   else scene.clearRobotHead();
   const b = [speaker.base, basePitch, nowS];
   if (lastBase && b[2] > lastBase[2]) {
@@ -472,38 +481,96 @@ function setViewMode(m) {
   scene.setWindowMode(viewMode);
   try { localStorage.setItem(VIEW_KEY, viewMode); } catch {}
   $("view-mode").value = viewMode;
-$("camera-model").value = camChoice;
-$("camera-model").onchange = (e) => {
-  camChoice = e.target.value;
-  try { localStorage.setItem(CAM_KEY, camChoice); } catch {}
-  if (camChoice === "calibrated" && !cameraModels.calibrated) log("no camera.json yet: using the estimate");
-  applyCamera();
-};
+}
 
-// Calibration frames: full-resolution stills of exactly the stream the headset sees, downloaded as PNG for
-// robot/scripts/calibrate_camera.py. Show the checkerboard (calib-board.html) on a tablet or a second screen.
-let calibCount = 0, calibTimer = null;
-function captureCalibFrame() {
-  if (!video.videoWidth) { log("calibration: no video yet (wake Reachy up first)"); return; }
-  const c = document.createElement("canvas");
-  c.width = video.videoWidth; c.height = video.videoHeight;
-  c.getContext("2d").drawImage(video, 0, 0);
-  c.toBlob((blob) => {
-    const a = document.createElement("a");
-    a.href = URL.createObjectURL(blob);
-    a.download = `reachy-calib-${String(++calibCount).padStart(2, "0")}-${c.width}x${c.height}.png`;
-    a.click();
-    setTimeout(() => URL.revokeObjectURL(a.href), 5000);
-    $("calib-count").textContent = `${calibCount} frame${calibCount === 1 ? "" : "s"} (aim for 20+)`;
-  }, "image/png");
+// ---------------------------------------------------------------- room scan + panorama (WP2)
+// After wake-up Reachy looks around once (roomscan.js, 12 stops, ~20 s) and every frame becomes a patch of the
+// room panorama, world-locked in the room frame: turning the head shows the room at once, only moving people
+// wait for the live video. While in use, the panorama refreshes itself whenever Reachy holds still. Each frame
+// also goes to the laptop for metric depth (backend depth.py, Depth Anything V2): the patch becomes 3D, so
+// moving the head gives parallax. Without the backend or its [depth] extra the panorama stays a flat sphere.
+const ROOM_KEY = "reachy-xr-room";
+const roomSettings = (() => { try { return JSON.parse(localStorage.getItem(ROOM_KEY)) ?? {}; } catch { return {}; } })();
+let scanAfterWake = roomSettings.scanAfterWake ?? true;
+let roomVisible = roomSettings.visible ?? true;
+const saveRoomSettings = () => { try { localStorage.setItem(ROOM_KEY, JSON.stringify({ scanAfterWake, visible: roomVisible })); } catch {} };
+const scan = new RoomScan();
+const roomSlots = new Map();          // key -> { pitch, yaw, t } where the patch was taken (absolute)
+let depthSeq = 0, depthPending = 0, depthError = null;
+const depthLatest = new Map();        // key -> request id of the newest frame (older replies are dropped)
+
+const scanTarget = () => (scan.active ? [0, scan.target.pitch, scan.target.yaw] : null);
+
+function startRoomScan() {
+  if (!awake) return;
+  scene.clearRoom(); roomSlots.clear(); depthLatest.clear(); depthError = null;
+  scan.start(performance.now() / 1000);
+  log("room scan: start");
+  flash("🔄 Reachy is scanning the room…");
 }
-$("calib-shot").onclick = captureCalibFrame;
-$("calib-auto").onclick = () => {
-  if (calibTimer) { clearInterval(calibTimer); calibTimer = null; }
-  else calibTimer = setInterval(captureCalibFrame, 2000);
-  $("calib-auto").textContent = `Auto-capture every 2 s: ${calibTimer ? "on" : "off"}`;
-};
+
+/** Current camera frame -> room patch `key` at the pose it was taken with, and ask the laptop for depth. */
+function captureRoomPatch(key, nowS) {
+  const img = scene.captureFrame(960, 540);
+  const a = poseAt(nowS - videoDelayS, absHist);
+  if (!img || !a) return false;
+  scene.setRoomPatch(key, img, robotToHeadset(a[0], a[1], a[2]), null);
+  roomSlots.set(key, { pitch: a[1], yaw: a[2], t: nowS });
+  if (!depthError && captions) {
+    const id = `${key}#${++depthSeq}`;
+    const b64 = img.toDataURL("image/jpeg", 0.85).split(",")[1];
+    if (captions.requestDepth(id, b64, 49, 28)) { depthLatest.set(key, id); depthPending++; }
+  }
+  return true;
 }
+
+function onDepth(msg) {
+  depthPending = Math.max(0, depthPending - 1);
+  const key = String(msg.id ?? "").split("#")[0];
+  if (msg.error) {
+    if (!depthError) log(`room depth unavailable on the laptop: ${msg.error} (backend: pip install -e ".[depth]")`);
+    depthError = msg.error;
+    return;
+  }
+  if (depthLatest.get(key) !== msg.id || !Array.isArray(msg.depth)) return;   // a newer frame replaced it
+  scene.setRoomPatchDepth(key, msg.depth);
+}
+
+setInterval(() => {   // scan driver
+  if (!scan.active) return;
+  if (!awake) { scan.cancel(); log("room scan: cancelled (asleep)"); return; }
+  const nowS = performance.now() / 1000;
+  const r = scan.step(nowS, status.meas, videoDelayS + 0.1);
+  if (!r) return;
+  const tg = scan.target;
+  if (r === "shoot-late") log(`room scan: ${tg.key} not settled, taking it anyway`);
+  captureRoomPatch(tg.key, nowS);
+  const { done, total } = scan.progress;
+  status.scan = `${done + 1}/${total}`;
+  if (scan.shot(nowS)) { status.scan = ""; log("room scan: done"); flash("✅ Room scanned"); }
+}, 50);
+
+setInterval(() => {   // keep the panorama fresh: re-take the patch in the direction Reachy holds still in
+  if (!awake || scan.active || !roomSlots.size || status.follow !== "locked") return;
+  const nowS = performance.now() / 1000;
+  const recent = absHist.filter(([t]) => nowS - t < 0.6);
+  if (recent.length < 5) return;
+  const span = (k) => Math.max(...recent.map((r) => r[k])) - Math.min(...recent.map((r) => r[k]));
+  if (span(2) > 1 || span(3) > 1) return;   // still moving
+  const [, , pitch, yaw] = recent[recent.length - 1];
+  let best = null, bestD = Infinity;
+  for (const [key, sl] of roomSlots) {
+    const d = Math.hypot(((yaw - sl.yaw + 540) % 360) - 180, pitch - sl.pitch);
+    if (d < bestD) { bestD = d; best = key; }
+  }
+  if (bestD > 25) {   // a new direction: own slot (at most 24, then the oldest refresh slot goes)
+    best = `r${Math.round(yaw)}_${Math.round(pitch)}`;
+    const extra = [...roomSlots.entries()].filter(([k]) => k.startsWith("r")).sort((x, y) => x[1].t - y[1].t);
+    if (roomSlots.size >= 24 && extra.length) roomSlots.delete(extra[0][0]);
+  }
+  if (depthPending > 2) return;   // laptop busy
+  captureRoomPatch(best, nowS);
+}, 2000);
 
 let debugOn = false;                 // VR debug panel (More -> Debug)
 let videoMode = "";                  // label of the Video button, set after the scene exists
@@ -518,6 +585,8 @@ const scene = createScene({
     if (!awake || status.xr === "off" || !robot.connected || now - lastSend < 1000 / cfg.sendHz) return;
     const dt = (now - lastSend) / 1000;
     lastSend = now;
+    const scanRaw = scanTarget();   // room scan: Reachy looks around on its own for ~20 s
+    if (scanRaw) { send(mirror.step(scanRaw, dt), now / 1000); return; }
     const raw = headsetToRobot(recenter.toRelative(q));
     raw[2] += stepBase(dt, now / 1000);   // user's head rotation on top of the speaker direction
     raw[1] += basePitch;                  // ... and on top of the framing pitch
@@ -539,6 +608,9 @@ const scene = createScene({
       onClick: () => captions.setVoiceGender(captions.voiceGender === "female" ? "male" : "female") },
     { icon: () => (viewMode === "world" ? "🌐" : "🛋"), label: () => (viewMode === "world" ? "World-locked" : "Comfort"),
       more: true, onClick: () => setViewMode(viewMode === "world" ? "comfort" : "world") },
+    { icon: "🔄", label: () => (scan.active ? `Scan ${status.scan ?? ""}` : "Scan room"), more: true, onClick: startRoomScan },
+    { icon: "🏠", label: () => (roomVisible ? "Room on" : "Room off"), more: true, active: () => roomVisible,
+      onClick: () => { roomVisible = !roomVisible; scene.setRoomVisible(roomVisible); saveRoomSettings(); } },
     { icon: "⟳", label: "Recenter", more: true, onClick: () => { wantRecenter = true; } },
     { icon: "🎞", label: () => `Video: ${videoMode}`, more: true, onClick: () => { videoMode = scene.cycleVideo(); } },   // A/B the frame paths (videosource.js)
     { icon: "🐞", label: "Debug", more: true, active: () => debugOn, onClick: () => { debugOn = !debugOn; scene.toggleDebug(); } },
@@ -734,6 +806,13 @@ captions = createCaptions({
 $("captions-url").value = captionsUrl();
 $("captions-url").onchange = (e) => { setCaptionsUrl(e.target.value.trim()); captions.reconnect(); };
 $("view-mode").value = viewMode;
+captions.onDepth = onDepth;
+scene.setRoomVisible(roomVisible);
+$("scan-after-wake").checked = scanAfterWake;
+$("scan-after-wake").onchange = (e) => { scanAfterWake = e.target.checked; saveRoomSettings(); };
+$("room-visible").checked = roomVisible;
+$("room-visible").onchange = (e) => { roomVisible = e.target.checked; scene.setRoomVisible(roomVisible); saveRoomSettings(); };
+$("scan-now").onclick = startRoomScan;
 $("camera-model").value = camChoice;
 $("camera-model").onchange = (e) => {
   camChoice = e.target.value;
@@ -841,6 +920,7 @@ $("wake").onclick = async () => {
     if (v < 10) flash(`🔈 Reachy speaker is at ${v}% – turn it up with the slider or "Reachy, volume 7"`);
   }).catch(() => {});
   show("awake", `Reachy is awake: camera is on, robot sound ${robotMuted ? "muted" : "on"}. Put on the headset, look straight ahead and tap Start.`);
+  if (scanAfterWake) setTimeout(startRoomScan, 800);   // video needs a moment after the wake-up motion
 };
 $("sleep").onclick = async () => {
   awake = false;

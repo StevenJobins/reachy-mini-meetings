@@ -103,6 +103,10 @@ A **fixed beam straight ahead** was tried and dropped: in an A/B test with a fix
 
 Direct USB (`micarray.py`, `pyusb` + `libusb-package`) because the daemon's `/api/audio/config/apply` cannot write integer parameters: values arrive as floats and `struct.pack("i", 1.0)` fails (reachy_mini 1.11). On Windows USB access may need a driver; then a warning and the defaults stay.
 
+### Room-scan depth (WP2 extension)
+
+The page sends each room-scan frame (JPEG) over the caption WebSocket; `depth.py` runs **Depth Anything V2, metric indoor small** on the laptop GPU (Apple `mps`, CUDA, else CPU) and returns metric depth at the page's 49×28 mesh grid, so the scanned room becomes 3D in the headset. Optional: `pip install -e ".[depth]"` (torch, transformers, pillow; the model, ~100 MB, downloads on first use). Without it the page shows the flat panorama. Tested: ~1.2 s per frame on an Intel Mac CPU (first call ~10 s with the model load); much faster on an M1.
+
 ### Meeting notes (summary, action items, next steps)
 
 Every 45–60 s (`--summary-every`), if something new was said, the transcript goes to **Google Gemini** (free tier, `gemini-flash-lite-latest`; `gemini-flash-latest` ran out of free quota) and comes back as summary bullets, action items (who, what, by when) and next steps (open questions, decisions still to take), in the target language. It takes ~10 s and runs in the background.

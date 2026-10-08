@@ -24,7 +24,10 @@ Protocol (server -> headset, one JSON per message; keep in sync with xr-client):
 
 Client -> server: {"type": "auth", "hf_token": str} first (checked through the tunnel only);
 {"type": "voice", "gender": "male" | "female"} picks Reachy's voice (voice.py GENDER_VOICES);
-{"type": "log", "lines": [str]} appends the page's log to ~/Library/Logs/reachy-headset.log; binary frames
+{"type": "log", "lines": [str]} appends the page's log to ~/Library/Logs/reachy-headset.log;
+{"type": "depth", "id": str, "w": int, "h": int, "jpeg": base64} = a room-scan frame: answered (to that client
+only) with {"type": "depth", "id", "w", "h", "depth": [metres, w*h row-major]} or {"type": "depth", "id", "error"}
+(Depth Anything V2 metric indoor, depth.py; needs the [depth] extra); binary frames
 (int16 PCM, 16 kHz mono) = the remote user's voice while "translate me" is on: transcribed, translated into
 the meeting language (the language most spoken in the room lately, or --meeting-lang) and spoken by Reachy.
 
@@ -39,6 +42,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import base64
 import json
 import logging
 import os
@@ -53,6 +57,7 @@ from pathlib import Path
 import numpy as np
 import websockets
 
+from .depth import DepthEstimator
 from .segmenter import Segment, Segmenter
 
 log = logging.getLogger("reachy_captions")
@@ -106,6 +111,7 @@ class CaptionServer:
         self.clients: set = set()
         self.on_voice = None   # binary frames from a client: the remote user's voice
         self.on_message = None   # JSON from a client (e.g. {"type": "voice", "gender": "female"})
+        self.on_depth = None     # (jpeg bytes, w, h) -> [metres]: room-scan depth (depth.py), blocking
         self.recent: deque[str] = deque(maxlen=20)  # last finals, replayed to new clients
         self.summary: str | None = None
 
@@ -147,13 +153,31 @@ class CaptionServer:
                 if isinstance(msg, bytes):
                     if self.on_voice:
                         self.on_voice(msg)
-                elif self.on_message:
+                else:
                     try:
-                        self.on_message(json.loads(msg))
+                        data = json.loads(msg)
                     except ValueError:
-                        pass
+                        continue
+                    if data.get("type") == "depth":
+                        asyncio.create_task(self._depth(ws, data))   # don't block this client's audio
+                    elif self.on_message:
+                        self.on_message(data)
         finally:
             self.clients.discard(ws)
+
+    async def _depth(self, ws, msg: dict) -> None:
+        reply = {"type": "depth", "id": msg.get("id"), "w": msg.get("w"), "h": msg.get("h")}
+        try:
+            if not self.on_depth:
+                raise RuntimeError("depth disabled")
+            jpeg = base64.b64decode(msg["jpeg"])
+            reply["depth"] = await asyncio.to_thread(self.on_depth, jpeg, int(msg["w"]), int(msg["h"]))
+        except Exception as e:
+            reply["error"] = str(e)
+        try:
+            await ws.send(json.dumps(reply))
+        except websockets.ConnectionClosed:
+            pass
 
     def send(self, caption: dict) -> None:
         msg = json.dumps({"type": "caption", **caption})
@@ -246,6 +270,8 @@ class Pipeline:
             except (OSError, subprocess.CalledProcessError) as e:
                 log.warning("No voice output: %s", e)
         self.server.on_message = self._client_message
+        self.depth = DepthEstimator()
+        self.server.on_depth = self.depth.estimate
         self.summarizer = None
         if args.summary == "gemini":
             from .summary import Summarizer
