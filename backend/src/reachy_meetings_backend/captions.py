@@ -286,10 +286,16 @@ class Pipeline:
             except RuntimeError as e:
                 log.warning("No summary: %s", e)
 
-    async def _stt(self, model, audio, language=None) -> tuple[str, str]:
+    async def _stt(self, model, audio, language=None, timing: dict | None = None) -> tuple[str, str]:
         self.pending += 1
+        queued = time.time()
+
+        def job():
+            if timing is not None:
+                timing["wait"] = time.time() - queued   # time spent behind other Whisper jobs
+            return model(audio, language)
         try:
-            return await asyncio.get_running_loop().run_in_executor(self.worker, model, audio, language)
+            return await asyncio.get_running_loop().run_in_executor(self.worker, job)
         finally:
             self.pending -= 1
 
@@ -375,20 +381,30 @@ class Pipeline:
             self.me_translators[target] = tr
         return self.me_translators[target]
 
-    async def _me_final(self, seg: Segment) -> None:
-        text, lang = await self._stt(self.stt, seg.audio)
+    async def _me_final(self, seg: Segment, t_final: float) -> None:
+        # Latency per stage (logged as "me timing"): end of speech -> final cut (VAD silence) -> STT
+        # (queue + compute) -> translation -> synthesis -> playback start
+        t_end = t_final - self.me_segmenter.cfg.silence_s
+        timing: dict = {}
+        text, lang = await self._stt(self.stt, seg.audio, timing=timing)
+        t_stt = time.time()
         if not text:
             return
         target = self.meeting_lang()
         tr = self._translator_to(target) if lang != target else None
         translation = await tr(text, remember=False) if tr else None
+        t_tr = time.time()
         say, out_lang = (translation, target) if translation else (text, lang)
         log.info("[me %s->%s] %s -> %s", lang, out_lang, text, say)
         self.server.send_me({"text": text, "lang": lang, "translation": translation,
                              "target": target, "t": round(time.time(), 3)})
 
         def started(dur: float) -> None:
-            self.speaking_until = time.time() + dur + 0.4   # + room echo
+            now = time.time()
+            self.speaking_until = now + dur + 0.4   # + room echo
+            log.info("me timing (s): cut %.2f  stt %.2f (wait %.2f)  translate %.2f  synth %.2f  "
+                     "-> playback %.2f after speech end (%.1f s audio)", t_final - t_end, t_stt - t_final,
+                     timing.get("wait", 0), t_tr - t_stt, now - t_tr, now - t_end, len(seg.audio) / 16000)
         await self.voice.speak(say, out_lang, on_start=started)
 
     async def _me_loop(self) -> None:
@@ -397,7 +413,7 @@ class Pipeline:
             chunk = await self.me_queue.get()
             for seg in self.me_segmenter.push(chunk):
                 if seg.final:
-                    t = asyncio.create_task(self._me_final(seg))
+                    t = asyncio.create_task(self._me_final(seg, time.time()))
                     jobs.add(t)
                     t.add_done_callback(jobs.discard)
 
