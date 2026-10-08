@@ -5,8 +5,9 @@ to 1 kbit/s and up to 8 Mbit/s, and below 2 Mbit/s it scales the picture down to
 the headset. There is no daemon option for this, so this script edits media_server.py of the installed app
 (an app update overwrites it: run the script again). Restart the daemon (Reachy Mini Control) afterwards.
 
-    python robot/scripts/patch_daemon_video.py             # bitrate 3-15 Mbit/s (start 6), video 30 fps
-    python robot/scripts/patch_daemon_video.py --fps 0     # keep the camera's 60 fps
+    python robot/scripts/patch_daemon_video.py             # bitrate 3-15 Mbit/s (start 6)
+    python robot/scripts/patch_daemon_video.py --fps 30    # + videorate to 30 fps: DON'T, WebRTC sessions then hung
+                                                           #   mid-negotiation after ~1 min (2026-10-08)
     python robot/scripts/patch_daemon_video.py --h264      # + H264 (Apple hardware encoder instead of VP8 software)
     python robot/scripts/patch_daemon_video.py --revert    # original file back
 """
@@ -57,7 +58,7 @@ def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--file", type=Path, default=DEFAULT)
     ap.add_argument("--h264", action="store_true")
-    ap.add_argument("--fps", type=int, default=30, help="video frame rate to the headset; 0 = camera rate (60)")
+    ap.add_argument("--fps", type=int, default=0, help="video frame rate to the headset; 0 = camera rate (60)")
     ap.add_argument("--revert", action="store_true")
     args = ap.parse_args()
     f, orig = args.file, args.file.with_suffix(".py.orig")

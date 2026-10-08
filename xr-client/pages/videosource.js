@@ -14,6 +14,10 @@
 
 const W = 1920, H = 1080;  // the camera's full resolution (1280x720 looked soft); fixed so the GPU texture never changes size
 const MODE_KEY = "reachy-xr-video-mode";
+// At most this many uploads of the 1080p frame per second: the camera sends 60 fps, and uploading every one of
+// them (plus decoding) dragged VR down to ~19 fps. Limiting it in the daemon (videorate) made WebRTC sessions
+// hang mid-negotiation, so it is done here.
+const MAX_DRAW_FPS = 30;
 
 export function createVideoSource(video, log) {
   const modes = ["track", "canvas", "direct"].filter((m) => m !== "track" || "MediaStreamTrackProcessor" in window);
@@ -26,7 +30,7 @@ export function createVideoSource(video, log) {
 
   let reader = null, trackId = null, latest = null, fresh = false, hasFrame = false;
   let lastTrackFrame = 0, restarts = 0, usingFallback = false;
-  let received = 0, drawn = 0, rxFps = 0, drawFps = 0, size = "-";
+  let received = 0, drawn = 0, rxFps = 0, drawFps = 0, size = "-", lastDraw = 0;
   setInterval(() => { rxFps = received; drawFps = drawn; received = drawn = 0; }, 1000);
 
   function stopTrack() {
@@ -60,6 +64,7 @@ export function createVideoSource(video, log) {
   function draw(src, w, h) {
     if (!w || !h) return false;
     ctx.drawImage(src, 0, 0, W, H);
+    lastDraw = performance.now();
     size = `${w}x${h}`;
     drawn++; hasFrame = true;
     return true;
@@ -86,7 +91,7 @@ export function createVideoSource(video, log) {
       if (mode === "track") {
         const track = video.srcObject?.getVideoTracks?.()[0];
         if (track && track.readyState === "live" && track.id !== trackId) { stopTrack(); readTrack(track); }
-        if (fresh && latest) {
+        if (fresh && latest && performance.now() - lastDraw >= 1000 / MAX_DRAW_FPS - 2) {
           fresh = false;
           usingFallback = false;
           return draw(latest, latest.displayWidth, latest.displayHeight);
