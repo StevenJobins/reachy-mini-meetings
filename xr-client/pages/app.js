@@ -68,7 +68,7 @@ function statusText() {
   const f = (v) => v.map((x) => x.toFixed(1).padStart(6)).join(" ");
   return [
     `robot ${status.robot}   motors ${status.motors}   ice ${status.ice}   video ${status.video} ${status.videoIn}   send ${status.send} Hz   mic ${status.mic} ${status.micKbps.toFixed(0)} kbps   volume ${status.volume}`,
-    `cmd  r/p/y ${f(status.cmd)}   body ${status.body.toFixed(1)}   speaker target ${speaker.target.toFixed(0)} base ${speaker.base.toFixed(0)}`,
+    `cmd  r/p/y ${f(status.cmd)}   body ${status.body.toFixed(1)}   speaker target ${speaker.target.toFixed(0)} base ${speaker.base.toFixed(0)}   view ${viewMode} delay ${(videoDelayS * 1000).toFixed(0)}ms turn ${(status.turn ?? 0).toFixed(0)}°/s`,
     `meas r/p/y ${f(status.meas)}   captions ${status.captions}   ${faces.stats()}   robot sound ${status.sound} ${roomAudio.stats()} ${status.audioIn}   doa ${status.doa}`,
   ].join("\n");
 }
@@ -328,7 +328,9 @@ const robot = createRobot({
     speaker.pushHeadYaw(performance.now() / 1000, yaw);
     // The VR room turns with the base (speaker yaw + framing pitch): the window shows where the robot looks
     // RELATIVE to the speaker, so it stays centred in front of you while Reachy frames a face.
-    scene.setRobotHead(recenter.toWorld(robotToHeadset(roll, pitch - basePitch, yaw - speaker.base)));
+    // Stored with its arrival time; the window uses the pose from when the shown frame was captured (below).
+    poseHist.push([performance.now() / 1000, roll, pitch - basePitch, yaw - speaker.base]);
+    if (poseHist.length > 90) poseHist.shift();
   },
   onDoa: (angle, speech) => {
     status.doa = `${(90 - angle * 180 / Math.PI).toFixed(0)}° ${speech ? "SPEECH" : "quiet"}`;   // relative to the head, + = left
@@ -341,6 +343,74 @@ const robot = createRobot({
 });
 
 let captions = null, notes = null;   // created after the scene (they need its three.js groups)
+// ---------------------------------------------------------------- view: world-locked (reprojection) or comfort
+// World-locked (default, as in the proposal): the video window hangs where the robot camera looked when the
+// shown frame was captured. Frames carry no pose (Pollen's WebRTC), so we pair them by time: the measured
+// head pose arrives with almost no delay on the data channel, the video ~0.1 s later (capture + encode +
+// network jitter buffer + decode). The window therefore uses the pose from videoDelayS ago, estimated live
+// from the WebRTC stats. Comfort: the calm, lazily following window (no latency hiding).
+const VIEW_KEY = "reachy-xr-view";
+let viewMode = "world";
+try { if (localStorage.getItem(VIEW_KEY) === "comfort") viewMode = "comfort"; } catch {}
+if (params.get("window")) viewMode = params.get("window") === "robot" || params.get("window") === "world" ? "world" : "comfort";
+const poseHist = [];                 // [t, roll, pitch, yaw] (deg, relative to the base), arrival time
+const CAPTURE_ENCODE_S = 0.045;      // camera exposure/readout + H.264 encode on the robot side (estimate)
+let videoDelayS = 0.12;              // shown frame age relative to the pose stream, updated from getStats
+let vjb = null;                      // previous jitter-buffer / decode counters
+setInterval(async () => {
+  const pc = robot.peerConnection;
+  if (!pc) return;
+  try {
+    (await pc.getStats()).forEach((r) => {
+      if (r.type !== "inbound-rtp" || r.kind !== "video") return;
+      const now = { jb: r.jitterBufferDelay ?? 0, n: r.jitterBufferEmittedCount ?? 0, dec: r.totalDecodeTime ?? 0, f: r.framesDecoded ?? 0 };
+      if (vjb && now.n > vjb.n && now.f > vjb.f) {
+        const est = (now.jb - vjb.jb) / (now.n - vjb.n) + (now.dec - vjb.dec) / (now.f - vjb.f) + CAPTURE_ENCODE_S;
+        if (est > 0 && est < 1) videoDelayS += 0.3 * (est - videoDelayS);
+      }
+      vjb = now;
+    });
+  } catch {}
+}, 1000);
+
+/** Head pose (relative to the base) at time t, interpolated between the stored samples. */
+function poseAt(t) {
+  const h = poseHist;
+  if (!h.length) return null;
+  if (t <= h[0][0]) return h[0].slice(1);
+  for (let i = h.length - 1; i > 0; i--) {
+    if (h[i - 1][0] <= t) {
+      const [t0, ...a] = h[i - 1], [t1, ...b] = h[i];
+      const u = t1 > t0 ? Math.min(1, (t - t0) / (t1 - t0)) : 1;
+      return a.map((v, k) => v + (b[k] - v) * u);
+    }
+  }
+  return h[h.length - 1].slice(1);
+}
+
+// Vignette: darken the edge while the picture turns without the user's own head motion, i.e. while the base
+// (speaker direction + framing pitch) moves. 0 below 6 °/s, full at 45 °/s.
+let lastBase = null;
+function updateView() {
+  const nowS = performance.now() / 1000;
+  const p = poseAt(nowS - videoDelayS);
+  if (p) scene.setRobotHead(recenter.toWorld(robotToHeadset(p[0], p[1], p[2])));
+  const b = [speaker.base, basePitch, nowS];
+  if (lastBase && b[2] > lastBase[2]) {
+    const rate = Math.hypot(b[0] - lastBase[0], b[1] - lastBase[1]) / (b[2] - lastBase[2]);
+    scene.setVignette(awake ? (rate - 6) / 39 : 0);
+    status.turn = rate;
+  }
+  lastBase = b;
+}
+
+function setViewMode(m) {
+  viewMode = m === "comfort" ? "comfort" : "world";
+  scene.setWindowMode(viewMode);
+  try { localStorage.setItem(VIEW_KEY, viewMode); } catch {}
+  $("view-mode").value = viewMode;
+}
+
 let debugOn = false;                 // VR debug panel (More -> Debug)
 let videoMode = "";                  // label of the Video button, set after the scene exists
 const scene = createScene({
@@ -359,7 +429,7 @@ const scene = createScene({
     send(mirror.step(raw, dt), now / 1000);
   },
   // Head-locked buttons in VR: point (controller ray / hand pinch) and select. Select elsewhere = recenter.
-  windowMode: params.get("window") === "robot" ? "robot" : "head",   // video window follows your head
+  windowMode: viewMode,
   vrButtons: [
     { kind: "mic", muted: () => mic.muted || status.mic !== "on", label: () => (mic.muted ? "Muted" : status.mic === "on" ? "Mic on" : "Mic off"), onClick: toggleMic },
     { icon: "🙋", label: "Talk", onClick: wantToTalk },
@@ -372,6 +442,8 @@ const scene = createScene({
     { icon: () => (robotMuted ? "🔇" : "🔊"), label: "Sound", active: () => !robotMuted, onClick: () => setRobotMuted(!robotMuted) },
     { icon: "🗣", label: () => (captions?.voiceGender === "female" ? "Siri" : "Viktor"), more: true,
       onClick: () => captions.setVoiceGender(captions.voiceGender === "female" ? "male" : "female") },
+    { icon: () => (viewMode === "world" ? "🌐" : "🛋"), label: () => (viewMode === "world" ? "World-locked" : "Comfort"),
+      more: true, onClick: () => setViewMode(viewMode === "world" ? "comfort" : "world") },
     { icon: "⟳", label: "Recenter", more: true, onClick: () => { wantRecenter = true; } },
     { icon: "🎞", label: () => `Video: ${videoMode}`, more: true, onClick: () => { videoMode = scene.cycleVideo(); } },   // A/B the frame paths (videosource.js)
     { icon: "🐞", label: "Debug", more: true, active: () => debugOn, onClick: () => { debugOn = !debugOn; scene.toggleDebug(); } },
@@ -383,7 +455,7 @@ const scene = createScene({
     : status.captions === "on" ? ""
     : status.captions === "not allowed" ? "⚠ Caption server refused this Hugging Face account"
     : "⚠ No caption server: no captions, Reachy won't turn to speakers"),
-  onFrame: () => captions?.follow(),
+  onFrame: () => { captions?.follow(); updateView(); },
   log,
   onSelect: () => { wantRecenter = true; },
   onEnd: () => { log("VR session ended"); status.xr = "off"; show("awake", "Reachy is awake. Tap Start to look around again, or Sleep."); },
@@ -542,6 +614,8 @@ captions = createCaptions({
 });
 $("captions-url").value = captionsUrl();
 $("captions-url").onchange = (e) => { setCaptionsUrl(e.target.value.trim()); captions.reconnect(); };
+$("view-mode").value = viewMode;
+$("view-mode").onchange = (e) => setViewMode(e.target.value);
 $("caption-mode").value = captions.mode;
 $("caption-mode").onchange = (e) => captions.setMode(e.target.value);
 $("show-faces").checked = captions.showFaces;

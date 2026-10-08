@@ -177,6 +177,8 @@
     <details class="card">
       <summary>Settings &amp; debug</summary>
       <div class="settings-body">
+        <label>VR view <select id="view-mode" title="World-locked hides the robot's delay (reprojection); comfort keeps the window calm in front of you">
+          <option value="world">World-locked (reprojection, default)</option><option value="comfort">Comfort (window follows you calmly)</option></select></label>
         <label>Caption server <input id="captions-url" placeholder="automatic (localhost, else wireless tunnel)"></label>
         <label class="check"><input type="checkbox" id="show-faces"> Show detected faces (frame in the video)</label>
         <div class="row">

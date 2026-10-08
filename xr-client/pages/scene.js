@@ -7,7 +7,7 @@
 import * as THREE from "three";
 import { createVideoSource } from "./videosource.js";
 
-export function createScene({ video, vfovDeg, distM, statusText, onHeadsetPose, onSelect, onEnd, onFrame, vrButtons = [], warning = () => "", windowMode = "head", log = console.log }) {
+export function createScene({ video, vfovDeg, distM, statusText, onHeadsetPose, onSelect, onEnd, onFrame, vrButtons = [], warning = () => "", windowMode = "world", log = console.log }) {
   const renderer = new THREE.WebGLRenderer({ antialias: true });
   renderer.xr.enabled = true;
   renderer.domElement.addEventListener("webglcontextlost", () => log("ERROR webgl context lost (GPU crash / out of memory)"));
@@ -112,6 +112,24 @@ export function createScene({ video, vfovDeg, distM, statusText, onHeadsetPose, 
     [...statusText().split("\n"), `${source.stats()}   ${perfLine}`].forEach((l, i) => hudCtx.fillText(l, 20, 40 + i * 40));
     hudTex.needsUpdate = true;
   }, 200);
+
+  // ---- comfort vignette: darkens the edge of the view while the picture turns without your own head motion
+  // (Reachy turning to a speaker or framing a face). Optic flow in the periphery that the body does not feel is
+  // the main cause of VR sickness; a narrower field of view during such turns is the standard counter-measure.
+  // Head-locked, centre stays clear (the dock and the middle of the video stay visible).
+  const vignette = new THREE.Mesh(new THREE.PlaneGeometry(2.4, 2.4), new THREE.MeshBasicMaterial({
+    transparent: true, depthTest: false, depthWrite: false, opacity: 0,
+    map: canvasTexture(512, 512, (ctx, w, h) => {
+      const g = ctx.createRadialGradient(w / 2, h / 2, w * 0.17, w / 2, h / 2, w * 0.36);
+      g.addColorStop(0, "rgba(0,0,0,0)"); g.addColorStop(1, "rgba(0,0,0,1)");
+      ctx.fillStyle = g; ctx.fillRect(0, 0, w, h);
+    }),
+  }));
+  vignette.position.set(0, 0, -0.6);
+  vignette.renderOrder = 999;
+  vignette.visible = false;
+  camera.add(vignette);
+  let vignetteGoal = 0;
 
   // ---- dock below the view, standing in the room (it moves with the video window, not with every head turn):
   // round buttons with icon + label like a video call, the mic in the middle. Entries with `more: true` sit in
@@ -363,10 +381,12 @@ export function createScene({ video, vfovDeg, distM, statusText, onHeadsetPose, 
 
   const target = new THREE.Quaternion();
   let haveTarget = false;
-  // windowMode "head": the video window (and the dock) stand still in the room, so looking around inside the
-  // picture moves nothing. Only after you look clearly elsewhere (> FOLLOW_DEG for FOLLOW_S) they glide back in
-  // front of you, yaw only: content that chases every head movement made the headset uncomfortable.
-  // "robot" (?window=robot): the window sits where the robot looks (latency-hiding reprojection).
+  // windowMode "world" (default, rotation-only reprojection): the video window is world-locked where the robot
+  // camera looked when the frame was taken (the app hands in the time-aligned pose), so your own head turns are
+  // shown without lag; the robot's delay only shows as the edge of the window.
+  // windowMode "comfort": the window stands still while you look into it and glides back in front of you only
+  // after you look clearly elsewhere (> FOLLOW_DEG for FOLLOW_S), yaw only. No latency hiding, but calm.
+  // The dock always follows lazily like the comfort window.
   const FOLLOW_DEG = 30, FOLLOW_S = 0.5, GLIDE_S = 0.25;
   const headQ = new THREE.Quaternion(), headE = new THREE.Euler(0, 0, 0, "YXZ"), lazyQ = new THREE.Quaternion(), yAxis = new THREE.Vector3(0, 1, 0);
   let lazyYaw = null, awaySince = null, gliding = false, lastNow = 0;
@@ -427,8 +447,10 @@ export function createScene({ video, vfovDeg, distM, statusText, onHeadsetPose, 
     updateWarning();
     followHead(now);
     ui.quaternion.copy(lazyQ);
-    if (windowMode === "head") robotView.quaternion.copy(lazyQ);
-    else if (haveTarget) robotView.quaternion.slerp(target, 0.5);   // pose stream ~30 Hz -> smooth at display rate
+    if (windowMode === "comfort") robotView.quaternion.copy(lazyQ);
+    else if (haveTarget) robotView.quaternion.copy(target);   // already interpolated + time-aligned by the app
+    vignette.material.opacity += (vignetteGoal - vignette.material.opacity) * (vignetteGoal > vignette.material.opacity ? 0.35 : 0.06);
+    vignette.visible = vignette.material.opacity > 0.01;
     if (frame) updatePointers(frame);
     onFrame?.(now);
     const tR = performance.now();
@@ -473,6 +495,13 @@ export function createScene({ video, vfovDeg, distM, statusText, onHeadsetPose, 
 
     /** Debug panel (status lines) at the top of the view. */
     toggleDebug() { hud.visible = !hud.visible; },
+
+    /** "world" (world-locked, latency-hiding) or "comfort" (calm, lazily follows the head). */
+    get windowMode() { return windowMode; },
+    setWindowMode(m) { windowMode = m === "comfort" ? "comfort" : "world"; lazyYaw = null; log("view:", windowMode); },
+
+    /** 0..1: how strongly to darken the edge of the view (fades in fast, out slowly). */
+    setVignette(strength) { vignetteGoal = Math.max(0, Math.min(1, strength)); },
 
     exitVR() { renderer.xr.getSession()?.end(); exitDesktop(); },
 
