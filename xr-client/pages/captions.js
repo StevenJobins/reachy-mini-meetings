@@ -28,6 +28,9 @@ const TUNNEL_TOPIC = "reachy-meetings-xr-captions";   // keep in sync with backe
 export const MODES = ["both", "translation", "original"];
 const SHOW_S = 8;           // a final bubble stays this long after its last update
 const PARTIAL_S = 5;        // a partial without updates disappears after this
+// "…" bubble as soon as the backend's VAD hears speech (~0.15 s), until the first text (~1 s): someone is talking
+// here. Replaced by the first caption; gone after TYPING_S without one (cough, noise), or soon after speech ends.
+const TYPING_ID = -1, TYPING_S = 1.5, TYPING_END_S = 0.6;
 const MAX_BUBBLES = 3;
 const W = 1024, H = 448, TAIL = 36;   // bubble canvas, drawn bottom-anchored, tail below
 const PLANE_W = 1.2;        // metres
@@ -251,8 +254,26 @@ export function createCaptions({ three, distM, vfovDeg, cameraModel = null, spea
     }
   }
 
+  function typing(vad) {
+    const now = performance.now();
+    if (!vad.speaking) {
+      const b = bubbles.get(TYPING_ID);
+      if (b) b.until = Math.min(b.until, now + 1000 * TYPING_END_S);
+      return;
+    }
+    // only while no live (partial) bubble shows this speech already
+    if ([...bubbles.values()].some((o) => !o.msg.final && o.msg.id !== TYPING_ID)) return;
+    const isNew = !bubbles.has(TYPING_ID);
+    const b = bubble(TYPING_ID);
+    b.until = now + 1000 * TYPING_S;
+    if (!isNew) return;
+    b.msg = { id: TYPING_ID, final: false, text: "…", translation: null, doa_deg: null };
+    place(b, true);
+    redraw(b);
+  }
+
   function renderPage() {
-    const items = [...finals.slice(-6), ...[...bubbles.values()].filter((b) => !b.msg.final).map((b) => b.msg)];
+    const items = [...finals.slice(-6), ...[...bubbles.values()].filter((b) => !b.msg.final && b.msg.id !== TYPING_ID).map((b) => b.msg)];
     if (listEl) {
       listEl.replaceChildren(...items.map((m) => {
         const b = bubbles.get(m.id), meta = m.meta ?? b;
@@ -300,6 +321,7 @@ export function createCaptions({ three, distM, vfovDeg, cameraModel = null, spea
     // replayed history on (re)connect: list only, no bubbles
     if (msg.final && msg.t_end < Date.now() / 1000 - SHOW_S) { renderPage(); return; }
     if (msg.final) onFinal?.(msg);   // fresh finished utterance (voice commands)
+    remove(TYPING_ID);
     const b = bubble(msg.id);
     b.msg = msg;
     b.until = performance.now() + 1000 * (msg.final ? SHOW_S : PARTIAL_S);
@@ -365,7 +387,7 @@ export function createCaptions({ three, distM, vfovDeg, cameraModel = null, spea
       if (msg.type === "hello") { onHello(msg); serverTarget = msg.target || serverTarget; }
       else if (msg.type === "caption") onCaption(msg);
       else if (msg.type === "summary") onSummary?.(msg);
-      else if (msg.type === "vad") onVad?.(msg);
+      else if (msg.type === "vad") { typing(msg); onVad?.(msg); }
       else if (msg.type === "me") onMe?.(msg);
       else if (msg.type === "faces") facesHandler?.(msg);
       else if (msg.type === "depth") depthHandler?.(msg);
