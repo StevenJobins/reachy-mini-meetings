@@ -19,6 +19,7 @@ import { createRoomAudio } from "./roomaudio.js";
 import { createMic } from "./mic.js";
 import { explainVolume, volumeCommand } from "./voicecmd.js";
 import { CameraModel, factoryLite } from "./camera.js";
+import { createWorldMode } from "./worldmode.js";
 
 // HF OAuth app (huggingface.co/settings/applications), redirect URL = this page's URL.
 const HF_CLIENT_ID = "37472ae1-2bae-4d97-be66-ef7446028c40";
@@ -49,6 +50,7 @@ function applyCamera() {
   scene.setCamera(cam);
   captions?.setCamera(cam);
   faceSpeakers.camera = cam;
+  worldMode?.setCamera(cam);
 }
 fetch("camera.json", { cache: "no-store" })
   .then((r) => (r.ok ? r.json() : null))
@@ -107,7 +109,8 @@ function statusText() {
   const f = (v) => v.map((x) => x.toFixed(1).padStart(6)).join(" ");
   return [
     `robot ${status.robot}   motors ${status.motors}   ice ${status.ice}   video ${status.video} ${status.videoIn}   send ${status.send} Hz   mic ${status.mic} ${status.micKbps.toFixed(0)} kbps   volume ${status.volume}`,
-    `cmd  r/p/y ${f(status.cmd)}   body ${status.body.toFixed(1)}   speaker target ${speaker.target.toFixed(0)} base ${speaker.base.toFixed(0)}   cam ${cam.name} ${cam.hfovDeg.toFixed(0)}x${cam.vfovDeg.toFixed(0)}°   room ${scene.roomInfo.patches}${scan.active ? ` scanning ${status.scan ?? ""}` : ""} depth ${scene.roomInfo.depth}${depthError ? "(off)" : ""}   view ${viewMode}${viewMode === "world" ? `/${status.follow ?? "-"}` : ""} delay ${(videoDelayS * 1000).toFixed(0)}ms turn ${(status.turn ?? 0).toFixed(0)}°/s`,
+    `cmd  r/p/y ${f(status.cmd)}   body ${status.body.toFixed(1)}   speaker target ${speaker.target.toFixed(0)} base ${speaker.base.toFixed(0)}   cam ${cam.name} ${cam.hfovDeg.toFixed(0)}x${cam.vfovDeg.toFixed(0)}°   room ${scene.roomInfo.patches}${scan.active ? ` scanning ${status.scan ?? ""}` : ""} depth ${scene.roomInfo.depth}${depthError ? "(off)" : ""}   view ${viewMode}${viewMode !== "comfort" ? `/${status.follow ?? "-"}` : ""} delay ${(videoDelayS * 1000).toFixed(0)}ms turn ${(status.turn ?? 0).toFixed(0)}°/s`,
+    ...(viewMode === "worldview" ? [worldMode.status()] : []),
     `meas r/p/y ${f(status.meas)}   captions ${status.captions}   ${backendFacesLive() ? `people (backend) @ ${backendFacesFps} fps` : faces.stats()}   robot sound ${status.sound} ${roomAudio.stats()} ${status.audioIn}   doa ${status.doa}`,
   ].join("\n");
 }
@@ -158,7 +161,7 @@ setInterval(async () => {
 setInterval(() => {
   const mem = performance.memory ? `heap ${(performance.memory.usedJSHeapSize / 1e6).toFixed(0)} MB` : "heap ?";
   log("alive", mem, status.audioIn, `xr ${status.xr}`, `robot ${status.robot}`, `ice ${status.ice}`, `motors ${status.motors}`,
-    `send ${status.send} Hz`, scene.videoStats(), `in ${status.videoIn}`, roomAudio.stats(), backendFacesLive() ? `people backend ${backendFacesFps} fps` : faces.stats());
+    `send ${status.send} Hz`, scene.videoStats(), `in ${status.videoIn}`, roomAudio.stats(), backendFacesLive() ? `people backend ${backendFacesFps} fps` : faces.stats(), worldMode?.status() ?? "");
 }, 5000);
 document.addEventListener("visibilitychange", () => log("page", document.visibilityState));
 // Deployed version: the Pages workflow stamps module URLs with the commit (app.js?v=<sha>).
@@ -376,6 +379,7 @@ const robot = createRobot({
     poseHist.push([performance.now() / 1000, roll, pitch - basePitch, yaw - speaker.base]);
     if (poseHist.length > 90) poseHist.shift();
     absHist.push([performance.now() / 1000, roll, pitch, yaw]);   // absolute: window + room panorama
+    worldMode?.pushPose(performance.now() / 1000, roll, pitch, yaw);   // world view (worldmode.js)
     if (absHist.length > 90) absHist.shift();
   },
   onDoa: (angle, speech) => {
@@ -389,6 +393,7 @@ const robot = createRobot({
 });
 
 let captions = null, notes = null;   // created after the scene (they need its three.js groups)
+let worldMode = null;                // world view (worldmode.js), also created after the scene
 // ---------------------------------------------------------------- view: world-locked (reprojection) or comfort
 // World-locked (default, as in the proposal): the video window hangs where the robot camera looked when the
 // shown frame was captured. Frames carry no pose (Pollen's WebRTC), so we pair them by time: the measured
@@ -397,7 +402,7 @@ let captions = null, notes = null;   // created after the scene (they need its t
 // from the WebRTC stats. Comfort: the calm, lazily following window (no latency hiding).
 const VIEW_KEY = "reachy-xr-view";
 let viewMode = "world";
-try { if (localStorage.getItem(VIEW_KEY) === "comfort") viewMode = "comfort"; } catch {}
+try { const v = localStorage.getItem(VIEW_KEY); if (v === "comfort" || v === "worldview") viewMode = v; } catch {}
 if (params.get("window")) viewMode = params.get("window") === "robot" || params.get("window") === "world" ? "world" : "comfort";
 const poseHist = [];                 // [t, roll, pitch, yaw] (deg, relative to the base), arrival time
 const cmdHist = [];                  // same for what we commanded
@@ -444,10 +449,13 @@ function updateView() {
   // ahead = looking at the speaker. The scanned room and the live window both live in it.
   const roomQ = recenter.toWorld(qinv(robotToHeadset(0, basePitch, speaker.base)));
   scene.setRoomFrame(roomQ);
-  const p = poseAt(nowS - videoDelayS);
-  const a = poseAt(nowS - videoDelayS, absHist);
-  if (p && a && robotFollows(p, nowS)) scene.setRobotHead(qmul(roomQ, robotToHeadset(a[0], a[1], a[2])));
-  else scene.clearRobotHead();
+  if (viewMode === "worldview") worldViewFrame(nowS, roomQ);
+  else {
+    const p = poseAt(nowS - videoDelayS);
+    const a = poseAt(nowS - videoDelayS, absHist);
+    if (p && a && robotFollows(p, nowS)) scene.setRobotHead(qmul(roomQ, robotToHeadset(a[0], a[1], a[2])));
+    else scene.clearRobotHead();
+  }
   const b = [speaker.base, basePitch, nowS];
   if (lastBase && b[2] > lastBase[2]) {
     const rate = Math.hypot(b[0] - lastBase[0], b[1] - lastBase[1]) / (b[2] - lastBase[2]);
@@ -477,9 +485,22 @@ function robotFollows(p, nowS) {
   return following;
 }
 
+// World view (Dominic, worldmode.js): one continuous panorama + the live picture at the pose of its capture time,
+// with the video lag measured from the picture itself. Same room frame and safety check as world-locked.
+function worldViewFrame(nowS, roomQ) {
+  const lagS = worldMode.lagS(videoDelayS);
+  const p = poseAt(nowS - lagS);
+  const follow = !!p && robotFollows(p, nowS);
+  const a = worldMode.frame(nowS, roomQ, videoDelayS, follow, roomVisible);
+  if (a) scene.setRobotHead(qmul(roomQ, robotToHeadset(a[0], a[1], a[2])));   // bubbles move with the live picture
+  else scene.clearRobotHead();
+}
+
 function setViewMode(m) {
-  viewMode = m === "comfort" ? "comfort" : "world";
-  scene.setWindowMode(viewMode);
+  viewMode = m === "comfort" || m === "worldview" ? m : "world";
+  scene.setWindowMode(viewMode === "comfort" ? "comfort" : "world");
+  worldMode.setActive(viewMode === "worldview");
+  scene.setRoomVisible(viewMode !== "worldview" && roomVisible);
   try { localStorage.setItem(VIEW_KEY, viewMode); } catch {}
   $("view-mode").value = viewMode;
 }
@@ -500,10 +521,11 @@ const roomSlots = new Map();          // key -> { pitch, yaw, t } where the patc
 let depthSeq = 0, depthPending = 0, depthError = null;
 const depthLatest = new Map();        // key -> request id of the newest frame (older replies are dropped)
 
-const scanTarget = () => (scan.active ? [0, scan.target.pitch, scan.target.yaw] : null);
+const scanTarget = () => (scan.active ? [0, scan.target.pitch, scan.target.yaw] : worldMode?.lookTarget() ?? null);
 
 function startRoomScan() {
   if (!awake) return;
+  if (viewMode === "worldview") { worldMode.lookAround(); flash("🔄 Reachy looks around…"); return; }   // its own look-around
   scene.clearRoom(); roomSlots.clear(); depthLatest.clear(); depthError = null;
   scan.start(performance.now() / 1000);
   log("room scan: start");
@@ -552,7 +574,7 @@ setInterval(() => {   // scan driver
 }, 50);
 
 setInterval(() => {   // keep the panorama fresh: re-take the patch in the direction Reachy holds still in
-  if (!awake || scan.active || !roomSlots.size || status.follow !== "locked") return;
+  if (!awake || scan.active || !roomSlots.size || status.follow !== "locked" || viewMode === "worldview") return;
   const nowS = performance.now() / 1000;
   const recent = absHist.filter(([t]) => nowS - t < 0.6);
   if (recent.length < 5) return;
@@ -609,9 +631,11 @@ const scene = createScene({
       onClick: () => captions.setVoiceGender(captions.voiceGender === "female" ? "male" : "female") },
     { icon: () => (viewMode === "world" ? "🌐" : "🛋"), label: () => (viewMode === "world" ? "World-locked" : "Comfort"),
       more: true, onClick: () => setViewMode(viewMode === "world" ? "comfort" : "world") },
+    { icon: "🧭", label: "World view", more: true, active: () => viewMode === "worldview",
+      onClick: () => setViewMode(viewMode === "worldview" ? "world" : "worldview") },
     { icon: "🔄", label: () => (scan.active ? `Scan ${status.scan ?? ""}` : "Scan room"), more: true, onClick: startRoomScan },
     { icon: "🏠", label: () => (roomVisible ? "Room on" : "Room off"), more: true, active: () => roomVisible,
-      onClick: () => { roomVisible = !roomVisible; scene.setRoomVisible(roomVisible); saveRoomSettings(); } },
+      onClick: () => { roomVisible = !roomVisible; scene.setRoomVisible(roomVisible && viewMode !== "worldview"); saveRoomSettings(); } },
     { icon: "⟳", label: "Recenter", more: true, onClick: () => { wantRecenter = true; } },
     { icon: "🎞", label: () => `Video: ${videoMode}`, more: true, onClick: () => { videoMode = scene.cycleVideo(); } },   // A/B the frame paths (videosource.js)
     { icon: "🐞", label: "Debug", more: true, active: () => debugOn, onClick: () => { debugOn = !debugOn; scene.toggleDebug(); } },
@@ -824,10 +848,15 @@ $("captions-url").onchange = (e) => { setCaptionsUrl(e.target.value.trim()); cap
 $("view-mode").value = viewMode;
 captions.onDepth = onDepth;
 scene.setRoomVisible(roomVisible);
+// created after the scene (it draws into it); pushPose / setCamera calls before this are skipped (worldMode?.)
+const panoParam = Number(params.get("pano"));
+worldMode = createWorldMode({ scene, video, camera: cam, log, panoWidth: [1024, 2048, 4096].includes(panoParam) ? panoParam : 2048,
+  fixedLagS: params.get("lag") ? Number(params.get("lag")) : null });   // ?lag=0.2: debugging only
+if (viewMode === "worldview") setViewMode("worldview");
 $("scan-after-wake").checked = scanAfterWake;
 $("scan-after-wake").onchange = (e) => { scanAfterWake = e.target.checked; saveRoomSettings(); };
 $("room-visible").checked = roomVisible;
-$("room-visible").onchange = (e) => { roomVisible = e.target.checked; scene.setRoomVisible(roomVisible); saveRoomSettings(); };
+$("room-visible").onchange = (e) => { roomVisible = e.target.checked; scene.setRoomVisible(roomVisible && viewMode !== "worldview"); saveRoomSettings(); };
 $("scan-now").onclick = startRoomScan;
 $("camera-model").value = camChoice;
 $("camera-model").onchange = (e) => {

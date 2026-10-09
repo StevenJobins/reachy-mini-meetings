@@ -110,6 +110,7 @@ export function createScene({ video, vfovDeg, cameraModel = null, distM, statusT
   scene.add(room);
   const roomPatches = new Map();   // key -> { mesh, depth }
   let roomSeq = 0, roomOn = true;
+  let worldViewOn = false, frameSeq = 0;   // hooks for Dominic's world view (worldview.js), see the API below
   const feather = canvasTexture(256, 256, (ctx, w, h) => {
     ctx.fillStyle = "#000"; ctx.fillRect(0, 0, w, h);
     ctx.filter = "blur(10px)"; ctx.fillStyle = "#fff"; ctx.fillRect(14, 14, w - 28, h - 28);
@@ -119,7 +120,7 @@ export function createScene({ video, vfovDeg, cameraModel = null, distM, statusT
   function updateRoomLook() {
     const has = roomOn && roomPatches.size > 0;
     room.visible = roomOn;
-    floor.visible = !has;      // the scanned room replaces the virtual floor ...
+    floor.visible = !has && !worldViewOn;      // the scanned room replaces the virtual floor ...
     bezel.visible = !has;      // ... and the live video blends into it without a frame
   }
 
@@ -463,10 +464,10 @@ export function createScene({ video, vfovDeg, cameraModel = null, distM, statusT
     const tUp = performance.now();
     let map = noVideoTex;
     if (source.mode === "direct") {
-      if (video.readyState >= video.HAVE_CURRENT_DATA && video.videoWidth > 0) { videoTex.needsUpdate = true; map = videoTex; }
+      if (video.readyState >= video.HAVE_CURRENT_DATA && video.videoWidth > 0) { videoTex.needsUpdate = true; map = videoTex; frameSeq++; }
       source.update();
     } else {
-      if (source.update()) canvasTex.needsUpdate = true;
+      if (source.update()) { canvasTex.needsUpdate = true; frameSeq++; }
       if (source.hasFrame) map = canvasTex;
     }
     if (screenMat.map !== map) { screenMat.map = map; screenMat.needsUpdate = true; }
@@ -618,7 +619,18 @@ export function createScene({ video, vfovDeg, cameraModel = null, distM, statusT
     clearRobotHead() { haveTarget = false; },
 
     /** For overlays (speech bubbles): the room, and the group that moves with the video window. */
-    three: { scene, robotView },
+    three: { scene, robotView, renderer },
+
+    // ---- hooks for Dominic's world view (worldview.js / worldmode.js); they change nothing while it is off
+    /** Texture of the live camera frame (null while there is none). */
+    get videoTexture() { return screenMat.map !== noVideoTex ? screenMat.map : null; },
+    /** Counts the camera frames put on the live texture (a new frame = a new number). */
+    get videoFrameSeq() { return frameSeq; },
+    /** World view on: it draws the live picture itself, so the video window (and its bezel) and the floor hide. */
+    setWorldView(on) {
+      if (on === worldViewOn) return;
+      worldViewOn = on; screen.visible = !on; updateRoomLook();
+    },
 
     /** Make a mesh in the room draggable (ray + pinch in VR, mouse on the desktop); onMoved after each drag. */
     addDraggable(mesh, onMoved) { draggables.push({ mesh, onMoved }); },
