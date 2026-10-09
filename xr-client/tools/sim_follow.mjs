@@ -20,12 +20,14 @@
 //            (speakers.pick with the mean DoA of the utterance), like captions.js
 //
 // Metrics per utterance (ground truth speaker P), over [start, end + 1 s]:
-//   acquire   s from speech start until the measured head is within 10° of P (and stays 0.5 s); miss = never
+//   acquire   s from speech start until the measured head is within 10° of P (and stays 0.5 s); median and 90th
+//             percentile over all utterances, a miss (never within the utterance + 1 s) counts as ∞
 //   on        share of [start + 1.5 s, end] the head is within 12° of P
 //   wrong     the target went within 10° of someone who is not speaking (a turn to the wrong person)
 //   back      the target went back to the previous speaker after having reached P
 //   reversals target moves > 10° in opposite directions within 2 s (oscillation), as analyze_follow.py
 //   moves     target changes > 4° (the page's "follow yaw" log lines)
+//   travel    head travel per minute, and divided by the travel the speaker changes need (1.0 = no detours)
 
 import { readFileSync } from "node:fs";
 import { resolve, dirname } from "node:path";
@@ -48,6 +50,10 @@ const camJson = JSON.parse(readFileSync(resolve(here, "../pages/camera.json"), "
 // app.js may pass its own SpeakerTracker settings: read them from follow.js if it exports them, else app.js's old ones
 const followMod = await import(pathToFileURL(resolve(pagesDir, "follow.js")));
 const TRACKER = followMod.TRACKER_OPTIONS ?? { confirmN: 5, confirmWindowS: 1.0 };
+// --set KEY=value,... overrides follow.js TUNING; --faces key=value,... FaceSpeakers options (parameter sweeps)
+const kv = (s) => Object.fromEntries((s ?? "").split(",").filter(Boolean).map((x) => { const [k, v] = x.split("="); return [k, Number(v)]; }));
+if (followMod.TUNING) Object.assign(followMod.TUNING, kv(opt("--set")));
+const FACE_OPTS = kv(opt("--faces"));
 
 const DEG = Math.PI / 180;
 
@@ -100,7 +106,7 @@ function simulate(name, seed) {
   const lines = [];
   let now = 0;
   const speaker = new SpeakerTracker(TRACKER);
-  const faces = new FaceSpeakers({ hfovDeg: cam.hfovDeg, camera: cam });
+  const faces = new FaceSpeakers({ hfovDeg: cam.hfovDeg, camera: cam, ...FACE_OPTS });
   const follow = new Follow({ speaker, faces, camera: cam, log: (s) => lines.push([now, s]) });
   follow.awake = true;
 
@@ -222,9 +228,10 @@ function evaluate(people, utts, trace, lines, dur) {
     res.push({ acquire, on: n ? onN / n : null, wrong, back, moves: moves.length, reversals: reversals(moves, at(u.t0)[2]) });
     prevWho = u.who;
   }
-  let travel = 0;
+  let travel = 0, needed = 0;
   for (let i = 1; i < trace.length; i++) travel += Math.abs(trace[i][1] - trace[i - 1][1]);
-  return { utts: res, travelPerMin: travel / (dur / 60) };
+  for (let i = 1; i < utts.length; i++) needed += Math.abs(people[utts[i].who].yaw - people[utts[i - 1].who].yaw);
+  return { utts: res, travelPerMin: travel / (dur / 60), excess: travel / Math.max(1, needed) };
 }
 
 function reversals(moves, y0) {
@@ -244,22 +251,22 @@ const median = (xs) => { const s = [...xs].sort((a, b) => a - b); return s.lengt
 const mean = (xs) => xs.reduce((a, b) => a + b, 0) / Math.max(1, xs.length);
 
 console.log(`pages: ${pagesDir}, seeds ${SEEDS}, tracker ${JSON.stringify(TRACKER)}`);
-console.log("scenario      utts  acquire med/p90 s  miss %  on-target %  wrong/utt  back/utt  reversals/utt  moves/utt  travel °/min");
+console.log("scenario      utts  acquire med/p90 s  miss %  on-target %  wrong/utt  back/utt  reversals/utt  moves/utt  travel °/min  travel/needed");
 const totals = [];
 for (const name of Object.keys(SCENARIOS)) {
   if (ONLY !== "all" && ONLY !== name) continue;
-  const all = [], travel = [];
-  for (let s = 1; s <= SEEDS; s++) { const r = simulate(name, s); all.push(...r.utts); travel.push(r.travelPerMin); }
+  const all = [], travel = [], excess = [];
+  for (let s = 1; s <= SEEDS; s++) { const r = simulate(name, s); all.push(...r.utts); travel.push(r.travelPerMin); excess.push(r.excess); }
   totals.push(...all);
-  const acq = all.map((u) => u.acquire).filter((x) => x != null).sort((a, b) => a - b);
+  const acq = all.map((u) => u.acquire ?? Infinity).sort((a, b) => a - b);   // a miss counts as never
   const p90 = acq[Math.floor(acq.length * 0.9)] ?? NaN;
   const row = [name.padEnd(12), String(all.length).padStart(5),
-    `${median(acq).toFixed(2)} / ${p90.toFixed(2)}`.padStart(18),
+    `${median(acq).toFixed(2)} / ${p90.toFixed(2)}`.replaceAll("Infinity", "∞").padStart(18),
     (100 * all.filter((u) => u.acquire == null).length / all.length).toFixed(0).padStart(7),
     (100 * mean(all.map((u) => u.on).filter((x) => x != null))).toFixed(0).padStart(12),
     mean(all.map((u) => u.wrong)).toFixed(2).padStart(10), mean(all.map((u) => u.back)).toFixed(2).padStart(9),
     mean(all.map((u) => u.reversals)).toFixed(2).padStart(14), mean(all.map((u) => u.moves)).toFixed(1).padStart(10),
-    mean(travel).toFixed(0).padStart(13)];
+    mean(travel).toFixed(0).padStart(13), mean(excess).toFixed(2).padStart(8)];
   console.log(row.join(" "));
 }
 if (VERBOSE) console.log(JSON.stringify(totals.slice(0, 20)));
