@@ -3,7 +3,7 @@
 // and with which pose is decided by worldmode.js.
 //
 // Panorama = two equirectangular render targets in the robot's world frame (lon = yaw, + = left; lat = up):
-//   colour: RGBA8 sRGB, the picture (in the exposure of the first frame, see gain)
+//   colour: half float linear (RGBA8 sRGB fallback), the picture in the exposure of the first frame (see gain)
 //   meta:   R = quality of the source that wrote the texel, G/B = when (16 bit, 0.5 s steps), A = coverage
 // paint(frame, pose): for every panorama texel in the frame's footprint: direction -> camera frame -> lens model
 // (same maths as camera.js) -> sample the frame. Per texel the BEST source wins (no alpha stacking, no ghosts):
@@ -61,12 +61,19 @@ export function worldToCamMatrix(roll, pitch, yaw, out = new THREE.Matrix3()) { 
 
 export function createWorldView({ renderer, parent, camera, radius = 4, width = 2048, exposure = true, log = console.log }) {
   const height = width / 2;
-  const rtOpts = (srgb) => ({
+  // Colour in half float (linear light) where the GPU can render to it: the panorama is stored in the exposure of
+  // its first frame, and a frame shot darker must be scaled UP, which an 8-bit target would clip at 1.0 (synthetic
+  // test with 0.7-1.3 auto exposure: compensation made the seams worse in RGBA8, see README).
+  const gl0 = renderer.getContext();
+  const halfFloat = !!(gl0.getExtension("EXT_color_buffer_half_float") || gl0.getExtension("EXT_color_buffer_float"));
+  const rtOpts = (isColor) => ({
     depthBuffer: false, stencilBuffer: false, generateMipmaps: false,
-    magFilter: srgb ? THREE.LinearFilter : THREE.NearestFilter, minFilter: srgb ? THREE.LinearFilter : THREE.NearestFilter,
+    magFilter: isColor ? THREE.LinearFilter : THREE.NearestFilter, minFilter: isColor ? THREE.LinearFilter : THREE.NearestFilter,
     wrapS: THREE.RepeatWrapping, wrapT: THREE.ClampToEdgeWrapping,
-    colorSpace: srgb ? THREE.SRGBColorSpace : THREE.NoColorSpace,
+    type: isColor && halfFloat ? THREE.HalfFloatType : THREE.UnsignedByteType,
+    colorSpace: isColor && !halfFloat ? THREE.SRGBColorSpace : THREE.NoColorSpace,
   });
+  log(`world view: panorama colour ${halfFloat ? "half float" : "RGBA8 sRGB (no float render targets)"}`);
   const color = [new THREE.WebGLRenderTarget(width, height, rtOpts(true)), new THREE.WebGLRenderTarget(width, height, rtOpts(true))];
   const meta = [new THREE.WebGLRenderTarget(width, height, rtOpts(false)), new THREE.WebGLRenderTarget(width, height, rtOpts(false))];
   const orthoCam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
@@ -154,7 +161,7 @@ export function createWorldView({ renderer, parent, camera, radius = 4, width = 
       f /= 9.0; p /= 9.0;
       if (!valid) p = 0.0;
       // 16 bit each (8 bit linear luminance quantises dark areas into useless ratios)
-      float f16 = floor(clamp(f, 0.0, 1.0) * 65535.0 + 0.5), p16 = floor(clamp(p, 0.0, 1.0) * 65535.0 + 0.5);
+      float f16 = floor(clamp(f, 0.0, 1.0) * 65535.0 + 0.5), p16 = floor(clamp(p / 4.0, 0.0, 1.0) * 65535.0 + 0.5);   // stored values may exceed 1 (half float)
       gl_FragColor = vec4(floor(f16 / 256.0), mod(f16, 256.0), floor(p16 / 256.0), mod(p16, 256.0)) / 255.0;
     }`, probeUniforms);
   const probeQuad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), probeMat);
@@ -308,13 +315,13 @@ export function createWorldView({ renderer, parent, camera, radius = 4, width = 
     gl.bindBuffer(gl.PIXEL_PACK_BUFFER, null);
     const ratios = [];
     for (let i = 0; i < PROBE_W * PROBE_H; i++) {
-      const f = (probeBuf[i * 4] * 256 + probeBuf[i * 4 + 1]) / 65535, p = (probeBuf[i * 4 + 2] * 256 + probeBuf[i * 4 + 3]) / 65535;
-      if (f > 0.02 && f < 0.95 && p > 0.02 && p < 0.95) ratios.push(p / f);   // p = 0: no stored panorama there
+      const f = (probeBuf[i * 4] * 256 + probeBuf[i * 4 + 1]) / 65535, p = 4 * (probeBuf[i * 4 + 2] * 256 + probeBuf[i * 4 + 3]) / 65535;
+      if (f > 0.02 && f < 0.95 && p > 0.005 && p < 3.9) ratios.push(p / f);   // p = 0: no stored panorama there
     }
     if (ratios.length < 40) return;
     ratios.sort((a, b) => a - b);
     lastProbe = { n: ratios.length, p25: ratios[ratios.length >> 2], p50: ratios[ratios.length >> 1], p75: ratios[(3 * ratios.length) >> 2] };
-    const g = Math.max(0.5, Math.min(2, ratios[ratios.length >> 1]));
+    const g = Math.max(0.25, Math.min(4, ratios[ratios.length >> 1]));   // linear light: an sRGB exposure step x1.3 is x1.8 here
     gain = g;   // measured on the very view that is painted next (same exposure): no smoothing
     gainLog.push([probes, g]);
     if (gainLog.length > 200) gainLog.shift();

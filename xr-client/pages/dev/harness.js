@@ -172,8 +172,16 @@ window.harness = {
   /** Panorama colour as RGBA bytes (bottom row first), plus meta, for the analysis. */
   panorama() {
     const v = worldMode.view, rt = v.targets.color, r = scene.three.renderer;
-    const px = new Uint8Array(rt.width * rt.height * 4), mx = new Uint8Array(rt.width * rt.height * 4);
-    r.readRenderTargetPixels(rt, 0, 0, rt.width, rt.height, px);
+    const n = rt.width * rt.height * 4;
+    let px = new Uint8Array(n);
+    const mx = new Uint8Array(n);
+    if (rt.texture.type === 1016) {   // HalfFloatType: linear light -> sRGB bytes
+      const h = new Uint16Array(n);
+      r.readRenderTargetPixels(rt, 0, 0, rt.width, rt.height, h);
+      const half = (x) => { const e = (x >> 10) & 31, m = x & 1023; return (e === 0 ? m / 1024 * 2 ** -14 : (1 + m / 1024) * 2 ** (e - 15)) * (x & 32768 ? -1 : 1); };
+      const enc = (v) => (v <= 0.0031308 ? 12.92 * v : 1.055 * v ** (1 / 2.4) - 0.055);
+      for (let i = 0; i < n; i++) px[i] = Math.max(0, Math.min(255, Math.round(255 * ((i & 3) === 3 ? half(h[i]) : enc(half(h[i]))))));
+    } else r.readRenderTargetPixels(rt, 0, 0, rt.width, rt.height, px);
     r.readRenderTargetPixels(v.targets.meta, 0, 0, rt.width, rt.height, mx);
     return { w: rt.width, h: rt.height, px, mx };
   },

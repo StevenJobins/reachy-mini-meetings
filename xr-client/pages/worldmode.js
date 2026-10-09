@@ -131,15 +131,22 @@ export function createWorldMode({ scene, video, camera, log = console.log, panoW
       let painted = false;
       if (live && visible) {
         const d = policy.decide(seqT, poses, measured, seq);
+        // Exposure tracking: probe the live frame against the panorama ~4x/s whenever they overlap, also while
+        // turning slowly, so the gain follows the camera's auto exposure along the way into new areas (probing
+        // only before paints left the first frames in a new direction with a stale gain: synthetic test, README).
+        const slow = poses.span(seqT - lagUsed - 0.1, seqT - lagUsed) < 3;
+        if (!d && slow && view.stats.paints > 0 && (!probeFor || nowS - probeFor.t > 0.25) && !view.probeBusy && view.probe(tex, pose)) {
+          probeFor = { pose: pose.slice(), t: nowS };
+        }
         if (d) {
-          // exposure: measure this view against the panorama first, paint once that gain is back (next frames)
-          const probed = probeFor && Math.hypot(d.pose[1] - probeFor.pose[1], d.pose[2] - probeFor.pose[2]) < 2 && nowS - probeFor.t < 1;
+          // and right before a paint: measure this very view first, paint once that gain is back (next frames)
+          const probed = probeFor && Math.hypot(d.pose[1] - probeFor.pose[1], d.pose[2] - probeFor.pose[2]) < 1 && nowS - probeFor.t < 0.5;
           if (view.stats.paints > 0 && !probed) {
             if (!view.probeBusy && view.probe(tex, d.pose)) probeFor = { pose: d.pose, t: nowS };
           } else if (view.stats.paints === 0 || !view.probeBusy || nowS - probeFor.t > 0.5) {   // gain for this view is back
             const r = view.paint(tex, d.pose, nowS, d.still);
             policy.painted(seqT, d.pose, seq);
-            paintMs = r.ms; painted = true; probeFor = null;
+            paintMs = r.ms; painted = true;
             const st = look.onPaint(nowS, d.pose);
             if (st === "done") log(`world view: look around done (${look.log.map((x) => `${x.key} ${x.s}s${x.how === "timeout" ? " timeout" : ""}`).join(", ")})`);
           }
