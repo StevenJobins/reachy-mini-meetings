@@ -103,7 +103,11 @@ def main():
     conn = http.client.HTTPConnection(HOST, PORT, timeout=2)
     t_end_wait = time.monotonic() + a.wait_max
     while True:
-        s = get(conn, "/api/state/full")
+        try:
+            s = get(conn, "/api/state/full")
+        except Exception:   # daemon restarting ("Backend not running"), connection reset
+            conn = http.client.HTTPConnection(HOST, PORT, timeout=2)
+            s = {}
         if s.get("control_mode") == "enabled":
             break
         if time.monotonic() > t_end_wait:
