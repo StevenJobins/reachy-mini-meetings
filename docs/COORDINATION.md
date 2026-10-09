@@ -34,6 +34,12 @@ better (lower RMS over more views), replace it and note the numbers here.
 
 ## Status (newest first, one line each: date, who, what, branch)
 
+- 2026-10-09 Dominic/Claude: speaker following reworked (`claude/speaker-follow`): decisions moved from app.js
+  into pure `follow.js`, `tools/analyze_follow.py` (log) + `tools/sim_follow.mjs` (simulator), backend `vad`
+  message gets `voice`. app.js now creates `SpeakerTracker(TRACKER_OPTIONS)` = `{maxVel: 100, maxAcc: 200}`
+  and no longer calls `speaker.pushDoa` (only `step`, `target`, `speakers`, `center` are used); `speaker.js`
+  itself is unchanged. Numbers in xr-client/README.md "Speaker following". Not yet tested live.
+
 - 2026-10-08 Dominic/Claude: bug sweep, "Translate me" latency (5-10 s) + language choice (what Reachy speaks,
   what the bubbles show), Depth Anything in the backend. Work on branches `claude/*`, merged to main after a
   test. Does not touch Simon's areas above.
