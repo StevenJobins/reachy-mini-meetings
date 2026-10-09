@@ -1,5 +1,6 @@
 """Pure-logic tests: no mic, no Whisper model, no network.   pytest -q"""
 
+from collections import deque
 from itertools import pairwise
 
 import numpy as np
@@ -374,3 +375,59 @@ def test_partial_gate_queued_job_takes_newest_audio():
     s = _Seg(2, 1)
     g.offer(s, 3.0)
     assert g.start(s, 3.0) == (s, 3.0)                # nothing newer: its own audio
+
+
+def test_pipeline_partials_and_live_translation():
+    """Pipeline._partial/_final with fake Whisper and DeepL: a partial queued behind a running final transcribes
+    the newest audio; live translations are carried by later partials and by the final until DeepL answers."""
+    import asyncio
+    import threading
+    import types
+
+    from reachy_meetings_backend.captions import Pipeline, Worker
+    from reachy_meetings_backend.segmenter import Segment
+
+    release = threading.Event()
+
+    def slow_final(audio, language=None):     # the previous sentence's final holds the worker
+        release.wait(2)
+        return "Vorher.", "de"
+
+    def small(audio, language=None):
+        return ("Guten Morgen" if len(audio) < 16000 else "Guten Morgen zusammen, wie geht es"), "de"
+
+    async def translator(text, remember=True):
+        return f"EN({text})"
+
+    sent = []
+    p = object.__new__(Pipeline)
+    p.__dict__.update(
+        args=types.SimpleNamespace(), stt=lambda a, lang=None: ("Guten Morgen zusammen, wie geht es euch?", "de"),
+        stt_partial=small, worker=Worker(), pending=0, finalized=set(), partials=PartialGate(), jobs=set(),
+        partial_tr={}, partial_cap={}, live_tr={}, seg_lang={}, target="en", translator=translator, doa=None,
+        summarizer=None, room_langs=deque(maxlen=5), server=types.SimpleNamespace(send=sent.append))
+
+    def seg(id, n, final=False):
+        return Segment(id, final, np.zeros(n, np.float32), 0.0, n / 16000)
+
+    async def main():
+        busy = asyncio.wrap_future(p.worker.submit(lambda: slow_final(None)))
+        for s in (seg(1, 8000), seg(1, 12000), seg(1, 20000)):   # first queued, the others wait in the gate
+            if job := p.partials.offer(s, 0.0):
+                p._spawn(p._partial(*job))
+            await asyncio.sleep(0.01)
+        release.set()
+        await busy
+        while p.jobs:
+            await asyncio.gather(*list(p.jobs))
+        p.partials.end(1)
+        await p._final(seg(1, 30000, final=True), 0.0)
+
+    asyncio.run(main())
+    partials = [m for m in sent if not m["final"]]
+    assert len(partials) == 2                                      # 1 Whisper job for the newest audio, + its translation
+    assert partials[0]["text"] == "Guten Morgen zusammen, wie geht es" and partials[0]["translation"] is None
+    assert partials[1]["translation"] == "EN(Guten Morgen zusammen, wie geht es)"
+    finals = [m for m in sent if m["final"]]
+    assert finals[0]["translation"] == partials[1]["translation"]   # the live one until DeepL answers
+    assert finals[1]["translation"] == "EN(Guten Morgen zusammen, wie geht es euch?)"
