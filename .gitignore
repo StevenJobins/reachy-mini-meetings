@@ -43,3 +43,4 @@ node_modules/
 *.mp4
 *.mov
 *.bag
+xr-client/pages/dev/data/
