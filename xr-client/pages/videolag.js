@@ -6,7 +6,7 @@
 // shift (px -> degrees with the camera model); the measured head pose gives the same motion, only earlier. The lag
 // is the time offset L at which the pose motion explains the image motion best:
 //   observed shift of frame pair (t1, t2)  ~  s * (pose(t2 - L) - pose(t1 - L))
-// fitted over a sliding window (scale s free, so the score is a squared correlation), L in 0..maxLag.
+// fitted over a sliding window (scale s free, so the score is a squared correlation), L in minLag..maxLag.
 // Time base: whatever clock the caller uses for poses and frames (the page: performance.now() / 1000 at arrival).
 
 // ---------------------------------------------------------------- FFT + phase correlation
@@ -153,22 +153,21 @@ export class PoseHistory {
     return out;
   }
 
-  /** Largest angular speed (deg/s, yaw scaled by cos(pitch)) between t0 and t1, from the samples in between. */
-  maxSpeed(t0, t1) {
+  /**
+   * How much the head moved between t0 and t1: the largest deviation (deg, yaw scaled by cos(pitch)) of any sample
+   * (and of the interpolated poses at t0 / t1) from the pose at t0. The measured pose is quantised (Mac recording at
+   * rest: std yaw 0.23 deg, steps of ~0.08 deg within 7 ms), so speeds from neighbouring samples read up to 30 deg/s
+   * at rest; a span over the window does not have that problem.
+   */
+  span(t0, t1) {
     const n = this.t.length;
     if (n < 2) return Infinity;
-    let i = Math.max(0, this.idx(t0)), v = 0;
-    const end = Math.min(n - 1, Math.max(i + 1, this.idx(t1) + 1));
-    for (; i < end; i++) {
-      const dt = this.t[i + 1] - this.t[i];
-      if (dt <= 0) continue;
-      const a = this.p[i], b = this.p[i + 1];
-      let dy = b[2] - a[2];
-      if (dy > 180) dy -= 360; else if (dy < -180) dy += 360;
-      const c = Math.cos(a[1] * Math.PI / 180);
-      v = Math.max(v, Math.hypot(dy * c, b[1] - a[1], b[0] - a[0]) / dt);
-    }
-    return v;
+    const a = this.at(t0), b = [0, 0, 0];
+    const c = Math.cos(a[1] * Math.PI / 180);
+    const dev = (q) => { let dy = q[2] - a[2]; if (dy > 180) dy -= 360; else if (dy < -180) dy += 360; return Math.hypot(dy * c, q[1] - a[1], q[0] - a[0]); };
+    let m = dev(this.at(t1, b));
+    for (let i = Math.max(0, this.idx(t0) + 1); i < n && this.t[i] <= t1; i++) m = Math.max(m, dev(this.p[i]));
+    return m;
   }
 }
 
@@ -183,12 +182,13 @@ export class PoseHistory {
 export class VideoLag {
   constructor({
     pxPerDegX, pxPerDegY,          // small-frame pixels per degree near the image centre (camera model)
-    maxLagS = 0.8, stepS = 0.005, windowS = 4, baselineS = 0.2,
+    minLagS = -0.15, maxLagS = 0.8, stepS = 0.005,   // negative: poses later than pictures (seen on the Mac)
+    windowS = 4, baselineS = 0.2,
     minMotionDegS = 8,             // RMS pose speed in the window, below: not enough motion to tell
     minR2 = 0.6, minPeak = 0.04,
     keep = 9,                      // accepted window estimates kept for the median
   }) {
-    Object.assign(this, { pxPerDegX, pxPerDegY, maxLagS, stepS, windowS, baselineS, minMotionDegS, minR2, minPeak, keep });
+    Object.assign(this, { pxPerDegX, pxPerDegY, minLagS, maxLagS, stepS, windowS, baselineS, minMotionDegS, minR2, minPeak, keep });
     this.frames = [];              // [t, accumulated content rotation x, y (deg), chain id]
     this.chain = 0;
     this.accepted = [];            // [t, lag, r2]
@@ -240,7 +240,7 @@ export class VideoLag {
     const motion = Math.sqrt(mm / Math.max(mt, 1e-9));
     const scores = [];
     let best = -1, bestL = 0, bestS = 0;
-    for (let L = 0; L <= this.maxLagS + 1e-9; L += this.stepS) {
+    for (let L = this.minLagS; L <= this.maxLagS + 1e-9; L += this.stepS) {
       let op = 0, pp = 0, oo = 0;
       for (const [t1, t2, ox, oy] of P) {
         poses.at(t1 - L, a); poses.at(t2 - L, b);
@@ -254,7 +254,7 @@ export class VideoLag {
       if (r2 > best) { best = r2; bestL = L; bestS = pp > 0 ? op / pp : 0; }
     }
     // sub-step refinement (parabola through the best score and its neighbours)
-    const k = Math.round(bestL / this.stepS);
+    const k = Math.round((bestL - this.minLagS) / this.stepS);
     if (k > 0 && k < scores.length - 1) {
       const m = scores[k - 1], c = scores[k], p = scores[k + 1], d = m - 2 * c + p;
       if (d < 0) bestL += this.stepS * Math.max(-0.5, Math.min(0.5, 0.5 * (m - p) / d));
