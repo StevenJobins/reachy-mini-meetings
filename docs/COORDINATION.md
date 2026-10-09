@@ -34,6 +34,12 @@ better (lower RMS over more views), replace it and note the numbers here.
 
 ## Status (newest first, one line each: date, who, what, branch)
 
+- 2026-10-09 Dominic/Claude: "World view", a separate, switchable VR view mode (Settings → VR view, More → 🧭):
+  video lag measured from the picture, live frame at its capture pose, one continuous panorama. Dominic's area, new
+  files (`videolag*.js`, `world*.js`, `dev/`); small hooks only in `scene.js` (renderer/videoTexture/videoFrameSeq/
+  setWorldView) and `app.js` (mode switch, `worldMode` calls). Simon's views stay the default and unchanged. Branch
+  `claude/worldview`, not merged; details and numbers in xr-client/README.md "World view".
+
 - 2026-10-08 Dominic/Claude: bug sweep, "Translate me" latency (5-10 s) + language choice (what Reachy speaks,
   what the bubbles show), Depth Anything in the backend. Work on branches `claude/*`, merged to main after a
   test. Does not touch Simon's areas above.

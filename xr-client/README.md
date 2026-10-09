@@ -129,3 +129,102 @@ The page connects to the caption server from `backend/` (`reachy-captions`, see 
   - **USB:** run `adb reverse tcp:8766 tcp:8766`.
   - **Wireless:** start the backend with `reachy-captions --tunnel` (see backend/README.md). Nothing to enter: the page looks up the current tunnel address on ntfy.sh and signs in with its Hugging Face login.
 - **Local network permission:** recent Chrome versions (checked with Chrome 152) ask before a public page may reach `localhost` ("…wants to access devices on your local network"). Until you allow it, the captions stay at `connecting`. Allow it once per device **before** entering VR, because the prompt isn't visible inside VR. If you missed it: lock icon in the address bar → Site settings → Local network → Allow.
+
+## World view (beta, Dominic's view mode, branch `claude/worldview`)
+
+A separate VR view mode next to Simon's world-locked / comfort views (those stay the default and are unchanged).
+**Switch on:** page *Settings → VR view → World view*, or in VR *⋯ More → 🧭 World view* (remembered per device; the
+same button switches back to world-locked). In this mode *Scan room* (More, page, and "Scan the room after
+wake-up") runs the world view's own look-around, *Room on/off* hides its panorama. Debug: `?lag=0.2` fixes the lag,
+`?pano=4096` a bigger panorama.
+
+What it does (files `videolag.js`, `videolag-worker.js`, `worldpolicy.js`, `worldview.js`, `worldmode.js`; hooks:
+`scene.js` exposes `renderer`, `videoTexture`, `videoFrameSeq`, `setWorldView()`; `app.js` calls `worldMode` only
+when the mode is on):
+
+1. **Video lag measured from the picture** (`videolag.js`, in a Web Worker): every camera frame (straight from the
+   WebRTC track, MediaStreamTrackProcessor, 128x64 grey) is phase-correlated with the previous one; the shifts are
+   chained into an image rotation, converted to degrees with the camera model, and compared with the measured head
+   pose over a 4 s window: lag = the time offset where the pose motion explains the image motion best (squared
+   correlation, scale free), searched -150..800 ms in 5 ms steps with sub-step refinement, only windows with
+   > 8 °/s RMS motion and r² > 0.6, median of the last 9 windows. Status line: `wv lag 165ms r2 0.98`.
+2. **Live picture at its capture pose**: the live frame is shown at pose(t_frame − lag) instead of the current
+   pose (Simon's world-locked uses pose(now − videoDelayS) with videoDelayS from `getStats`: jitter buffer + decode
+   + a 45 ms guess; it misses the network and the pose path).
+3. **One continuous panorama** (`worldview.js`): an equirectangular render target (2048x1024, half float, in the
+   robot's world frame, turned into XR by the same room frame as Simon's panorama). Every sharp frame (the head
+   moved < 1.5° around its capture time; at most 3/s; the same view again only after 1 s) is painted on the GPU at
+   its capture pose with the lens model (`camera.js` maths in GLSL). Per texel the **best source wins**: quality =
+   centrality in the frame (0 at its border) x stillness, the stored quality decays with age (45 s), the new frame
+   replaces where it is better with a narrow soft transition: seams lie half-way between frame centres, never at a
+   frame border, nothing is alpha-stacked. **Exposure**: the live frame is compared with the panorama 4x/s (32x18
+   cells of ~1.4°, 16-bit readback via PBO + fence, no GPU stall), gain = median ratio (limits x1.5 per probe,
+   1/3..3 overall); frames are painted with that gain, and the stored panorama is shown divided by it, so the live
+   part keeps its true colours. **Display**: one sphere (r = 4 m), one shader: stored panorama (greying and dimming
+   between 15 s and 150 s of age, so stale content is recognisable) with the live frame on top, faded out over its
+   outer 14 % (25 % vertically): no rectangle, no frame border, no separate video window (Simon's window and bezel
+   are hidden while the world view shows the robot's picture; when the robot does not follow, e.g. asleep, his
+   window stands in front of you as usual).
+4. **Look around** (*Scan room* in this mode): the 12 stops of `roomscan.js`, but a stop is done when a frame from
+   there was **painted** (= the head really was still at the frame's capture time), timeout 6 s per stop; head
+   mirroring and speaker following pause meanwhile. Afterwards the panorama keeps growing from normal use.
+5. Depth / parallax: **not done**, see below.
+
+### Measurements (2026-10-08/09)
+
+**Lag estimator, synthetic** (`node xr-client/tests/videolag.test.mjs`; textured world, min-jerk head moves with
+holds, 30 fps frames with +|N(0, 8 ms)| arrival jitter, 50 Hz poses with 4 ms jitter, noise, motion blur):
+phase correlation error median 0.054°, p90 0.118° per pair; lag error over 15 runs (lags 50/120/250/400/600 ms,
+3 seeds each): **mean |e| 2.8 ms, max 6.0 ms**; a still robot gives no estimate. What did not work: fitting single
+frame pairs (33 ms apart): ±12..28 ms errors, because the frames' arrival jitter is ~20 % of the pair interval;
+chaining the shifts and comparing motion over ~0.2 s fixed it (clean data: < 1.2 ms either way).
+
+**Lag on the real robot, Mac side** (`robot/scripts/record_view_dataset.py`: camera via OpenCV at 60 fps next to
+the daemon + `/api/state/full` polled at 140 Hz, 90 s with gentle gotos; `node xr-client/tests/lag_from_recording.mjs`):
+camera vs pose lag **median +4.9 ms** (p10 −7.3, p90 +11.5, sd 7.2 ms over 64 accepted windows, r² median 0.976);
+with the daemon's own pose timestamps 4.1 ms; analysing only 15 fps: 10.2 ms. The search started at 0 at first and
+many windows stuck at that edge: the pose is about as late as the USB camera, so negative lags are allowed now.
+Adding a known delay to the frames: +100/+300/+600 ms → **104.8/304.9/604.9 ms** (the change is recovered to
+0.1 ms). In the browser (replay harness below, real frames at 7.5 fps, +150 ms added): **165 ms** (expected ~155 ms
++ up to half a frame interval of draw delay). On the headset the lag is larger (WebRTC); it is measured there
+online; the status line and the log (`world view: video lag …`) show it.
+
+**Image/pose scale 1.24 and registration on real frames** (`robot/scripts/view_registration.py`): ORB matches
+between still frames from different poses (39 pairs ≥ 8° apart): with the measured poses the matched features land
+**1.81° apart (median), p90 5.3°**. A constant camera mount rotation does not explain it (1.80°); scaling the
+measured yaw/pitch by 1.13/1.06 does (0.91°), and a camera offset in front of the rotation centre (parallax)
+explains it best (epipolar error **0.34°**): people sat 0.3-0.6 m from the robot in that recording, and near things
+move more than the rotation. So the residual is parallax, not lag or pose error; only depth removes it (item 5).
+In the synthetic replay (no parallax) the panorama matches the true room to **0.018° median (p90 0.035°)**
+(`robot/scripts/view_pano_check.py`, phase correlation per 128 px tile).
+
+**Pose noise at rest** (same recording): std yaw 0.23°, pitch 0.12°, peak-to-peak 0.68°; neighbouring samples
+(7 ms apart) give "speeds" up to 29 °/s at rest. A speed threshold saw the head still in only 18 of ~1300 frames;
+the policy uses the pose span over the capture window instead (< 1.5°; 0.8° still rejected most real frames).
+
+**Exposure compensation** (synthetic replay, auto exposure drifting 0.7-1.3): spread of the panorama brightness
+vs the true room, std over 128 px tiles: **25.8 % without → 6.9 % with** compensation. What did not work on the way:
+8-bit linear probe values (dark cells quantise into useless ratios, cell ratios p25-p75 ±20 %), an 8-bit panorama
+(a darker frame must be scaled up and clipped at 1.0: compensation made it worse, 14 % vs 11 %), probing only right
+before a paint (new directions got a stale gain), smoothing the gain (only 60 % of each correction): fixed by 16-bit
+probe values, a half-float panorama, probing 4x/s along the way, and using each probe directly.
+
+**Cost** (Mac M1 Pro, Chrome 154; the headset is slower and not measured): worker per frame (draw + readback 128x64
++ phase correlation) 1.5-2.9 ms, window fit 1.8 ms every 0.5 s (both off the main thread); main-thread JS of the
+mode per VR frame 0.01-0.05 ms without a paint; a paint is 4 passes over the frame's footprint box (~9 % of the
+panorama, ~190 k texels each) + one probe pass (576 cells x 18 samples), CPU side 0.1-1.3 ms; first paint 75 ms
+(shader compile, once). Per eye one full-screen sphere pass (the panorama shader with the lens model). GPU memory:
+2 x 16 MB (colour, half float) + 2 x 8 MB (meta) = 48 MB at 2048x1024.
+
+**Depth (item 5), not done**: the residual above says parallax is what is left (1.8° in a scene at 0.3-0.6 m; for
+walls at 3 m with a few cm camera offset ~0.5°). It needs a depth map per painted frame from the laptop (Depth
+Anything, `depth.py`), a 3D panorama instead of a sphere, and holes where depth jumps: a separate project.
+
+### Replay harness (no robot, no headset)
+
+`python3 -m http.server 8080 -d xr-client/pages`, then
+`http://localhost:8080/dev/worldview.html?data=data/rec1&view=world&extra=0.15` (`view=simon`: the room-scan
+panorama for comparison). It runs the real `scene.js` + `worldmode.js` on a virtual clock (works in a hidden or
+headless tab), fed from `dev/data/rec1` (real recording, 40 s, 298 frames 480x270, 2.7 MB; more with
+`robot/scripts/make_view_dataset.py export|synth`). `window.harness`: `look(yaw, pitch)`, `stats()`,
+`savePanorama(name)`, `probeTest(a, b)`.
