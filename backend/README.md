@@ -14,9 +14,9 @@ room mic ──► Segmenter (VAD) ──► Whisper ──► DeepL translation
 
 - **Where it runs:** once, on the laptop the robot is plugged into (Mac, Windows or Linux). The headsets only open the web page and receive finished captions, so they need nothing installed.
 - **Mic:** the Reachy Mini Lite shows up on the laptop as a USB audio device, so the captions read the room audio directly. The robot process doesn't have to forward it. If no device matches `--mic` (default `Reachy`), the default mic is used, which is handy for testing on a laptop.
-- **Segmenter:** neural voice activity detection (**Silero VAD**, ONNX, ~2 MB, downloaded once into `~/.cache/reachy-meetings/`), so motor noise, clicks and the robot's own sounds don't start an utterance. Fallback without `onnxruntime`: loudness threshold over the room noise. First *partial* 0.5 s after someone starts talking, then every 0.6 s; *final* after 0.7 s without speech.
+- **Segmenter:** neural voice activity detection (**Silero VAD**, ONNX, ~2 MB, downloaded once into `~/.cache/reachy-meetings/`), so motor noise, clicks and the robot's own sounds don't start an utterance. Fallback without `onnxruntime`: loudness threshold over the room noise. First *partial* 0.4 s after someone starts talking, then every 0.3 s (one at a time on the Whisper worker, see *Bubble latency* below); *final* after 0.8 s without speech.
 - **Hallucination filter:** Whisper invents text on noise ("Vielen Dank.", "Untertitelung des ZDF", "1,0, 1,0, …"). Segments with high no-speech probability, low confidence or heavy repetition are dropped, and so are these classic phrases (`stt.plausible`).
-- **Live translation:** partials are translated too (DeepL, throttled: ≥ 15 new characters and ≥ 1.2 s apart), so the bubble is readable while the person still talks. This roughly doubles the DeepL character use.
+- **Live translation:** partials are translated too (DeepL, throttled: first at ≥ 8 characters, then ≥ 12 new characters and ≥ 0.8 s apart), so the bubble is readable while the person still talks. Later partials and the final carry the last live translation until DeepL answers, so the bubble doesn't flip back to the spoken language. This roughly doubles the DeepL character use.
 - **Whisper:** the engine and models are picked from the hardware (override with `--engine`, `--model`, `--partial-model`):
 
   | Laptop | Engine | Final text | Live partials |
@@ -29,6 +29,50 @@ room mic ──► Segmenter (VAD) ──► Whisper ──► DeepL translation
 - **Direction:** reads `speaker_doa_rad` from the robot bridge (`ws://localhost:8765`). This only works when the robot runs *with* media, so not with `--no-media`.
 
 Measured on an M1 Pro with a 4.5 s German sentence: the final text arrives about 1.6 s after the speaker stops (with `--lang de`). Auto language detection adds about 1 s. CPU-only path, measured on the same Mac: `small` takes ~3 s per sentence and makes more mistakes ("Budget" → "Büderey").
+
+### Bubble latency (someone starts talking → text in the bubble)
+
+Benchmark: `scripts/bench_bubbles.py` (docstring). 8 test sentences (5 German, 3 English, 1.3–7.2 s, `say -o`, nothing played) in two session files: *calm* (3 s between sentences) and *busy* (0.9 s: the previous sentence's final is still on the Whisper worker when the next one starts). Bubble language English.
+
+Measured 2026-10-09. The Mac was on battery with the lid closed: it slept every few minutes, and MLX GPU work in the short wake windows ran 4–10× slower or was aborted by macOS (`[METAL] ... Impacting Interactivity`). So the real-time run (`serve`/`run`) gave no usable numbers. These were measured instead:
+
+- **Real, offline:** Silero VAD + segmenter on the session files (when speech is detected and when each partial is cut), and what Whisper `small` returns for the first 0.6 / 0.9 s of each sentence (`models`).
+- **Simulated (`sim`):** the Whisper worker queue for the old and new partial policies, with the job times measured on this Mac while awake (README above: `small` 0.21 s, `large-v3-turbo` 0.9 s; DeepL 0.3 s). A second set uses a contended GPU (`small` 0.5 s, turbo 2.0 s: the live backend and depth estimation running too, where Whisper took 2–4× longer).
+
+Per stage (medians over the 8 sentences):
+
+| Stage | Before | After | How / note |
+|---|---|---|---|
+| VAD detects speech | 0.11–0.13 s | same | 3 frames of Silero VAD (96 ms) |
+| `vad` → page | – | "…" bubble at once | the page shows a "…" bubble on the `vad` message (mic direction / last speaker), replaced by the first text; gone after 1.5 s without text |
+| First partial cut | 0.5 s after VAD start, then every 0.6 s | 0.4 s, then every 0.3 s | `SegmenterCfg` |
+| Does `small` have text yet? | 0.6 s of speech: text for 6/8 (2 empty, 2 wrong language); 0.9 s: 8/8 (4/30 word errors) | | so the first try is often empty; what matters is how soon it is retried |
+| Partials skipped | while ANY Whisper job was pending: 7 of 62 (idle GPU, busy room), 21 (contended GPU, busy room) | none: one partial job at a time, the newest audio waits and starts as soon as it is done | `PartialGate` |
+| Partial queued behind a final | – | transcribes the newest audio when the worker gets to it | without this the gate was *worse* than before in the contended busy room (3.37 s vs 2.94 s): the queued job held 0.4 s of audio, no text |
+| Page: bubble drawn | on the first message, no wait for a face (placed at the mic direction / last speaker until a face is picked) | unchanged | `captions.js` |
+
+End to end (simulated, real VAD/segmenter):
+
+| GPU, room | First text before → after | First translation (German) | Final after end of speech |
+|---|---|---|---|
+| idle, calm | 1.46 → **1.07 s** | 1.76 → **1.37 s** | 1.84 → 1.89 s |
+| idle, busy | 1.44 → **1.13 s** | 1.74 → **1.45 s** | 1.82 → 1.89 s |
+| contended, calm | 1.75 → **1.54 s** | 2.05 → **1.84 s** | 3.22 → 3.28 s |
+| contended, busy | 2.94 (max 4.26) → **2.83 s (max 2.97)** | 3.23 → 3.17 s | 3.20 → 3.29 s |
+
+Cost: Whisper jobs per session 62 → ~105 (idle GPU; the gate limits it to what the GPU can do, depth still runs in the gaps at priority 2), live DeepL characters 653 → 894 per session (+37 %; with the German finals, 315 characters, the total goes 968 → 1209: +25 %). Finals 0.05–0.09 s later (a partial may be running when the final arrives).
+
+What did **not** help (kept out):
+
+- **Room partials before queued finals (priority 0.5 instead of 1):** identical numbers in all 4 cases; a partial and a final are almost never queued at the same moment, the final is usually already running.
+- **First partial after 0.3 s:** 1.28 s instead of 1.07 s (calm, idle): almost always empty, and the gate is then busy when the useful 0.6 s partial comes.
+- **First partial after 0.5 s, every 0.3 s:** 1.16 s (calm, idle), between old and new.
+- **A smaller model (tiny/base) for the first partial:** could not be measured on the GPU today (see above). Their language detection is weaker, and the partial's language is passed to the final (`seg_lang`), so a wrong guess would cost the final its quality. Not tried.
+- Sensitivity: if `small` already had text after 0.6 s of speech, the old cadence would win when calm and idle (0.84 vs 1.07 s); if only after 0.9 s, old 1.46 vs new 1.39 s. The measured answer (6/8 at 0.6 s) lies in between.
+
+The remaining big factor is the final of the previous sentence blocking the worker (contended busy room: ~2.8 s). Whisper jobs can't be interrupted; a second Whisper thread was tried for "Translate me" and didn't pay off (see below).
+
+**Still to do:** the real-time run (`serve`/`run`, live GPU) on AC power with the lid open, and a test with the headset.
 
 ### Setup
 

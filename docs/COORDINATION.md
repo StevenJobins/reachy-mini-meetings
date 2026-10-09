@@ -34,6 +34,7 @@ better (lower RMS over more views), replace it and note the numbers here.
 
 ## Status (newest first, one line each: date, who, what, branch)
 
+- 2026-10-09 Dominic/Claude: bubble latency for room speech (partials no longer skipped behind other Whisper jobs, faster partial cadence, earlier live translation, "…" bubble on VAD in `captions.js`), benchmark `backend/scripts/bench_bubbles.py`. Branch `claude/bubble-latency`, needs a live test before merging.
 - 2026-10-08 Dominic/Claude: bug sweep, "Translate me" latency (5-10 s) + language choice (what Reachy speaks,
   what the bubbles show), Depth Anything in the backend. Work on branches `claude/*`, merged to main after a
   test. Does not touch Simon's areas above.
