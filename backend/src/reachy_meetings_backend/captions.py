@@ -152,6 +152,53 @@ class Worker:
                 fut.set_exception(e)
 
 
+class PartialGate:
+    """Live text of room speech: at most one partial job on the Whisper worker. A partial that comes while one
+    runs waits (a newer one replaces it) and starts the moment the running one is done, so the text keeps up
+    with the speech as fast as Whisper allows. Before, partials were dropped whenever ANY Whisper job was pending,
+    e.g. the final of the previous sentence, so the first text of a sentence often came only with its final."""
+
+    def __init__(self) -> None:
+        self.busy = False
+        self.waiting = None    # (segment, wall time) of the newest partial not started yet
+        self.ended: set[int] = set()   # segments whose final was cut: their partials are useless now
+
+    def offer(self, seg, wall: float):
+        """A new partial from the segmenter: returns what to start now, or None (it waits / is dropped)."""
+        if seg.id in self.ended:
+            return None
+        if self.busy:
+            self.waiting = (seg, wall)
+            return None
+        self.busy = True
+        return seg, wall
+
+    def done(self):
+        """The running partial job finished: returns the next one to start, or None."""
+        nxt, self.waiting = self.waiting, None
+        if nxt and nxt[0].id in self.ended:
+            nxt = None
+        self.busy = nxt is not None
+        return nxt
+
+    def end(self, seg_id: int) -> None:
+        self.ended.add(seg_id)
+        if self.waiting and self.waiting[0].id == seg_id:
+            self.waiting = None
+
+
+def translate_partial(text_len: int, last_len: int, last_t: float, now: float) -> bool:
+    """DeepL for live text (quota): the first time once there are a few words, then when enough new text came."""
+    if last_len == 0:
+        return text_len >= PARTIAL_TR_FIRST
+    return text_len - last_len >= PARTIAL_TR_CHARS and now - last_t >= PARTIAL_TR_EVERY_S
+
+
+PARTIAL_TR_FIRST = 8      # characters before the first live translation (before: 15)
+PARTIAL_TR_CHARS = 12     # then this many new characters ... (before: 15)
+PARTIAL_TR_EVERY_S = 0.8  # ... and this long since the last one (before: 1.2 s)
+
+
 class CaptionServer:
     def __init__(self, host: str, port: int, target: str, allow_hf: set[str] | None = None) -> None:
         self.host, self.port, self.target = host, port, target
@@ -277,7 +324,13 @@ class Pipeline:
         self.worker = Worker()  # Whisper runs one job at a time
         self.pending = 0
         self.finalized: set[int] = set()
+        self.partials = PartialGate()
+        self.jobs: set[asyncio.Task] = set()
         self.partial_tr: dict[int, tuple[float, int]] = {}   # id -> (time, text length) of last partial translation
+        self.partial_cap: dict[int, dict] = {}   # id -> newest live caption sent
+        # id -> newest live translation: later partials (and the final until DeepL answers) carry it, so the bubble
+        # does not flip back to the spoken language every time new text comes
+        self.live_tr: dict[int, str] = {}
         # Language per utterance, detected by the fast partial model, so the big model needn't detect it
         # again (that costs ~1 s): auto language at no extra delay.
         self.seg_lang: dict[int, str] = {}
@@ -360,40 +413,58 @@ class Pipeline:
             "t_start": round(t_start, 3), "t_end": round(wall_end, 3),
         }
 
+    def _spawn(self, coro) -> None:
+        t = asyncio.create_task(coro)
+        self.jobs.add(t)
+        t.add_done_callback(self.jobs.discard)
+
     async def _partial(self, seg: Segment, wall_end: float) -> None:
-        text, lang = await self._stt(self.stt_partial, seg.audio)
-        if not text or seg.id in self.finalized:
+        try:
+            text, lang = await self._stt(self.stt_partial, seg.audio)
+        finally:
+            nxt = self.partials.done()
+            if nxt:
+                self._spawn(self._partial(*nxt))
+        if not text or seg.id in self.finalized or text == self.partial_cap.get(seg.id, {}).get("text"):
             return
         self.seg_lang[seg.id] = lang
-        cap = self._caption(seg, wall_end, text, lang)
+        target, translator = self.target, self.translator
+        cap = self._caption(seg, wall_end, text, lang, self.live_tr.get(seg.id) if lang != target else None)
+        self.partial_cap[seg.id] = cap
         self.server.send(cap)
-        # Translate live text too, so the bubble is readable while the person still talks. Throttled
-        # (DeepL quota): only when enough new text came in since the last partial translation.
+        # Translate live text too, so the bubble is readable while the person still talks. Throttled (DeepL quota).
         last_t, last_len = self.partial_tr.get(seg.id, (0.0, 0))
         now = time.time()
-        if (self.translator and lang != self.target and len(text) - last_len >= 15
-                and now - last_t >= 1.2):
+        if translator and lang != target and translate_partial(len(text), last_len, last_t, now):
             self.partial_tr[seg.id] = (now, len(text))
-            translation = await self.translator(text, remember=False)
-            if translation and seg.id not in self.finalized:
-                self.server.send({**cap, "translation": translation})
+            translation = await translator(text, remember=False)
+            # still current: not finished, same bubble language, no newer live translation came back first
+            if (translation and seg.id not in self.finalized and target == self.target
+                    and self.partial_tr.get(seg.id, (0.0, 0))[1] == len(text)):
+                self.live_tr[seg.id] = translation
+                self.server.send({**self.partial_cap[seg.id], "translation": translation})   # with the newest text
 
     async def _final(self, seg: Segment, wall_end: float) -> None:
         text, lang = await self._stt(self.stt, seg.audio, self.seg_lang.pop(seg.id, None))
         self.finalized.add(seg.id)
         self.partial_tr.pop(seg.id, None)
+        self.partial_cap.pop(seg.id, None)
+        live = self.live_tr.pop(seg.id, None)
+        target, translator = self.target, self.translator
+        translate = bool(text and lang != target and translator)
         cap = self._caption(seg, wall_end, text, lang)
-        self.server.send(cap)
+        self.server.send({**cap, "translation": live} if translate and live else cap)
         log.info("[%d %s] %s", seg.id, lang, text)
         if text:
             self.room_langs.append((time.time(), lang))
-        target, translator = self.target, self.translator
-        if text and lang != target and translator:
+        if translate:
             translation = await translator(text)
             if translation and target == self.target:   # not if the bubble language changed meanwhile
                 log.info("[%d %s] %s", seg.id, target, translation)
                 cap = {**cap, "translation": translation}
                 self.server.send(cap)
+            elif live:
+                self.server.send(cap)   # no final translation: don't leave the live one (of a part) standing
         if self.summarizer:
             self.summarizer.add(cap)
 
@@ -560,13 +631,6 @@ class Pipeline:
 
             tasks.append(asyncio.create_task(tunnel.run(self.args.port)))
         src = asyncio.create_task(source.run(chunks))
-        jobs: set[asyncio.Task] = set()
-
-        def spawn(coro):
-            t = asyncio.create_task(coro)
-            jobs.add(t)
-            t.add_done_callback(jobs.discard)
-
         vad_on, vad_sent = False, 0.0
         lag_logged = 0.0
         while not (src.done() and chunks.empty()):
@@ -594,11 +658,12 @@ class Pipeline:
                 self.server.send_vad(vad_on)
             for seg in segs:
                 if seg.final:
-                    spawn(self._final(seg, time.time()))
-                elif self.stt_partial and self.pending == 0:  # skip partials while Whisper is behind
-                    spawn(self._partial(seg, time.time()))
-        if jobs:
-            await asyncio.gather(*jobs)
+                    self.partials.end(seg.id)
+                    self._spawn(self._final(seg, time.time()))
+                elif self.stt_partial and (job := self.partials.offer(seg, time.time())):
+                    self._spawn(self._partial(*job))
+        while self.jobs:
+            await asyncio.gather(*list(self.jobs))
         src.result()
         for t in tasks:
             t.cancel()

@@ -4,7 +4,7 @@ from itertools import pairwise
 
 import numpy as np
 
-from reachy_meetings_backend.captions import NoiseGate
+from reachy_meetings_backend.captions import NoiseGate, PartialGate, translate_partial
 from reachy_meetings_backend.doa import DoaTracker, circular_mean_deg, doa_to_head_deg
 from reachy_meetings_backend.segmenter import SAMPLE_RATE, Segmenter, SegmenterCfg
 from reachy_meetings_backend.stt import plausible
@@ -313,3 +313,49 @@ def test_read_aiff_plain_and_aifc():
         x, sr = read_aiff(data)
         assert sr == 22050
         assert np.allclose(x * 32768, [0, 1000, -1000, 32767])
+
+
+# ---------------------------------------------------------------- live bubble text: partial gate, live translation
+class _Seg:
+    def __init__(self, id, n):
+        self.id, self.n = id, n
+
+
+def test_partial_gate_one_job_newest_waits():
+    g = PartialGate()
+    a = _Seg(0, 1)
+    assert g.offer(a, 1.0) == (a, 1.0)              # idle worker: start at once
+    assert g.offer(_Seg(0, 2), 2.0) is None          # one running: wait ...
+    newest = _Seg(0, 3)
+    assert g.offer(newest, 3.0) is None              # ... and a newer one replaces the waiting one
+    assert g.done() == (newest, 3.0)                 # starts right when the running one is done
+    assert g.done() is None and not g.busy           # nothing left: idle
+    assert g.offer(_Seg(0, 4), 4.0) is not None
+
+
+def test_partial_gate_not_blocked_by_other_work():
+    # the old rule skipped partials while any Whisper job was pending (e.g. the previous sentence's final);
+    # the gate only knows partial jobs, so a new sentence gets its live text at once
+    g = PartialGate()
+    g.end(0)                                          # sentence 0 ended, its final runs elsewhere
+    s1 = _Seg(1, 1)
+    assert g.offer(s1, 1.0) == (s1, 1.0)
+
+
+def test_partial_gate_drops_ended_segments():
+    g = PartialGate()
+    g.offer(_Seg(0, 1), 1.0)
+    g.offer(_Seg(0, 2), 2.0)
+    g.end(0)                                          # the final was cut: the waiting partial is useless
+    assert g.done() is None and not g.busy
+    assert g.offer(_Seg(0, 3), 3.0) is None           # late partials of an ended segment too
+    s1 = _Seg(1, 1)
+    assert g.offer(s1, 4.0) == (s1, 4.0)
+
+
+def test_translate_partial_throttle():
+    assert not translate_partial(5, 0, 0.0, 10.0)     # "Ja, " too little to translate
+    assert translate_partial(9, 0, 0.0, 10.0)         # first time: a few words are enough
+    assert not translate_partial(15, 9, 10.0, 11.0)   # only 6 new characters
+    assert not translate_partial(30, 9, 10.0, 10.5)   # enough text, but too soon
+    assert translate_partial(30, 9, 10.0, 10.9)
