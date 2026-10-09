@@ -15,11 +15,17 @@ export const TUNING = {
   DOA_MIN: 5,            // ... with at least this many readings (and half of all)
   DOA_SIGMA: 15,         // deg: a face this far from the mic direction gets 0.6 of the mic bonus
   TALK_MIN: 0.03,        // jaw std above this = mouth moves (talking ~0.05-0.2, silent ~0.01)
-  SWITCH_MARGIN: 0.5,    // a new speaker's score must beat the followed person's by this ...
-  SWITCH_HOLD_S: 0.4,    // ... for this long (half when the followed person's mouth is still)
+  SCORE_WINDOW_S: 1.0,   // mouth movement for the speaking score is judged over this window
+  NOW_S: 0.5,            // "the mouth moves right now" is judged over this (shorter) window
+  SWITCH_HOLD_S: 0.3,    // a new talking face takes over after this long when the followed one is silent ...
+  OVERLAP_HOLD_S: 1.2,   // ... and only after this long while the followed person still talks (a "mhm")
+  SWITCH_MARGIN: 0.5,    // ... and then only if its score beats the followed person's by this
   MIC_TURN_GAP_S: 1.5,   // after a turn towards the voice, give the faces this long to show up
 };
 const T = TUNING;
+// SpeakerTracker (speaker.js) settings app.js uses: only its smooth base yaw and its speaker memory are used, the
+// mic directions are clustered here. Turn speed: see README "Speaker following".
+export const TRACKER_OPTIONS = { maxVel: 100, maxAcc: 200 };
 
 export class Follow {
   /** speaker = SpeakerTracker (speaker.js), faces = FaceSpeakers (speakers.js), camera = camera.js model. */
@@ -43,7 +49,7 @@ export class Follow {
     this.focusVel = 0;        // its speed through the room, deg/s (smoothed)
     this.vadOn = false;
     this.lastVadS = -1e9;     // last VAD "speaking" event
-    this.speechSinceS = 0;    // start of the current stretch of speech
+    this.voiceOn = false;     // the backend hears a voice right now (vad message "voice")
     this.candidate = null;    // {pid, since}: a face that would take over the focus (hysteresis)
     this.micTurnS = -1e9;     // last turn towards the mic direction
   }
@@ -85,21 +91,23 @@ export class Follow {
   }
 
   /** Mic direction reading (SDK convention: 0 = left, π/2 = front, π = right), stored with the room direction
-   *  it points to (head yaw T.DOA_LATENCY_S earlier + angle). Used only while the backend confirms speech. */
+   *  it points to (head yaw DOA_LATENCY_S earlier + angle), and whether the backend heard a voice right then. */
   onDoa(now, angle, speech) {
     const rel = 90 - angle * 180 / Math.PI;   // relative to the head, + = left
-    this.doaBuf.push([now, angle, speech, this.headYawAt(now, T.DOA_LATENCY_S) + rel]);
+    this.doaBuf.push([now, angle, speech, this.headYawAt(now, T.DOA_LATENCY_S) + rel, this.voiceOn]);
     while (this.doaBuf.length && this.doaBuf[0][0] < now - 6) this.doaBuf.shift();
   }
 
   /**
    * Where the mic says the voice is (room yaw), or null: the densest cluster of the readings of the last
-   * T.DOA_WINDOW_S while speech was confirmed. A single reading is ±10-20° and a quarter of them are wall
+   * DOA_WINDOW_S taken while a voice was heard. A single reading is ±10-20° and a quarter of them are wall
    * reflections (headset log 2026-10-08: -121° and +43° while the speaker sat still at -20°), so it needs
-   * T.DOA_MIN readings, and at least half of all readings within ±T.DOA_SPREAD of each other.
+   * DOA_MIN readings, and at least half of all readings within ±DOA_SPREAD of each other.
    */
   doaDirection(now) {
-    const ys = this.doaBuf.filter(([t]) => t >= now - T.DOA_WINDOW_S && t >= this.speechSinceS - 0.3).map((r) => r[3]);
+    // only readings taken while a voice was heard: in the pauses (the VAD stays "speaking" 0.8 s into them)
+    // the mic array points at noise (simulator: turns to the fan between two speakers)
+    const ys = this.doaBuf.filter((r) => r[0] >= now - T.DOA_WINDOW_S && r[4]).map((r) => r[3]);
     let best = null, bestN = 0;
     for (const y of ys) {
       const near = ys.filter((z) => Math.abs(z - y) <= T.DOA_SPREAD);
@@ -121,13 +129,14 @@ export class Follow {
    * Instant "someone is speaking" from the backend's neural VAD (~0.2 s after the first word, then every 0.25 s
    * while it lasts, no text yet). Decides who talks:
    *  - faces in the picture: speaking score = mouth movement + agreement with the mic direction; a new person
-   *    takes over only after winning for T.SWITCH_HOLD_S (no ping-pong between two faces);
+   *    takes over only after winning for SWITCH_HOLD_S (no ping-pong between two faces);
    *  - nobody in the picture moves their mouth and the mic points outside the picture: turn there once and
    *    let the faces take over when the person comes into view (the mic never fights a talking face).
    */
   onVad(now, msg) {
+    this.voiceOn = !!msg.speaking && (msg.voice ?? true);   // older backends send no voice flag
     if (!msg.speaking) { this.vadOn = false; return; }
-    if (!this.vadOn && now - this.lastSpeechS > 1.5) { this.speechSinceS = now; if (this.awake) this.log("speech start"); }
+    if (!this.vadOn && now - this.lastSpeechS > 1.5 && this.awake) this.log("speech start");   // for measuring the turn delay
     this.vadOn = true;
     this.lastVadS = now;
     this.lastSpeechS = now;
@@ -141,31 +150,39 @@ export class Follow {
       if (s > bestScore) { bestScore = s; best = tr; }
     }
     const focus = visible.find((t) => t.pid === this.focusPid) ?? null;
-    const talking = best && faces.activity(best) > T.TALK_MIN;
+    const talking = best && faces.activity(best, T.SCORE_WINDOW_S) > T.TALK_MIN;
+    const talksNow = (tr) => faces.activity(tr, T.NOW_S) > T.TALK_MIN;
     const half = this.camera.hfovDeg / 2;
     const head = this.headYawAt(now, 0);
     const doaOutside = doa != null && Math.abs(doa - head) > half - 5;
-    // A talking face in the picture is the speaker, unless the mic clearly says someone outside talks and the
-    // face does not match it (someone chewing or smiling while the speaker sits out of view)
-    if (talking && !(doaOutside && Math.abs(this.faceYaw(best) - doa) > 35 && bestScore < 2.5)) {
-      this.challenger = null;
-      if (best.pid === this.focusPid) { this.candidate = null; return; }
-      const focusScore = focus ? this.score(focus, doa) : -1;
-      if (focus && bestScore < focusScore + T.SWITCH_MARGIN) { this.candidate = null; return; }
+    // A talking face in the picture is the speaker, unless its mouth barely moves while the mic clearly says
+    // someone outside the picture talks (someone chewing or smiling while the speaker sits out of view)
+    const weak = talking && faces.activity(best, T.SCORE_WINDOW_S) < 2 * T.TALK_MIN;
+    if (talking && !(weak && doaOutside && Math.abs(this.faceYaw(best) - doa) > 35)) {
+      if (best.pid === this.focusPid || !talksNow(best)) { this.candidate = null; return; }
+      // Turning towards a voice out of view: faces passing by are not the speaker (simulator: a "mhm" from
+      // the previous speaker on the way pulled the head back)
+      const turning = this.focusPid == null && now - this.micTurnS < T.MIC_TURN_GAP_S + 1;
+      if (turning && Math.abs(this.faceYaw(best) - this.speaker.target) > 25) { this.candidate = null; return; }
+      // The followed person still talks too: a second voice is a "mhm" or an overlap, switch only if it lasts
+      // and clearly wins. Otherwise the new talking face takes over after a short confirmation.
+      const overlap = focus && talksNow(focus);
+      if (overlap && bestScore < this.score(focus, doa) + T.SWITCH_MARGIN) { this.candidate = null; return; }
       if (this.candidate?.pid !== best.pid) this.candidate = { pid: best.pid, since: now };
-      const hold = !focus || faces.activity(focus) < T.TALK_MIN / 2 ? T.SWITCH_HOLD_S / 2 : T.SWITCH_HOLD_S;
-      if (now - this.candidate.since >= hold || this.focusPid == null) { this.candidate = null; this.setFocus(best.pid, now); }
+      const hold = overlap ? T.OVERLAP_HOLD_S : T.SWITCH_HOLD_S;
+      if (now - this.candidate.since >= hold) { this.candidate = null; this.setFocus(best.pid, now); }
       return;
     }
     this.candidate = null;
     if (doaOutside && now - this.micTurnS > T.MIC_TURN_GAP_S && Math.abs(this.speaker.base - this.speaker.target) < 8) {
       // the speaker is out of view: turn towards the voice (the faces take over once they are in the picture)
-      if (Math.abs(doa - this.speaker.target) > 10) {
+      const goal = this.unmirror(doa, head);
+      if (Math.abs(goal - this.speaker.target) > 10) {
         this.micTurnS = now;
         this.focusPid = null;
-        this.speaker.target = Math.max(-150, Math.min(150, doa));
+        this.speaker.target = Math.max(-150, Math.min(150, goal));
         this.speaker.speakers.push([now, this.speaker.target]);
-        this.noteTarget("mic");
+        this.noteTarget(goal === doa ? "mic" : "mic (behind)");
       }
       return;
     }
@@ -180,9 +197,21 @@ export class Follow {
     }
   }
 
+  /**
+   * The mic array cannot tell front from back (SDK: π/2 = "front/back"): a voice at 140° to the left reads as
+   * 40° to the left. If someone was seen at the mirrored direction and nobody at the direct one, it is them.
+   */
+  unmirror(doa, head) {
+    const rel = doa - head;
+    if (Math.abs(rel) < 45) return doa;
+    const mirror = head + Math.sign(rel) * 180 - rel;
+    const near = (y) => this.faces.people.some((p) => Math.abs(p.yaw - y) < 20);
+    return near(mirror) && !near(doa) ? mirror : doa;
+  }
+
   /** Speaking score of a face: mouth movement (0..3) + how well it matches the mic direction (0..1). */
   score(tr, doa) {
-    let s = Math.min(3, this.faces.activity(tr) / 0.05);
+    let s = Math.min(3, this.faces.activity(tr, T.SCORE_WINDOW_S) / 0.05);
     if (doa != null) s += Math.exp(-0.5 * ((this.faceYaw(tr) - doa) / T.DOA_SIGMA) ** 2);
     return s;
   }

@@ -14,7 +14,7 @@ import { SpeakerTracker } from "./speaker.js";
 import { captionsUrl, createCaptions, extraTunnelKeys, onBackendFaces, setCaptionsUrl, setExtraTunnelKeys } from "./captions.js";
 import { createFaces } from "./faces.js";
 import { FaceSpeakers } from "./speakers.js";
-import { Follow } from "./follow.js";
+import { Follow, TRACKER_OPTIONS } from "./follow.js";
 import { createNotes } from "./notes.js";
 import { createRoomAudio } from "./roomaudio.js";
 import { createMic } from "./mic.js";
@@ -207,8 +207,7 @@ const laugh = new Laugh();
 
 // Speaker following is always on: the robot slowly turns to whoever speaks (DoA), and the headset
 // rotation is added ON TOP of that base, so you can always look elsewhere. Straight ahead = the speaker.
-// 5 agreeing mic readings within 1 s for a new direction (3 in 0.6 s let single reflections turn the head)
-const speaker = new SpeakerTracker({ confirmN: 5, confirmWindowS: 1.0 });
+const speaker = new SpeakerTracker(TRACKER_OPTIONS);   // only its smooth base yaw: follow.js decides the target
 let talkCenter = null;   // while waving: turn to the center of all recent speakers (turn_to_speaker.py)
 
 /** Smooth base yaw for this tick (degrees, robot frame). */

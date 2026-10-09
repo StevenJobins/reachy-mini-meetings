@@ -17,8 +17,11 @@ Protocol (server -> headset, one JSON per message; keep in sync with xr-client):
            (vision.py, ~20/s): the page uses them instead of its own, much slower detector
   me       {"text": str, "lang": str, "translation": str | null, "target": str, "t": s}   what the remote
            user said (their headset mic, see below) and what Reachy said for them in the meeting language
-  vad      {"speaking": bool, "t": s}   instantly from the neural VAD (~0.1 s), long before any text:
-           sent when speech starts/ends and every 0.25 s while it lasts (speaker following uses it)
+  vad      {"speaking": bool, "voice": bool, "t": s}   instantly from the neural VAD (~0.1 s), long before any
+           text: sent when speech starts/ends, when voice flips and every 0.25 s while it lasts (speaker following
+           uses it). speaking = an utterance is going on (stays true 0.8 s into the pause after it); voice = the
+           current audio frame is speech (probability > 0.4): only mic directions taken during voice point at
+           the speaker, in pauses the mic array points at noise
   binary   the room audio itself: int16 little-endian PCM, 16 kHz mono, ~40 ms per frame. The robot's own
            WebRTC audio drops ~55 % of the sound (daemon bug, 0 packets lost); the page plays this instead.
            Between utterances it is turned down by --pause-db (noise gate driven by the neural VAD).
@@ -250,8 +253,8 @@ class CaptionServer:
             pcm = (np.clip(chunk, -1, 1) * 32767).astype("<i2").tobytes()
             websockets.broadcast(self.clients, pcm)
 
-    def send_vad(self, speaking: bool) -> None:
-        websockets.broadcast(self.clients, json.dumps({"type": "vad", "speaking": speaking,
+    def send_vad(self, speaking: bool, voice: bool) -> None:
+        websockets.broadcast(self.clients, json.dumps({"type": "vad", "speaking": speaking, "voice": voice,
                                                        "t": round(time.time(), 3)}))
 
     def send_faces(self, people: list, t: float) -> None:
@@ -567,7 +570,7 @@ class Pipeline:
             jobs.add(t)
             t.add_done_callback(jobs.discard)
 
-        vad_on, vad_sent = False, 0.0
+        vad_on, voice_on, vad_sent = False, False, 0.0
         lag_logged = 0.0
         while not (src.done() and chunks.empty()):
             try:
@@ -581,7 +584,8 @@ class Pipeline:
                 segs = self.segmenter.push(np.zeros_like(chunk))
             else:
                 segs = self.segmenter.push(chunk)
-            speaking = self.segmenter.active or self.segmenter.prob > 0.4
+            voice = self.segmenter.prob > 0.4
+            speaking = self.segmenter.active or voice
             if time.time() < self.speaking_until:
                 # Reachy speaks the remote user's words: keep its voice out of the stream to the headset, or
                 # the headset mic (Translate me) could pick it up again and translate it in a loop
@@ -589,9 +593,10 @@ class Pipeline:
             else:
                 self.server.send_audio(self.gate(chunk, speaking, time.time()) if self.gate else chunk)
             now = time.time()
-            if self.segmenter.active != vad_on or (vad_on and now - vad_sent > 0.25):
-                vad_on, vad_sent = self.segmenter.active, now
-                self.server.send_vad(vad_on)
+            if (self.segmenter.active != vad_on or (vad_on and voice != voice_on and now - vad_sent > 0.1)
+                    or (vad_on and now - vad_sent > 0.25)):
+                vad_on, voice_on, vad_sent = self.segmenter.active, voice and self.segmenter.active, now
+                self.server.send_vad(vad_on, voice_on)
             for seg in segs:
                 if seg.final:
                     spawn(self._final(seg, time.time()))

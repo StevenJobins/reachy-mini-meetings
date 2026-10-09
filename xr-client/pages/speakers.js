@@ -91,9 +91,11 @@ export class FaceSpeakers {
     return lost.length === 1 ? lost[0] : null;
   }
 
-  /** Mouth movement: standard deviation of jaw opening over the window (talking ~0.05-0.2, silent ~0.01). */
-  activity(tr) {
-    const v = tr.mouth.map(([, m]) => m);
+  /** Mouth movement: standard deviation of jaw opening over the last windowS seconds (at most this.windowS)
+   *  (talking ~0.05-0.2, silent ~0.01). */
+  activity(tr, windowS = this.windowS) {
+    const from = (this.lastT ?? 0) - windowS;
+    const v = tr.mouth.filter(([t]) => t > from).map(([, m]) => m);
     if (v.length < 3) return 0;
     const mean = v.reduce((a, b) => a + b, 0) / v.length;
     return Math.sqrt(v.reduce((a, b) => a + (b - mean) ** 2, 0) / v.length);

@@ -11,7 +11,8 @@
 //   head     SpeakerTracker's rate limiter (80 °/s) drives the head; measured pose arrives 50 Hz, 0.08 s late
 //   faces    backend vision at 19 Hz, calibrated camera (camera.json, 88.9° wide), stamped at capture,
 //            3 % missed detections, 0.4 % jitter; jawOpen: silent 0.03 ± 0.01, talking 0.05-0.35 at ~4 syllables/s
-//   VAD      speaking=true 0.2 s after speech starts, every 0.25 s, until 0.8 s after it ends (segmenter silence_s)
+//   VAD      speaking=true 0.2 s after speech starts, every 0.25 s, until 0.8 s after it ends (segmenter silence_s);
+//            voice=true while the speech actually goes on (0.1 s late); --no-voice = old backend without it
 //   DoA      10 Hz, true direction ± 12° (gaussian); 25 % of readings a wall reflection (a fixed wrong direction per
 //            person) ± 12°; the XVF3800 cannot tell front from back (|angle| > 90° is mirrored to the front);
 //            while the head turns > 30 °/s, 50 % of readings point at the robot's own motor noise (random);
@@ -23,7 +24,7 @@
 //   acquire   s from speech start until the measured head is within 10° of P (and stays 0.5 s); median and 90th
 //             percentile over all utterances, a miss (never within the utterance + 1 s) counts as ∞
 //   on        share of [start + 1.5 s, end] the head is within 12° of P
-//   wrong     the target went within 10° of someone who is not speaking (a turn to the wrong person)
+//   wrong     the target moved to within 10° of someone who is not speaking (a turn to the wrong person)
 //   back      the target went back to the previous speaker after having reached P
 //   reversals target moves > 10° in opposite directions within 2 s (oscillation), as analyze_follow.py
 //   moves     target changes > 4° (the page's "follow yaw" log lines)
@@ -41,6 +42,9 @@ const SEEDS = Number(opt("--seeds", 10));
 const ONLY = opt("--scenario", "all");
 const VERBOSE = args.includes("-v");
 const DUMP = args.includes("--dump");
+const VOICE_FLAG = !args.includes("--no-voice");
+const REFLECT = Number(opt("--reflect", 0.25));     // share of DoA readings that are wall reflections
+const DOA_NOISE = Number(opt("--doa-noise", 12));   // deg, gaussian   // backend without the vad "voice" flag
 
 const { SpeakerTracker } = await import(pathToFileURL(resolve(pagesDir, "speaker.js")));
 const { FaceSpeakers } = await import(pathToFileURL(resolve(pagesDir, "speakers.js")));
@@ -53,6 +57,7 @@ const TRACKER = followMod.TRACKER_OPTIONS ?? { confirmN: 5, confirmWindowS: 1.0 
 // --set KEY=value,... overrides follow.js TUNING; --faces key=value,... FaceSpeakers options (parameter sweeps)
 const kv = (s) => Object.fromEntries((s ?? "").split(",").filter(Boolean).map((x) => { const [k, v] = x.split("="); return [k, Number(v)]; }));
 if (followMod.TUNING) Object.assign(followMod.TUNING, kv(opt("--set")));
+Object.assign(TRACKER, kv(opt("--tracker")));   // --tracker maxVel=100,maxAcc=160
 const FACE_OPTS = kv(opt("--faces"));
 
 const DEG = Math.PI / 180;
@@ -114,7 +119,7 @@ function simulate(name, seed) {
   const yawHist = [];   // [t, actual head yaw]
   const yawAt = (t) => { for (let i = yawHist.length - 1; i >= 0; i--) if (yawHist[i][0] <= t) return yawHist[i][1]; return 0; };
   const trace = [];     // [t, head yaw, target]
-  let nextFace = 0, nextDoa = 0, nextVad = 0, vadOn = false;
+  let nextFace = 0, nextDoa = 0, nextVad = 0, vadOn = false, voiceOn = false;
   const bubbles = new Map();   // utterance -> {trackId, nextPartial}
   const chew = { until: -1 };
 
@@ -129,10 +134,12 @@ function simulate(name, seed) {
     const headVel = yawHist.length > 5 ? Math.abs(base - yawHist[yawHist.length - 6][1]) / (5 * dt) : 0;
 
     // VAD (backend segmenter): on 0.2 s after a speech start, off 0.8 s after the last speech
+    // voice (frame-level speech, captions.py "voice") follows the actual speech 0.1 s late
     const heard = utts.some((u) => now >= u.t0 + 0.2 && now < u.t1 + 0.8);
-    if (heard !== vadOn || (heard && now >= nextVad)) {
-      vadOn = heard; nextVad = now + 0.25;
-      follow.onVad(now, { speaking: heard });
+    const voice = heard && utts.some((u) => now >= u.t0 + 0.1 && now < u.t1 + 0.1);
+    if (heard !== vadOn || (heard && voice !== voiceOn && now >= nextVad - 0.15) || (heard && now >= nextVad)) {
+      vadOn = heard; voiceOn = voice; nextVad = now + 0.25;
+      follow.onVad(now, VOICE_FLAG ? { speaking: heard, voice } : { speaking: heard });
     }
 
     // DoA, 10 Hz
@@ -144,7 +151,7 @@ function simulate(name, seed) {
       if (headVel > 30 && r() < 0.5) world = yaw + r.range(-90, 90);
       else if (talkers.length) {
         const p = talkers[Math.floor(r() * talkers.length)];
-        world = (r() < 0.25 ? p.reflect : p.yaw) + 12 * r.gauss();
+        world = (r() < REFLECT ? p.reflect : p.yaw) + DOA_NOISE * r.gauss();
       } else world = 70 + 20 * r.gauss();
       let rel = ((world - yaw + 540) % 360) - 180;
       if (rel > 90) rel = 180 - rel;
@@ -213,12 +220,13 @@ function evaluate(people, utts, trace, lines, dur) {
     }
     let onN = 0, n = 0;
     for (let t = u.t0 + 1.5; t < u.t1; t += 0.02) { n++; if (Math.abs(at(t)[1] - P) < 12) onN++; }
-    let wrong = 0, back = 0, reached = false, wasWrong = false, wasBack = false;
+    let wrong = 0, back = 0, reached = false, wasWrong = null, wasBack = false;
     for (let t = u.t0 + 0.3; t <= u.t1 + 1; t += 0.02) {
       const tg = at(t)[2];
+      // (still looking at the previous speaker when the new one starts is no turn: only moves count)
       if (Math.abs(tg - P) < 10) reached = true;
       const w = people.some((p, i) => i !== u.who && Math.abs(p.yaw - P) > 20 && Math.abs(tg - p.yaw) < 10);
-      if (w && !wasWrong) wrong++;
+      if (w && wasWrong === false) wrong++;
       wasWrong = w;
       const b = reached && prevWho != null && prevWho !== u.who && Math.abs(tg - people[prevWho].yaw) < 10;
       if (b && !wasBack) back++;
@@ -250,7 +258,7 @@ function reversals(moves, y0) {
 const median = (xs) => { const s = [...xs].sort((a, b) => a - b); return s.length ? s[Math.floor(s.length / 2)] : NaN; };
 const mean = (xs) => xs.reduce((a, b) => a + b, 0) / Math.max(1, xs.length);
 
-console.log(`pages: ${pagesDir}, seeds ${SEEDS}, tracker ${JSON.stringify(TRACKER)}`);
+console.log(`pages: ${pagesDir}, seeds ${SEEDS}, tracker ${JSON.stringify(TRACKER)}, DoA ±${DOA_NOISE}° ${REFLECT * 100}% reflections${VOICE_FLAG ? "" : ", no voice flag"}`);
 console.log("scenario      utts  acquire med/p90 s  miss %  on-target %  wrong/utt  back/utt  reversals/utt  moves/utt  travel °/min  travel/needed");
 const totals = [];
 for (const name of Object.keys(SCENARIOS)) {
