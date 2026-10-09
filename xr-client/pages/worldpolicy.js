@@ -31,7 +31,7 @@ export const poseDistance = (a, b) => Math.hypot(wrap(a[2] - b[2]) * Math.cos(a[
 export class PaintPolicy {
   constructor({
     maxHz = 3,               // paints per second at most (GPU work only on accepted frames)
-    stillDeg = 0.8,          // head moved less than this around the capture time = still (pose noise at rest: README)
+    stillDeg = 1.5,          // head moved less than this around the capture time = still (pose noise at rest: README)
     holdS = 0.08,            // stillness needed before the capture time (exposure + ~2 frame periods at 30 fps)
     afterS = 0.03,           // ... and after it
     lagMarginS = 0.04,       // uncertainty of the measured lag

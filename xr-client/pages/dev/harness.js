@@ -39,9 +39,9 @@ let ticks = 0;
 mc.port1.onmessage = () => {
   posted = false;
   // let other work (decoding, the worker's replies, devtools) in now and then: message tasks would starve it
-  if (++ticks % 15 === 0 && globalThis.scheduler?.postTask) { holdFor(scheduler.postTask(() => {}, { priority: "user-visible" })); return; }
+  if (++ticks % 15 === 0) { holdFor(new Promise((r) => setTimeout(r, 0))); return; }   // run headless (hidden tabs clamp timers)
   const cbs = rafQ; rafQ = [];
-  vNow += step;
+  if (!done || q.get("age")) vNow += step;   // replay over: the clock stops (screenshots show the state at the end); &age=1 lets it run on
   for (const cb of cbs) cb(vNow * 1000);
 };
 window.requestAnimationFrame = (cb) => {

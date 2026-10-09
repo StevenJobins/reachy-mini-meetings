@@ -316,12 +316,13 @@ export function createWorldView({ renderer, parent, camera, radius = 4, width = 
     const ratios = [];
     for (let i = 0; i < PROBE_W * PROBE_H; i++) {
       const f = (probeBuf[i * 4] * 256 + probeBuf[i * 4 + 1]) / 65535, p = 4 * (probeBuf[i * 4 + 2] * 256 + probeBuf[i * 4 + 3]) / 65535;
-      if (f > 0.02 && f < 0.95 && p > 0.005 && p < 3.9) ratios.push(p / f);   // p = 0: no stored panorama there
+      if (f > 0.004 && f < 0.95 && p > 0.004 && p < 3.9) ratios.push(p / f);   // p = 0: no stored panorama there (dark rooms: linear 0.01-0.05)
     }
     if (ratios.length < 40) return;
     ratios.sort((a, b) => a - b);
     lastProbe = { n: ratios.length, p25: ratios[ratios.length >> 2], p50: ratios[ratios.length >> 1], p75: ratios[(3 * ratios.length) >> 2] };
-    const g = Math.max(0.25, Math.min(4, ratios[ratios.length >> 1]));   // linear light: an sRGB exposure step x1.3 is x1.8 here
+    // at most x1.5 per probe and within 1/3..3 overall: a bad probe (people walking through, a black first frame) must not run away
+    const g = Math.max(gain / 1.5, Math.min(gain * 1.5, Math.max(1 / 3, Math.min(3, ratios[ratios.length >> 1]))));
     gain = g;   // measured on the very view that is painted next (same exposure): no smoothing
     gainLog.push([probes, g]);
     if (gainLog.length > 200) gainLog.shift();
