@@ -154,37 +154,50 @@ class Worker:
 
 class PartialGate:
     """Live text of room speech: at most one partial job on the Whisper worker. A partial that comes while one
-    runs waits (a newer one replaces it) and starts the moment the running one is done, so the text keeps up
+    is queued or running waits (a newer one replaces it); a queued job transcribes the newest audio when the
+    worker gets to it (`start`), and the next one starts the moment the running one is done, so the text keeps up
     with the speech as fast as Whisper allows. Before, partials were dropped whenever ANY Whisper job was pending,
-    e.g. the final of the previous sentence, so the first text of a sentence often came only with its final."""
+    e.g. the final of the previous sentence. offer/done/end run on the event loop, start on the worker thread."""
 
     def __init__(self) -> None:
+        self.lock = threading.Lock()
         self.busy = False
         self.waiting = None    # (segment, wall time) of the newest partial not started yet
         self.ended: set[int] = set()   # segments whose final was cut: their partials are useless now
 
     def offer(self, seg, wall: float):
         """A new partial from the segmenter: returns what to start now, or None (it waits / is dropped)."""
-        if seg.id in self.ended:
-            return None
-        if self.busy:
-            self.waiting = (seg, wall)
-            return None
-        self.busy = True
-        return seg, wall
+        with self.lock:
+            if seg.id in self.ended:
+                return None
+            if self.busy:
+                self.waiting = (seg, wall)
+                return None
+            self.busy = True
+            return seg, wall
+
+    def start(self, seg, wall: float):
+        """The worker begins the job submitted with (seg, wall): what to transcribe, the newest audio if more came
+        while the job was queued (behind a final, say: the old audio was often too short for any text)."""
+        with self.lock:
+            if self.waiting and self.waiting[0].id not in self.ended:
+                (seg, wall), self.waiting = self.waiting, None
+            return seg, wall
 
     def done(self):
         """The running partial job finished: returns the next one to start, or None."""
-        nxt, self.waiting = self.waiting, None
-        if nxt and nxt[0].id in self.ended:
-            nxt = None
-        self.busy = nxt is not None
-        return nxt
+        with self.lock:
+            nxt, self.waiting = self.waiting, None
+            if nxt and nxt[0].id in self.ended:
+                nxt = None
+            self.busy = nxt is not None
+            return nxt
 
     def end(self, seg_id: int) -> None:
-        self.ended.add(seg_id)
-        if self.waiting and self.waiting[0].id == seg_id:
-            self.waiting = None
+        with self.lock:
+            self.ended.add(seg_id)
+            if self.waiting and self.waiting[0].id == seg_id:
+                self.waiting = None
 
 
 def translate_partial(text_len: int, last_len: int, last_t: float, now: float) -> bool:
@@ -419,12 +432,18 @@ class Pipeline:
         t.add_done_callback(self.jobs.discard)
 
     async def _partial(self, seg: Segment, wall_end: float) -> None:
+        picked = [(seg, wall_end)]
+
+        def newest(_audio, _language):   # on the worker thread: the newest audio of this speech
+            picked[0] = self.partials.start(seg, wall_end)
+            return self.stt_partial(picked[0][0].audio)
         try:
-            text, lang = await self._stt(self.stt_partial, seg.audio)
+            text, lang = await self._stt(newest, None)
         finally:
             nxt = self.partials.done()
             if nxt:
                 self._spawn(self._partial(*nxt))
+        seg, wall_end = picked[0]
         if not text or seg.id in self.finalized or text == self.partial_cap.get(seg.id, {}).get("text"):
             return
         self.seg_lang[seg.id] = lang

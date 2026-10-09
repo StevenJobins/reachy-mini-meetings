@@ -359,3 +359,18 @@ def test_translate_partial_throttle():
     assert not translate_partial(15, 9, 10.0, 11.0)   # only 6 new characters
     assert not translate_partial(30, 9, 10.0, 10.5)   # enough text, but too soon
     assert translate_partial(30, 9, 10.0, 10.9)
+
+
+def test_partial_gate_queued_job_takes_newest_audio():
+    # a partial queued behind another job (the previous sentence's final) transcribes what was said up to the
+    # moment the worker gets to it, not its own, older and shorter audio
+    g = PartialGate()
+    old = _Seg(1, 1)
+    assert g.offer(old, 1.0) == (old, 1.0)
+    newer = _Seg(1, 5)
+    assert g.offer(newer, 2.0) is None
+    assert g.start(old, 1.0) == (newer, 2.0)
+    assert g.done() is None and not g.busy
+    s = _Seg(2, 1)
+    g.offer(s, 3.0)
+    assert g.start(s, 3.0) == (s, 3.0)                # nothing newer: its own audio

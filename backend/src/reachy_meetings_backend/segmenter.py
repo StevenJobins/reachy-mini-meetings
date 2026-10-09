@@ -44,8 +44,11 @@ class SegmenterCfg:
     preroll_s: float = 0.3
     min_s: float = 0.4             # drop shorter blips (coughs, clicks)
     max_s: float = 15.0            # force a cut in monologues
-    first_partial_s: float = 0.5   # first live text this early: the bubble appears quickly
-    partial_every_s: float = 0.6
+    # live text: first try this early, then retry often. The partial gate (captions.py) keeps one job on the
+    # worker, so a short interval costs no backlog. Whisper `small` has text for 6/8 test sentences after 0.6 s
+    # of speech, for 8/8 after 0.9 s: an empty early try is retried 0.3 s later instead of 0.6 s (bench_bubbles.py)
+    first_partial_s: float = 0.4
+    partial_every_s: float = 0.3
     early_s: float = 0.0           # > 0: emit a tentative end after this much silence (0 = off)
 
 

@@ -312,6 +312,8 @@ def sim(d: Path, session: str, policy: str, first: float, every: float, small_s:
         nonlocal running
         if running is None and queue:
             _, _, kind, sg = heapq.heappop(queue)
+            if kind == "partial" and policy == "new":
+                sg = gate.start(sg, t)[0]
             running = (t + (small_s if kind == "partial" else turbo_s), kind, sg)
 
     def finish(t, kind, sg):
