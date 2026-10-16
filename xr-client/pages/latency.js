@@ -114,6 +114,7 @@ export function createLatencyTest({ video, clock = null, getEstimateS = () => nu
   function onFrame(_now, meta) {
     if (!active) return;
     vfc = video.requestVideoFrameCallback(onFrame);
+    if (result) return;   // done: the numbers stay as they are until Reset
     frames++;
     const presented = epoch(meta.presentationTime ?? performance.now());
     const w = Math.min(960, video.videoWidth), h = Math.round(w * video.videoHeight / video.videoWidth);
@@ -130,7 +131,7 @@ export function createLatencyTest({ video, clock = null, getEstimateS = () => nu
       else if (mode === "remote" && text?.startsWith(PREFIX_REMOTE) && clock?.offset != null)
         ms = presented + clock.offset - Number(text.slice(PREFIX_REMOTE.length));   // both in backend time
       else return;
-      if (!(ms > 0 && ms < 5000)) return;
+      if (!(ms > 0 && ms < 5000) || result) return;
       found++;
       samples.push(ms);
       if (samples.length > 600) samples.shift();
@@ -148,7 +149,7 @@ export function createLatencyTest({ video, clock = null, getEstimateS = () => nu
     if (!el) return;
     const box = el.querySelector("#lat-done");
     box.style.display = result ? "block" : "none";
-    box.textContent = result ? `✅ Enough values (${ENOUGH}): result saved. Copy it and paste it to Claude for docs/measurements/latency.md, or keep measuring.` : "";
+    box.textContent = result ? `✅ Done: ${ENOUGH} values, measurement stopped. Copy the result and paste it to Claude for docs/measurements/latency.md. Reset measures again.` : "";
     el.querySelector("#lat-copy").disabled = !result;
   }
 
@@ -181,7 +182,7 @@ export function createLatencyTest({ video, clock = null, getEstimateS = () => nu
     const est = getEstimateS();
     if (!result && s.length >= ENOUGH) { result = makeResult(s, mean, est); showDone(); }
     el.querySelector("#lat-stats").textContent = [
-      `samples  ${s.length}${s.length < ENOUGH ? ` of ${ENOUGH}` : ""}  (QR read in ${found}/${frames} frames)`,
+      `samples  ${s.length}${s.length < ENOUGH ? ` of ${ENOUGH}` : " (done)"}  (QR read in ${found}/${frames} frames)`,
       `median   ${quantile(s, 0.5).toFixed(0)} ms`,
       `p10..p90 ${quantile(s, 0.1).toFixed(0)} .. ${quantile(s, 0.9).toFixed(0)} ms`,
       `min/max  ${s[0].toFixed(0)} / ${s[s.length - 1].toFixed(0)} ms   mean ${mean.toFixed(0)} ms`,
