@@ -48,6 +48,7 @@ export function captionsUrl() { return load(URL_KEY, ""); }   // "" = automatic
 // ECDSA P-256 over "url|ts", the key is logged when the backend starts). Another laptop's key: Settings.
 const TRUSTED_KEYS = [
   "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEEndlhU0PUWdMn1Wbq4jJIFed2LAUrTExKrItI6k0dqPF0Hjq6DR/p7QzjsOetW9pfEA89bi0gZES5gWawzlbvA==",   // Dominic's Mac
+  "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEmpVCYEMHaa0PM00oU+xhTJVIqmCFpN3JTYMR5qUEPGgUCe4kutNQ0OIzWzGYgExRj06MWkSdqNQHD2tUoFJ5eQ==",   // Kevin's Mac
 ];
 const KEYS_KEY = "reachy-xr-trusted-tunnel-keys";
 export function extraTunnelKeys() { return load(KEYS_KEY, ""); }
