@@ -67,6 +67,29 @@ export function createScene({ video, vfovDeg, cameraModel = null, distM, statusT
   // "direct" mode only: VideoTexture is re-allocated with texImage2D on every upload (no texStorage2D),
   // so resolution changes are fine. needsUpdate is set per XR frame below, because its
   // requestVideoFrameCallback can stop firing on Android while an immersive session hides the page.
+  // Camera VideoFrames go straight into canvasTex's GPU texture (same fixed 1920x1080 storage), without the 2D
+  // canvas copy: drawImage + canvas upload took the Galaxy XR from 72 to 34 fps (perf test 2026-10-16). After
+  // an error the canvas path takes over for good.
+  const gl = renderer.getContext();
+  let directUpload = true, directChecked = false;
+  function uploadFrame(frame) {
+    try {
+      if (!renderer.properties.get(canvasTex).__webglTexture) renderer.initTexture(canvasTex);   // allocates the storage
+      renderer.state.bindTexture(gl.TEXTURE_2D, renderer.properties.get(canvasTex).__webglTexture);   // keeps three's cache right
+      gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, canvasTex.flipY);
+      gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false);
+      gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, gl.RGBA, gl.UNSIGNED_BYTE, frame);
+      if (!directChecked) {   // getError waits for the GPU, so only once
+        directChecked = true;
+        const err = gl.getError();
+        if (err) throw new Error(`GL error 0x${err.toString(16)}`);
+        log("video: VideoFrames uploaded directly to the GPU texture");
+      }
+    } catch (e) {
+      directUpload = false;
+      log("video: direct VideoFrame upload failed, back to the canvas path:", e?.message ?? e);
+    }
+  }
   const videoTex = new THREE.VideoTexture(video);
   videoTex.colorSpace = THREE.SRGBColorSpace;
   videoTex.minFilter = THREE.LinearFilter;
@@ -464,9 +487,13 @@ export function createScene({ video, vfovDeg, cameraModel = null, distM, statusT
       source.update();
     } else {
       // perf test vidfreeze: keep the first frame (no copy, no upload); vidhidden: copy and upload while hidden
-      if (!(perfOff.has("vidfreeze") && source.hasFrame) && source.update()) {
-        canvasTex.needsUpdate = true;
-        if (perfOff.has("vidhidden")) renderer.initTexture(canvasTex);   // hidden meshes are not uploaded otherwise
+      if (!(perfOff.has("vidfreeze") && source.hasFrame)) {
+        const frame = directUpload ? source.takeFrame() : null;
+        if (frame) uploadFrame(frame);
+        if (source.update()) {   // other sizes, <video> fallback, canvas mode: through the 2D canvas
+          canvasTex.needsUpdate = true;
+          if (perfOff.has("vidhidden")) renderer.initTexture(canvasTex);   // hidden meshes are not uploaded otherwise
+        }
       }
       if (source.hasFrame) map = canvasTex;
     }

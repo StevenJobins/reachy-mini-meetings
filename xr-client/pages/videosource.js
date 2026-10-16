@@ -66,15 +66,31 @@ export function createVideoSource(video, log) {
     ctx.drawImage(src, 0, 0, W, H);
     lastDraw = performance.now();
     size = `${w}x${h}`;
-    drawn++; hasFrame = true;
+    drawn++; lastDirect = false; hasFrame = true;
     return true;
   }
+
+  let lastDirect = false;   // the shown frame came from takeFrame() (for the HUD)
 
   return {
     canvas,
     get mode() { return mode; },
     /** True once the canvas holds a camera frame (in track/canvas mode). */
     get hasFrame() { return hasFrame; },
+
+    /** Track mode: the newest full-size VideoFrame, due by the upload rate, for a direct upload to the GPU
+     *  texture (scene.js); null otherwise. Copying it through the 2D canvas first and uploading the canvas
+     *  took the Galaxy XR from 72 to 34 fps (perf test 2026-10-16). The frame stays owned by this module and
+     *  is closed when the next one arrives, so it must be used right away (same task). Call before update(). */
+    takeFrame() {
+      if (mode !== "track" || !fresh || !latest || performance.now() - lastDraw < 1000 / MAX_DRAW_FPS - 2) return null;
+      if (latest.displayWidth !== W || latest.displayHeight !== H) return null;   // other sizes: canvas path scales
+      fresh = false; usingFallback = false;
+      lastDraw = performance.now();
+      size = `${W}x${H}`;
+      drawn++; lastDirect = true; hasFrame = true;
+      return latest;
+    },
 
     /** Next mode (VR button), remembered on this device. */
     cycle() {
@@ -123,7 +139,7 @@ export function createVideoSource(video, log) {
     /** One status line for the HUD. */
     stats() {
       const rx = mode === "track" ? `rx ${rxFps} fps${usingFallback ? " (fallback <video>)" : ""}${restarts ? ` restarts ${restarts}` : ""}  ` : "";
-      const tex = mode === "direct" ? "tex <video>" : `tex ${drawFps} fps`;
+      const tex = mode === "direct" ? "tex <video>" : `tex ${drawFps} fps${lastDirect ? " (VideoFrame)" : ""}`;
       return `video mode ${mode}   ${rx}${tex}   src ${size}`;
     },
   };
