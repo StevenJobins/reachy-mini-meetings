@@ -70,7 +70,7 @@ def main() -> None:
     if not orig.exists():
         shutil.copy(f, orig)
     src = orig.read_text()   # always patch the original, so running it again changes the settings cleanly
-    if ANCHOR not in src or FPS_ANCHOR not in src:
+    if ANCHOR not in src or (args.fps and FPS_ANCHOR not in src):   # reachy_mini 1.8 has no FPS_ANCHOR
         raise SystemExit(f"anchor not found in {f}: daemon version changed, patch by hand")
     src = src.replace(ANCHOR, ANCHOR + block(args.h264))
     if args.fps:
