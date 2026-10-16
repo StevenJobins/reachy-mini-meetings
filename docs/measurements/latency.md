@@ -19,7 +19,7 @@ spread ±3 ms (that offset is the fake camera's own video path).
 
 | Date (UTC) | Page version | Median ms | p10–p90 ms | min/max ms | n | QR read | Page estimate ms | Video | Notes |
 |---|---|---|---|---|---|---|---|---|---|
-| 2026-10-16 11:57 | e982f9e | 233 | 217–234 | 216/251 | 300 | 100 % | 136 | 1920x1080 | **Baseline.** Stock daemon on Kevin's Mac (Reachy Mini Control, no `patch_daemon_video.py`: VP8 software encoding, default bitrate), Chrome on Simon's Mac, same Wi-Fi. Very steady (p10–p90 within 17 ms). Page estimate for reprojection 136 ms vs 233 ms measured. |
+| 2026-10-16 11:57 | e982f9e | 233 | 217–234 | 216/251 | 300 | 100 % | 136 | 1920x1080 | **Baseline.** Stock daemon on Kevin's Mac (Reachy Mini Control, no `patch_daemon_video.py`: VP8 software encoding, default bitrate), Chrome on the **same Mac** (robot daemon and measuring page on one machine, so the video does not cross Wi-Fi; with the headset add the Wi-Fi hop, and here daemon encoding and Chrome decoding share one CPU). Very steady (p10–p90 within 17 ms). Page estimate for reprojection 136 ms vs 233 ms measured. |
 
 Removed: two earlier rows (1840 ms, 381 ms, 2026-10-16) came from the fake-camera test page in Claude's browser pane,
 not from Reachy.
