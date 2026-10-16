@@ -101,7 +101,7 @@ export function createScene({ video, vfovDeg, cameraModel = null, distM, statusT
   screen.add(bezel);
   const robotView = new THREE.Group();
   robotView.add(screen);
-  robotView.visible = !perfOff.has("novideo");
+  robotView.visible = !perfOff.has("novideo") && !perfOff.has("vidhidden");
   scene.add(robotView);
 
   // ---- room panorama (room scan, WP2): frames Reachy took while looking around, world-locked in the room frame
@@ -463,7 +463,11 @@ export function createScene({ video, vfovDeg, cameraModel = null, distM, statusT
       if (video.readyState >= video.HAVE_CURRENT_DATA && video.videoWidth > 0) { videoTex.needsUpdate = true; map = videoTex; }
       source.update();
     } else {
-      if (source.update()) canvasTex.needsUpdate = true;
+      // perf test vidfreeze: keep the first frame (no copy, no upload); vidhidden: copy and upload while hidden
+      if (!(perfOff.has("vidfreeze") && source.hasFrame) && source.update()) {
+        canvasTex.needsUpdate = true;
+        if (perfOff.has("vidhidden")) renderer.initTexture(canvasTex);   // hidden meshes are not uploaded otherwise
+      }
       if (source.hasFrame) map = canvasTex;
     }
     if (screenMat.map !== map) { screenMat.map = map; screenMat.needsUpdate = true; }
