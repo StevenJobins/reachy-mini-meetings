@@ -1,0 +1,195 @@
+<!doctype html>
+<!-- Dev harness, not linked from the app: does a hardware-decoded H.264 frame upload faster than a software VP8
+     frame? Encodes a 1080p60 test clip on the device (WebCodecs), decodes it in a loop with the chosen codec and
+     acceleration, and uploads the VideoFrames to a WebGL texture exactly like scene.js (texSubImage2D, at most
+     30/s, framebuffer scale 0.75, foveation 1). Measures the VR frame rate. Does not connect to the robot.
+     Open /dev/codectest.html on the headset. -->
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Codec test</title>
+<style>
+  body { margin: 0; padding: 20px; background: #15171d; color: #dde; font: 16px system-ui, sans-serif; }
+  button { font: inherit; padding: 12px 16px; margin: 4px 6px 4px 0; border-radius: 10px; border: 0; background: #ff9500; color: #111; }
+  button:disabled { opacity: 0.4; }
+  pre { white-space: pre-wrap; background: #0b0c10; padding: 12px; border-radius: 8px; font-size: 14px; }
+</style>
+<h2>Codec test: VideoFrame upload cost in VR</h2>
+<p>Pick a mode: it prepares the clip, then enters VR. Look straight ahead for ~30 s, then exit VR. The result appears below.</p>
+<div id="modes"></div>
+<pre id="out"></pre>
+<script type="importmap">{ "imports": { "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js" } }</script>
+<script type="module">
+import * as THREE from "three";
+
+const W = 1920, H = 1080, FPS = 60, N = 120, MAX_UPLOAD_FPS = 30;
+const MODES = [
+  ["H.264 hardware", "h264", "prefer-hardware"], ["H.264 software", "h264", "prefer-software"],
+  ["VP8 software", "vp8", "prefer-software"], ["VP8 hardware", "vp8", "prefer-hardware"],
+];
+const $out = document.getElementById("out");
+const log = (...a) => { const s = a.join(" "); $out.textContent += s + "\n"; console.log(s); };
+
+// ---- test clip: moving detail (noise, bars, a counter), encoded once per codec and kept in memory
+const noise = document.createElement("canvas");
+noise.width = 512; noise.height = 512;
+{
+  const c = noise.getContext("2d"), img = c.createImageData(512, 512);
+  for (let i = 0; i < img.data.length; i += 4) { const v = Math.random() * 255; img.data.set([v, v * 0.8, 255 - v, 255], i); }
+  c.putImageData(img, 0, 0);
+}
+const src = document.createElement("canvas");
+src.width = W; src.height = H;
+const sctx = src.getContext("2d");
+function drawSource(i) {
+  const g = sctx.createLinearGradient(0, 0, W, H);
+  g.addColorStop(0, `hsl(${i * 3 % 360},60%,40%)`); g.addColorStop(1, `hsl(${(i * 3 + 180) % 360},60%,25%)`);
+  sctx.fillStyle = g; sctx.fillRect(0, 0, W, H);
+  for (let x = -(i * 8 % 512); x < W; x += 512) for (let y = 0; y < H; y += 512) sctx.drawImage(noise, x, y);
+  sctx.fillStyle = "#fff"; sctx.fillRect((i * 16) % W, 0, 40, H);
+  sctx.font = "bold 160px sans-serif"; sctx.fillText(String(i).padStart(3, "0"), 80, 220);
+}
+
+const clips = {};
+async function encodeClip(codec) {
+  if (clips[codec]) return clips[codec];
+  const candidates = codec === "h264" ? ["avc1.640028", "avc1.4d0028", "avc1.42e028"] : ["vp8"];
+  let config = null;
+  for (const c of candidates) {
+    const cfg = { codec: c, width: W, height: H, bitrate: 8_000_000, framerate: FPS, latencyMode: "quality",   // realtime drops frames
+      ...(codec === "h264" ? { avc: { format: "annexb" } } : {}) };
+    if ((await VideoEncoder.isConfigSupported(cfg)).supported) { config = cfg; break; }
+  }
+  if (!config) throw new Error(`no ${codec} encoder on this device`);
+  const chunks = [];
+  const enc = new VideoEncoder({
+    output: (chunk) => { const d = new Uint8Array(chunk.byteLength); chunk.copyTo(d); chunks.push({ type: chunk.type, data: d }); },
+    error: (e) => log("encoder error:", e.message),
+  });
+  enc.configure(config);
+  for (let i = 0; i < N; i++) {
+    drawSource(i);
+    const f = new VideoFrame(src, { timestamp: Math.round(i * 1e6 / FPS), duration: Math.round(1e6 / FPS) });
+    enc.encode(f, { keyFrame: i === 0 });
+    f.close();
+    while (enc.encodeQueueSize > 4) await new Promise((r) => setTimeout(r, 5));
+  }
+  await enc.flush();
+  enc.close();
+  const mb = chunks.reduce((s, c) => s + c.data.length, 0) / 1e6;
+  log(`clip ${config.codec}: ${chunks.length} frames, ${(mb * 8 / (N / FPS)).toFixed(1)} Mbit/s`);
+  return (clips[codec] = { codec: config.codec, chunks });
+}
+
+// ---- decoder loop: feeds the clip at 60 fps forever, keeps only the newest frame
+function startDecoder(clip, accel, onFrame) {
+  const dec = new VideoDecoder({ output: onFrame, error: (e) => log("decoder error:", e.message) });
+  dec.configure({ codec: clip.codec, hardwareAcceleration: accel, optimizeForLatency: true });
+  let i = 0, n = 0;
+  const timer = setInterval(() => {
+    if (dec.state !== "configured" || dec.decodeQueueSize > 4) return;
+    const c = clip.chunks[i];
+    dec.decode(new EncodedVideoChunk({ type: i === 0 ? "key" : c.type, timestamp: Math.round(n * 1e6 / FPS), data: c.data }));
+    i = (i + 1) % clip.chunks.length; n++;
+  }, 1000 / FPS);
+  return () => { clearInterval(timer); if (dec.state !== "closed") dec.close(); };
+}
+
+// ---- scene: the same texture setup and upload as scene.js
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.xr.enabled = true;
+renderer.xr.setFramebufferScaleFactor(0.75);
+renderer.xr.setFoveation(1);
+renderer.setSize(480, 270);
+document.body.append(renderer.domElement);
+const gl = renderer.getContext();
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x0b0d16);
+const camera = new THREE.PerspectiveCamera(70, 16 / 9, 0.05, 100);
+const store = document.createElement("canvas");
+store.width = W; store.height = H;
+const tex = new THREE.CanvasTexture(store);
+tex.colorSpace = THREE.SRGBColorSpace; tex.minFilter = THREE.LinearFilter; tex.generateMipmaps = false;
+tex.anisotropy = renderer.capabilities.getMaxAnisotropy();
+const screen = new THREE.Mesh(new THREE.PlaneGeometry(3.2, 1.8), new THREE.MeshBasicMaterial({ map: tex }));
+screen.position.set(0, 0, -2.5);
+scene.add(screen);
+const hudCanvas = document.createElement("canvas");
+hudCanvas.width = 1400; hudCanvas.height = 80;
+const hudTex = new THREE.CanvasTexture(hudCanvas);
+const hud = new THREE.Mesh(new THREE.PlaneGeometry(1.4, 0.08), new THREE.MeshBasicMaterial({ map: hudTex, transparent: true }));
+hud.position.set(0, 1.15, -2.5);
+scene.add(hud);
+
+function upload(frame) {
+  if (!renderer.properties.get(tex).__webglTexture) renderer.initTexture(tex);
+  renderer.state.bindTexture(gl.TEXTURE_2D, renderer.properties.get(tex).__webglTexture);
+  gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, tex.flipY);
+  gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false);
+  gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, gl.RGBA, gl.UNSIGNED_BYTE, frame);
+}
+
+// ---- one run
+async function run(label, codec, accel, { vr }) {
+  for (const b of document.querySelectorAll("button")) b.disabled = true;
+  try {
+    log(`\n== ${label}`);
+    const clip = await encodeClip(codec);
+    const support = await VideoDecoder.isConfigSupported({ codec: clip.codec, hardwareAcceleration: accel });
+    if (!support.supported) { log(`decoder ${clip.codec} ${accel}: NOT supported on this device`); return; }
+    let latest = null, fresh = false, decoded = 0, uploads = 0, lastUpload = 0;
+    const stop = startDecoder(clip, accel, (f) => { latest?.close(); latest = f; fresh = true; decoded++; });
+    let frames = 0, uploadMs = 0, t0 = performance.now(), line = "warming up";
+    const samples = [];
+    const tStart = performance.now();
+    renderer.setAnimationLoop(() => {
+      const now = performance.now();
+      if (fresh && latest && now - lastUpload >= 1000 / MAX_UPLOAD_FPS - 2) {
+        const tu = performance.now();
+        upload(latest);
+        uploadMs += performance.now() - tu;
+        fresh = false; lastUpload = now; uploads++;
+      }
+      renderer.render(scene, camera);
+      frames++;
+      if (now - t0 >= 2000) {
+        const fps = frames * 1000 / (now - t0);
+        line = `${label}: frame ${fps.toFixed(0)} fps   decoded ${(decoded * 1000 / (now - t0)).toFixed(0)}/s   uploads ${(uploads * 1000 / (now - t0)).toFixed(0)}/s   upload js ${(uploadMs / Math.max(uploads, 1)).toFixed(1)} ms`;
+        if (now - tStart > 4000) samples.push(fps);
+        frames = decoded = uploads = 0; uploadMs = 0; t0 = now;
+        const c = hudCanvas.getContext("2d");
+        c.clearRect(0, 0, hudCanvas.width, hudCanvas.height);
+        c.fillStyle = "rgba(0,0,0,0.6)"; c.fillRect(0, 0, hudCanvas.width, hudCanvas.height);
+        c.fillStyle = "#86efac"; c.font = "34px monospace"; c.fillText(line, 20, 52);
+        hudTex.needsUpdate = true;
+      }
+    });
+    if (vr) {
+      const session = await navigator.xr.requestSession("immersive-vr", { optionalFeatures: ["local-floor"] });
+      await renderer.xr.setSession(session);
+      await new Promise((r) => session.addEventListener("end", r, { once: true }));
+    } else {
+      await new Promise((r) => setTimeout(r, 12000));
+    }
+    renderer.setAnimationLoop(null);
+    stop(); latest?.close();
+    samples.sort((a, b) => a - b);
+    const med = samples.length ? samples[samples.length >> 1] : NaN;
+    log(`${label} (${clip.codec}, ${accel}, ${vr ? "VR" : "screen"}): median ${med.toFixed(0)} fps over ${samples.length} samples  [${samples.map((s) => s.toFixed(0)).join(" ")}]`);
+    log(`  last: ${line}`);
+  } catch (e) {
+    log("ERROR:", e?.message ?? e);
+  } finally {
+    for (const b of document.querySelectorAll("button")) b.disabled = false;
+  }
+}
+
+const vrOk = !!navigator.xr && await navigator.xr.isSessionSupported("immersive-vr").catch(() => false);
+log(vrOk ? "VR available" : "no VR here: runs 12 s on the screen instead");
+const box = document.getElementById("modes");
+for (const [label, codec, accel] of MODES) {
+  const b = document.createElement("button");
+  b.textContent = label;
+  b.onclick = () => run(label, codec, accel, { vr: vrOk });
+  box.append(b);
+}
+</script>
