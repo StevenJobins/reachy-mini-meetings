@@ -186,7 +186,8 @@
           <button id="scan-now">Scan room now</button></div>
         <div class="row" title="QR loop: this page shows a QR with the current time, Reachy films the screen, the page reads it back. Run it on the computer whose screen Reachy looks at.">
           <button id="latency-open">📏 Measure camera latency (QR here)</button>
-          <button id="latency-remote" title="For the headset: open qr.html on the robot laptop, Reachy looks at that screen, this device reads the QR (clocks synced via the caption backend)">📏 Measure on this device (QR on robot laptop)</button></div>
+          <button id="latency-remote" title="For the headset: open qr.html on the robot laptop, Reachy looks at that screen, this device reads the QR (clocks synced via the caption backend)">📏 Measure on this device (QR on robot laptop)</button>
+          <a href="qr.html" title="Opens the QR page in this tab, with this tab's Hugging Face sign-in (needed to reach the caption backend through the tunnel from another computer)">Open the QR page (other screen) →</a></div>
         <label>Camera model (lens) <select id="camera-model" title="How the camera image maps to directions: VR sphere, bubbles, face following">
           <option value="auto">Auto: calibrated (camera.json) if present, else estimate</option><option value="estimate">Estimate: pinhole, 54° vertical</option>
           <option value="factory">Pollen factory calibration (unverified for the stream)</option><option value="calibrated">Calibrated (camera.json)</option></select></label>

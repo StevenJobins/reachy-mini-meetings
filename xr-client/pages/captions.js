@@ -58,7 +58,7 @@ const TUNNEL_HOST = /^wss:\/\/[a-z0-9-]+\.trycloudflare\.com$/;
 const MAX_AGE_S = 13 * 3600;   // the backend reposts every 30 min; ntfy keeps messages 12 h
 const b64 = (s) => Uint8Array.from(atob(s), (c) => c.charCodeAt(0));
 
-async function tunnelUrl(log) {
+export async function tunnelUrl(log) {
   const r = await fetch(`https://ntfy.sh/${TUNNEL_TOPIC}/json?poll=1&since=latest`, { cache: "no-store" });
   const line = (await r.text()).trim().split("\n").pop();
   if (!line) return null;

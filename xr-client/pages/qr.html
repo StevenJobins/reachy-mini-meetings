@@ -19,40 +19,72 @@
   <canvas id="qr"></canvas>
   <div class="side">
     <div style="font-size:20px;font-weight:650">Latency QR (other screen)</div>
-    <div style="color:#555">Open this on the computer next to Reachy (where the caption backend runs) and point Reachy at it.
-      On the headset: Settings → <b>Measure on this device (QR on robot laptop)</b>. Both clocks sync to the backend.</div>
+    <div style="color:#555">Point Reachy at this screen. On the headset: Settings → <b>Measure on this device (QR on robot
+      laptop)</b>. Both clocks sync to the same caption backend: here directly (robot laptop) or, on another computer,
+      through the tunnel with this tab's Hugging Face sign-in (main page → Settings → <i>Open the QR page</i>).</div>
     <div id="now" style="font:600 28px ui-monospace,monospace"></div>
     <div id="status">connecting…</div>
     <div id="warn">⚠ This window is covered or in the background: Chrome slows it down and the QR would be stale. Keep it in front.</div>
-    <label>Caption backend <input id="url"></label>
+    <label>Caption backend (empty = automatic: localhost, else tunnel) <input id="url" placeholder="automatic"></label>
   </div>
 </main>
+<script type="importmap">
+{ "imports": { "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js" } }
+</script>
 <script type="module">
 // Shows a QR with the caption backend's clock (RMB:<ms>), redrawn every screen frame. The headset page decodes it
 // from Reachy's video and compares with its own backend-synced clock (latency.js, mode "remote").
 import { loadQrLib, drawQrCode, PREFIX_REMOTE } from "./latency.js";
 import { createClockSync } from "./clocksync.js";
+import { tunnelUrl } from "./captions.js";
 
 const $ = (id) => document.getElementById(id);
 const URL_KEY = "reachy-xr-qr-backend";
-let url = "ws://localhost:8766";
-try { url = localStorage.getItem(URL_KEY) || url; } catch {}
+const LOCAL_URL = "ws://localhost:8766";
+let url = "";   // "" = automatic, like the main page: localhost first, then the tunnel
+try { url = localStorage.getItem(URL_KEY) || ""; } catch {}
 $("url").value = url;
-$("url").onchange = (e) => { url = e.target.value.trim(); try { localStorage.setItem(URL_KEY, url); } catch {} connect(); };
+$("url").onchange = (e) => { url = e.target.value.trim(); try { url ? localStorage.setItem(URL_KEY, url) : localStorage.removeItem(URL_KEY); } catch {} connect(); };
 
-let ws = null, state = "connecting";
+// The main page's Hugging Face sign-in (the SDK keeps it in sessionStorage, i.e. per tab): the tunnel only lets in
+// allowed accounts. So on another computer this page must be opened from the main page in the same tab.
+function hfToken() {
+  try {
+    const token = sessionStorage.getItem("hf_token"), expires = sessionStorage.getItem("hf_token_expires");
+    return token && (!expires || new Date(expires).getTime() > Date.now()) ? token : null;
+  } catch { return null; }
+}
+
+let ws = null, state = "connecting", where = "", tryLocal = true, gen = 0, timer = null;
 const clock = createClockSync({ send: (id) => (ws?.readyState === WebSocket.OPEN ? (ws.send(JSON.stringify({ type: "time", id })), true) : false) });
 
-function connect() {
+async function connect() {
+  clearTimeout(timer);
+  const g = ++gen;
   ws?.close();
   state = "connecting";
-  ws = new WebSocket(url);
-  ws.onopen = async () => {
+  let u = url;
+  if (!u) {
+    u = tryLocal ? LOCAL_URL : await tunnelUrl(() => {}).catch(() => null);
+    if (g !== gen) return;
+    tryLocal = !tryLocal;
+    if (!u) { state = "no backend found"; timer = setTimeout(connect, 3000); return; }
+  }
+  where = u === LOCAL_URL ? "localhost" : u.startsWith("wss://") ? "tunnel" : u;
+  try { ws = new WebSocket(u); } catch { state = "bad address"; timer = setTimeout(connect, 3000); return; }
+  const sock = ws;
+  sock.onopen = async () => {
+    sock.send(JSON.stringify({ type: "auth", hf_token: hfToken() }));   // only checked through the tunnel
     state = "connected";
+    tryLocal = u === LOCAL_URL;
     await clock.sync();
   };
-  ws.onmessage = (e) => { try { const m = JSON.parse(e.data); if (m.type === "time") clock.handle(m); } catch {} };
-  ws.onclose = () => { state = "disconnected"; setTimeout(() => { if (ws?.readyState !== WebSocket.OPEN) connect(); }, 3000); };
+  sock.onmessage = (e) => { if (typeof e.data !== "string") return; try { const m = JSON.parse(e.data); if (m.type === "time") clock.handle(m); } catch {} };
+  sock.onclose = (e) => {
+    if (sock !== ws) return;
+    state = e.code === 4001 ? (hfToken() ? "tunnel refused this HF account" : "tunnel needs a sign-in: open this page from the main page (Settings)") : "disconnected";
+    timer = setTimeout(connect, e.code === 4001 ? 5000 : 1000);
+  };
 }
 connect();
 setInterval(() => { if (ws?.readyState === WebSocket.OPEN) clock.sync(); }, 15000);
@@ -71,7 +103,7 @@ function loop(t) {
   } else {
     $("now").textContent = "no clock yet";
   }
-  $("status").textContent = `backend  ${state}\nclock    ${clock.offset != null ? `synced, ±${(clock.rtt / 2).toFixed(1)} ms` : "not synced"}`;
+  $("status").textContent = `backend  ${state}${state === "connected" ? ` (${where})` : ""}\nsign-in  ${hfToken() ? "yes (from the main page)" : "no"}\nclock    ${clock.offset != null ? `synced, ±${(clock.rtt / 2).toFixed(1)} ms` : "not synced"}`;
   requestAnimationFrame(loop);
 }
 requestAnimationFrame(loop);
