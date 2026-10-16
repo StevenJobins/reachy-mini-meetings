@@ -92,6 +92,11 @@ export function createVideoSource(video, log) {
       return latest;
     },
 
+    /** The newest camera image for a snapshot (room scan): the current VideoFrame in track mode, since the canvas
+     *  is no longer redrawn while frames go straight to the GPU (takeFrame); else the canvas. null before the first
+     *  frame. Draw it right away (the VideoFrame is closed when the next one arrives). */
+    currentImage() { return mode === "track" && latest && !usingFallback ? latest : hasFrame ? canvas : null; },
+
     /** Next mode (VR button), remembered on this device. */
     cycle() {
       mode = modes[(modes.indexOf(mode) + 1) % modes.length];

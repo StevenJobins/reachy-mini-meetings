@@ -559,8 +559,10 @@ export function createScene({ video, vfovDeg, cameraModel = null, distM, statusT
 
     /** Copy of the current camera frame (canvas w x h) for the room scan, or null without video. */
     captureFrame(w = 960, h = 540) {
-      const src = source.mode !== "direct" && source.hasFrame ? source.canvas
-        : video.readyState >= video.HAVE_CURRENT_DATA && video.videoWidth ? video : null;
+      // not source.canvas: with the direct VideoFrame upload it keeps an old frame, and all 12 scan stops showed
+      // the same photo (2026-10-16)
+      const src = (source.mode !== "direct" && source.currentImage())
+        || (video.readyState >= video.HAVE_CURRENT_DATA && video.videoWidth ? video : null);
       if (!src) return null;
       const c = document.createElement("canvas");
       c.width = w; c.height = h;

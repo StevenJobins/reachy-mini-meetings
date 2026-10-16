@@ -34,6 +34,7 @@ better (lower RMS over more views), replace it and note the numbers here.
 
 ## Status (newest first, one line each: date, who, what, branch)
 
+- 2026-10-16 Simon/Claude: room scan showed one photo 12 times since the direct VideoFrame upload (be9e67f): `captureFrame` read `source.canvas`, which is no longer redrawn. Now `videosource.currentImage()` (the current VideoFrame in track mode). Kevin: keep this in mind if the canvas path changes again. Main.
 - 2026-10-16 Simon/Claude: `captions.js` (your area): Simon's Mac tunnel key added to `TRUSTED_KEYS` (backend now also runs there, for the headset latency test). Main.
 - 2026-10-16 Simon/Claude: `captions.js` (your area): `tunnelUrl` is now exported (one word), so `qr.html` finds the backend like the main page (localhost, else tunnel with the tab's HF sign-in). Settings gets a link "Open the QR page" (same tab, keeps the sign-in). Main.
 - 2026-10-16 Simon/Claude: backend `captions.py` (your area): new client message `{"type": "time", "id"}` -> `{"type": "time", "id", "t": ms}` for clock sync (latency test with the QR on another screen, `xr-client/pages/qr.html`, `clocksync.js`). Needs a backend restart on the robot laptop. Main.
