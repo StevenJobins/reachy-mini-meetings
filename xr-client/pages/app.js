@@ -510,6 +510,7 @@ const scanTarget = () => (scan.active ? [0, scan.target.pitch, scan.target.yaw] 
 const latencyTest = createLatencyTest({
   video,
   getEstimateS: () => videoDelayS,
+  getInfo: () => ({ version: VERSION, video: status.video }),
   onActive: (on) => { holdPose = on ? [status.meas[1], status.meas[2]] : null; },
   log,
 });
