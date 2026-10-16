@@ -50,6 +50,7 @@ export function captionsUrl() { return load(URL_KEY, ""); }   // "" = automatic
 const TRUSTED_KEYS = [
   "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEEndlhU0PUWdMn1Wbq4jJIFed2LAUrTExKrItI6k0dqPF0Hjq6DR/p7QzjsOetW9pfEA89bi0gZES5gWawzlbvA==",   // Dominic's Mac
   "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEmpVCYEMHaa0PM00oU+xhTJVIqmCFpN3JTYMR5qUEPGgUCe4kutNQ0OIzWzGYgExRj06MWkSdqNQHD2tUoFJ5eQ==",   // Kevin's Mac
+  "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAErTLI44w2bStgfUnKokDJTBp0zOQuyRdsBJjyJ3sQQvNFA/m+L5e3uny1D6RO7OjPhkVtFloHLN9+x4RQpa/kIg==",   // Simon's Mac (Intel)
 ];
 const KEYS_KEY = "reachy-xr-trusted-tunnel-keys";
 export function extraTunnelKeys() { return load(KEYS_KEY, ""); }
