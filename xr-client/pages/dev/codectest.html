@@ -14,7 +14,7 @@
   pre { white-space: pre-wrap; background: #0b0c10; padding: 12px; border-radius: 8px; font-size: 14px; }
 </style>
 <h2>Codec test: VideoFrame upload cost in VR</h2>
-<p>Pick a mode: it prepares the clip, then enters VR. Look straight ahead for ~30 s, then exit VR. The result appears below.</p>
+<p>Tap a mode (prepares the clip, a few seconds), then tap Enter VR. Look straight ahead for ~30 s, then exit VR. The result appears below.</p>
 <div id="modes"></div>
 <pre id="out"></pre>
 <script type="importmap">{ "imports": { "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js" } }</script>
@@ -128,19 +128,49 @@ function upload(frame) {
   gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, gl.RGBA, gl.UNSIGNED_BYTE, frame);
 }
 
-// ---- one run
-async function run(label, codec, accel, { vr }) {
+// ---- one run: tap a mode (prepares the clip, can take seconds), then tap "Enter VR". requestSession must run
+// straight from a tap, so it cannot wait for the encoding.
+let prepared = null;
+const enterBtn = document.createElement("button");
+enterBtn.textContent = "Enter VR";
+enterBtn.style.display = "none";
+
+async function prepare(label, codec, accel) {
   for (const b of document.querySelectorAll("button")) b.disabled = true;
+  enterBtn.style.display = "none"; prepared = null;
   try {
     log(`\n== ${label}`);
     const clip = await encodeClip(codec);
     const support = await VideoDecoder.isConfigSupported({ codec: clip.codec, hardwareAcceleration: accel });
     if (!support.supported) { log(`decoder ${clip.codec} ${accel}: NOT supported on this device`); return; }
-    let latest = null, fresh = false, decoded = 0, uploads = 0, lastUpload = 0;
-    const stop = startDecoder(clip, accel, (f) => { latest?.close(); latest = f; fresh = true; decoded++; });
+    prepared = { label, clip, accel };
+    log(`ready: tap "${vrOk ? "Enter VR" : "Run on screen"}"`);
+    enterBtn.textContent = vrOk ? `Enter VR (${label})` : `Run on screen (${label})`;
+    enterBtn.style.display = "";
+  } catch (e) {
+    log("ERROR:", e?.message ?? e);
+  } finally {
+    for (const b of document.querySelectorAll("button")) b.disabled = false;
+  }
+}
+
+enterBtn.onclick = () => {
+  if (!prepared) return;
+  const p = prepared;
+  // first thing in the tap handler, so the browser accepts it
+  const sessionP = vrOk ? navigator.xr.requestSession("immersive-vr", { optionalFeatures: ["local-floor"] }) : null;
+  measure(p, sessionP);
+};
+
+async function measure({ label, clip, accel }, sessionP) {
+  for (const b of document.querySelectorAll("button")) b.disabled = true;
+  let stop = null, latest = null;
+  try {
+    let fresh = false, decoded = 0, uploads = 0, lastUpload = 0;
     let frames = 0, uploadMs = 0, t0 = performance.now(), line = "warming up";
     const samples = [];
     const tStart = performance.now();
+    stop = startDecoder(clip, accel, (f) => { latest?.close(); latest = f; fresh = true; decoded++; });
     renderer.setAnimationLoop(() => {
       const now = performance.now();
       if (fresh && latest && now - lastUpload >= 1000 / MAX_UPLOAD_FPS - 2) {
@@ -163,22 +193,22 @@ async function run(label, codec, accel, { vr }) {
         hudTex.needsUpdate = true;
       }
     });
-    if (vr) {
-      const session = await navigator.xr.requestSession("immersive-vr", { optionalFeatures: ["local-floor"] });
+    if (sessionP) {
+      const session = await sessionP;
       await renderer.xr.setSession(session);
       await new Promise((r) => session.addEventListener("end", r, { once: true }));
     } else {
       await new Promise((r) => setTimeout(r, 12000));
     }
-    renderer.setAnimationLoop(null);
-    stop(); latest?.close();
     samples.sort((a, b) => a - b);
     const med = samples.length ? samples[samples.length >> 1] : NaN;
-    log(`${label} (${clip.codec}, ${accel}, ${vr ? "VR" : "screen"}): median ${med.toFixed(0)} fps over ${samples.length} samples  [${samples.map((s) => s.toFixed(0)).join(" ")}]`);
+    log(`${label} (${clip.codec}, ${accel}, ${sessionP ? "VR" : "screen"}): median ${med.toFixed(0)} fps over ${samples.length} samples  [${samples.map((s) => s.toFixed(0)).join(" ")}]`);
     log(`  last: ${line}`);
   } catch (e) {
     log("ERROR:", e?.message ?? e);
   } finally {
+    renderer.setAnimationLoop(null);
+    stop?.(); latest?.close();
     for (const b of document.querySelectorAll("button")) b.disabled = false;
   }
 }
@@ -189,7 +219,8 @@ const box = document.getElementById("modes");
 for (const [label, codec, accel] of MODES) {
   const b = document.createElement("button");
   b.textContent = label;
-  b.onclick = () => run(label, codec, accel, { vr: vrOk });
+  b.onclick = () => prepare(label, codec, accel);
   box.append(b);
 }
+box.append(document.createElement("br"), enterBtn);
 </script>
