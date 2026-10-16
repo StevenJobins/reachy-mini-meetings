@@ -98,7 +98,7 @@ export function createLatencyTest({ video, clock = null, getEstimateS = () => nu
   /** New QR with the time of this screen frame. */
   function drawQr(t) {
     drawQrCode(el.querySelector("#lat-qr"), qr, `${PREFIX}${Math.round(epoch(t))}`, Math.min(innerHeight * 0.85, innerWidth * 0.5));
-    el.querySelector("#lat-now").textContent = `${Math.round(epoch(t)) % 100000} ms`;
+    el.querySelector("#lat-now").textContent = `clock ${Math.round(epoch(t)) % 100000}`;   // the time in the QR, not the latency
   }
 
   function loop(t) {
@@ -143,6 +143,10 @@ export function createLatencyTest({ video, clock = null, getEstimateS = () => nu
     if (!el) return;
     const w = el.querySelector("#lat-warn");
     w.style.display = throttled ? "block" : "none";
+    if (!throttled) return;
+    w.textContent = document.visibilityState !== "visible"
+      ? "⚠ This window is in the background: Chrome slows it down and the values would be wrong. Bring it to the front. Paused."
+      : `⚠ The QR is redrawn only every ${Math.round(Math.max(drawGap, performance.now() - lastDraw))} ms (needs < 50): the window is covered, or this computer is too busy. Uncover it and close what uses CPU (e.g. the camera preview in Reachy Mini Control, other tabs). Paused.`;
   }
 
   function showDone() {
