@@ -96,6 +96,7 @@ Wake up and Start are taps because browsers allow unmuted audio and entering VR 
 | `voicecmd.js` | "Reachy, volume N" in any language → percent | nothing (pure, portable) |
 | `camera.js` | Camera model: pixel ↔ direction with OpenCV rational + thin-prism distortion; estimate, Pollen factory, or `camera.json` | nothing (pure, portable) |
 | `calib-board.html` | Checkerboard (9×6 inner corners) to show on a tablet for the calibration | – |
+| `latency.js` | Camera latency with a QR loop on one computer: QR with the time on screen → Reachy films it → decoded from the received frame | DOM + media only |
 | `roomscan.js` | Room scan: 12 stops, when the head has settled, when to take the picture | nothing (pure, portable) |
 | `gestures.js` | "I want to talk" gesture (antenna wave + body swing), layered on the mirrored pose | nothing (pure, portable) |
 | `app.js` | Wires everything together, one-button UI | the four above |

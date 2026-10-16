@@ -184,6 +184,8 @@
           <label class="check"><input type="checkbox" id="scan-after-wake"> Scan the room after wake-up</label>
           <label class="check"><input type="checkbox" id="room-visible"> Show the scanned room in VR</label>
           <button id="scan-now">Scan room now</button></div>
+        <div class="row" title="QR loop: this page shows a QR with the current time, Reachy films the screen, the page reads it back. Run it on the computer whose screen Reachy looks at.">
+          <button id="latency-open">📏 Measure camera latency</button></div>
         <label>Camera model (lens) <select id="camera-model" title="How the camera image maps to directions: VR sphere, bubbles, face following">
           <option value="auto">Auto: calibrated (camera.json) if present, else estimate</option><option value="estimate">Estimate: pinhole, 54° vertical</option>
           <option value="factory">Pollen factory calibration (unverified for the stream)</option><option value="calibrated">Calibrated (camera.json)</option></select></label>

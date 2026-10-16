@@ -9,6 +9,7 @@ import { createRobot } from "./robot.js";
 import { createScene } from "./scene.js";
 import { HeadMirror, Recenter, headsetToRobot, qinv, qmul, robotToHeadset } from "./pose.js";
 import { RoomScan } from "./roomscan.js";
+import { createLatencyTest } from "./latency.js";
 import { Laugh, WantToTalk } from "./gestures.js";
 import { SpeakerTracker } from "./speaker.js";
 import { captionsUrl, createCaptions, extraTunnelKeys, onBackendFaces, setCaptionsUrl, setExtraTunnelKeys } from "./captions.js";
@@ -501,7 +502,17 @@ const roomSlots = new Map();          // key -> { pitch, yaw, t } where the patc
 let depthSeq = 0, depthPending = 0, depthError = null;
 const depthLatest = new Map();        // key -> request id of the newest frame (older replies are dropped)
 
-const scanTarget = () => (scan.active ? [0, scan.target.pitch, scan.target.yaw] : null);
+// Robot pose override: the room scan, or holding still (latency test: the camera must keep looking at the screen).
+let holdPose = null;   // [pitch, yaw] or null
+const scanTarget = () => (scan.active ? [0, scan.target.pitch, scan.target.yaw] : holdPose ? [0, holdPose[0], holdPose[1]] : null);
+
+// Camera latency with a QR loop on this computer (latency.js): Settings -> Measure camera latency.
+const latencyTest = createLatencyTest({
+  video,
+  getEstimateS: () => videoDelayS,
+  onActive: (on) => { holdPose = on ? [status.meas[1], status.meas[2]] : null; },
+  log,
+});
 
 function startRoomScan() {
   if (!awake) return;
@@ -834,6 +845,8 @@ $("scan-after-wake").onchange = (e) => { scanAfterWake = e.target.checked; saveR
 $("room-visible").checked = roomVisible;
 $("room-visible").onchange = (e) => { roomVisible = e.target.checked; scene.setRoomVisible(roomVisible); saveRoomSettings(); };
 $("scan-now").onclick = startRoomScan;
+$("latency-open").onclick = () => { if (awake) latencyTest.open(); else flash("Wake Reachy up first"); };
+addEventListener("keydown", (e) => { if (e.key === "Escape" && latencyTest.active) latencyTest.close(); });
 $("camera-model").value = camChoice;
 $("camera-model").onchange = (e) => {
   camChoice = e.target.value;
