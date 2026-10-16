@@ -14,7 +14,7 @@
   pre { white-space: pre-wrap; background: #0b0c10; padding: 12px; border-radius: 8px; font-size: 14px; }
 </style>
 <h2>Codec test: VideoFrame upload cost in VR</h2>
-<p>Tap a mode (prepares the clip, a few seconds), then tap Enter VR. Look straight ahead for ~30 s, then exit VR. The result appears below.</p>
+<p>Tap a mode (prepares the clip, a few seconds), then tap Enter VR. Look straight ahead: VR ends by itself after ~35 s and the result appears below.</p>
 <div id="modes"></div>
 <pre id="out"></pre>
 <script type="importmap">{ "imports": { "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js" } }</script>
@@ -196,7 +196,9 @@ async function measure({ label, clip, accel }, sessionP) {
     if (sessionP) {
       const session = await sessionP;
       await renderer.xr.setSession(session);
+      const auto = setTimeout(() => session.end().catch(() => {}), 34000);   // 30 s of samples after the warm-up
       await new Promise((r) => session.addEventListener("end", r, { once: true }));
+      clearTimeout(auto);
     } else {
       await new Promise((r) => setTimeout(r, 12000));
     }
