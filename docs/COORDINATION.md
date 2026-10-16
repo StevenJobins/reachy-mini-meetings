@@ -34,6 +34,7 @@ better (lower RMS over more views), replace it and note the numbers here.
 
 ## Status (newest first, one line each: date, who, what, branch)
 
+- 2026-10-16 Simon/Claude: backend `captions.py` (your area): new client message `{"type": "time", "id"}` -> `{"type": "time", "id", "t": ms}` for clock sync (latency test with the QR on another screen, `xr-client/pages/qr.html`, `clocksync.js`). Needs a backend restart on the robot laptop. Main.
 - 2026-10-16 Simon/Claude: camera latency test (new `latency.js`, Settings button in `index.html`, hold-still override in `app.js` next to the room scan). Main.
 - 2026-10-16 Simon/Claude: page header gets a "Signed in · <HF account>" chip (`index.html`, chips in `app.js`); settings card: long debug lines and selects no longer stick out (grid items `min-width: 0`). Main.
 - 2026-10-16 Simon/Claude: robot connect (`robot.js` connect(), `app.js` connect() message) — touched Dominic's area on request: `autoConnect` now lists busy robots too (`filterBusy: false`), so the page tells "busy (another device)" from "no robot visible for HF account X" (before, both showed "busy"); the signed-in HF account is shown in the status line. Main.

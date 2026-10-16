@@ -10,6 +10,7 @@ import { createScene } from "./scene.js";
 import { HeadMirror, Recenter, headsetToRobot, qinv, qmul, robotToHeadset } from "./pose.js";
 import { RoomScan } from "./roomscan.js";
 import { createLatencyTest } from "./latency.js";
+import { createClockSync } from "./clocksync.js";
 import { Laugh, WantToTalk } from "./gestures.js";
 import { SpeakerTracker } from "./speaker.js";
 import { captionsUrl, createCaptions, extraTunnelKeys, onBackendFaces, setCaptionsUrl, setExtraTunnelKeys } from "./captions.js";
@@ -510,10 +511,13 @@ let holdPose = null;   // [pitch, yaw] or null
 const scanTarget = () => (scan.active ? [0, scan.target.pitch, scan.target.yaw] : holdPose ? [0, holdPose[0], holdPose[1]] : null);
 
 // Camera latency with a QR loop on this computer (latency.js): Settings -> Measure camera latency.
+// Clock sync with the caption backend, for the latency test with the QR on another screen (qr.html).
+const clock = createClockSync({ send: (id) => captions?.requestTime(id) ?? false, log });
 const latencyTest = createLatencyTest({
   video,
+  clock,
   getEstimateS: () => videoDelayS,
-  getInfo: () => ({ version: VERSION, video: status.video }),
+  getInfo: () => ({ version: VERSION, video: status.video, device: /Android|Quest|XR/i.test(navigator.userAgent) ? "headset" : "desktop browser" }),
   onActive: (on) => { holdPose = on ? [status.meas[1], status.meas[2]] : null; },
   log,
 });
@@ -850,7 +854,9 @@ $("scan-after-wake").onchange = (e) => { scanAfterWake = e.target.checked; saveR
 $("room-visible").checked = roomVisible;
 $("room-visible").onchange = (e) => { roomVisible = e.target.checked; scene.setRoomVisible(roomVisible); saveRoomSettings(); };
 $("scan-now").onclick = startRoomScan;
-$("latency-open").onclick = () => { if (awake) latencyTest.open(); else flash("Wake Reachy up first"); };
+$("latency-open").onclick = () => { if (awake) latencyTest.open("local"); else flash("Wake Reachy up first"); };
+$("latency-remote").onclick = () => { if (awake) latencyTest.open("remote"); else flash("Wake Reachy up first"); };
+captions.onTime = clock.handle;
 addEventListener("keydown", (e) => { if (e.key === "Escape" && latencyTest.active) latencyTest.close(); });
 $("camera-model").value = camChoice;
 $("camera-model").onchange = (e) => {

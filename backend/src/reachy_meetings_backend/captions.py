@@ -30,6 +30,8 @@ the language Reachy speaks for the remote user ("auto" = --meeting-lang, else th
 room lately) and the bubble language (caption translations, notes; default --target); sent by the page on
 every (re)connect, applies to everyone connected;
 {"type": "log", "lines": [str]} appends the page's log to ~/Library/Logs/reachy-headset.log;
+{"type": "time", "id": any} -> {"type": "time", "id", "t": server wall clock in ms}, answered at once: clock sync
+for the latency test across devices (QR shown on one computer, decoded in the headset, xr-client/pages/qr.html);
 {"type": "depth", "id": str, "w": int, "h": int, "jpeg": base64} = a room-scan frame: answered (to that client
 only) with {"type": "depth", "id", "w", "h", "depth": [metres, w*h row-major]} or {"type": "depth", "id", "error"}
 (Depth Anything V2 metric indoor, depth.py; needs the [depth] extra); binary frames
@@ -213,7 +215,9 @@ class CaptionServer:
                         data = json.loads(msg)
                     except ValueError:
                         continue
-                    if data.get("type") == "depth":
+                    if data.get("type") == "time":   # clock sync for the latency test (answered at once)
+                        await ws.send(json.dumps({"type": "time", "id": data.get("id"), "t": time.time() * 1000}))
+                    elif data.get("type") == "depth":
                         asyncio.create_task(self._depth(ws, data))   # don't block this client's audio
                     elif self.on_message:
                         self.on_message(data)

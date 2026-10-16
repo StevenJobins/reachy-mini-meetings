@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Latency QR</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #fff; color: #111; font: 15px system-ui, sans-serif; }
+  main { min-height: 100%; display: flex; gap: 28px; align-items: center; justify-content: center; padding: 16px; box-sizing: border-box; flex-wrap: wrap; }
+  canvas { image-rendering: pixelated; }
+  .side { display: grid; gap: 10px; max-width: 340px; }
+  #status { font: 14px ui-monospace, monospace; white-space: pre-wrap; background: #f3f4f6; border-radius: 10px; padding: 10px; }
+  #warn { display: none; background: #fee2e2; color: #7f1d1d; border-radius: 10px; padding: 10px; font-weight: 600; }
+  input { font: 13px ui-monospace, monospace; width: 100%; box-sizing: border-box; padding: 6px; }
+</style>
+</head>
+<body>
+<main>
+  <canvas id="qr"></canvas>
+  <div class="side">
+    <div style="font-size:20px;font-weight:650">Latency QR (other screen)</div>
+    <div style="color:#555">Open this on the computer next to Reachy (where the caption backend runs) and point Reachy at it.
+      On the headset: Settings → <b>Measure on this device (QR on robot laptop)</b>. Both clocks sync to the backend.</div>
+    <div id="now" style="font:600 28px ui-monospace,monospace"></div>
+    <div id="status">connecting…</div>
+    <div id="warn">⚠ This window is covered or in the background: Chrome slows it down and the QR would be stale. Keep it in front.</div>
+    <label>Caption backend <input id="url"></label>
+  </div>
+</main>
+<script type="module">
+// Shows a QR with the caption backend's clock (RMB:<ms>), redrawn every screen frame. The headset page decodes it
+// from Reachy's video and compares with its own backend-synced clock (latency.js, mode "remote").
+import { loadQrLib, drawQrCode, PREFIX_REMOTE } from "./latency.js";
+import { createClockSync } from "./clocksync.js";
+
+const $ = (id) => document.getElementById(id);
+const URL_KEY = "reachy-xr-qr-backend";
+let url = "ws://localhost:8766";
+try { url = localStorage.getItem(URL_KEY) || url; } catch {}
+$("url").value = url;
+$("url").onchange = (e) => { url = e.target.value.trim(); try { localStorage.setItem(URL_KEY, url); } catch {} connect(); };
+
+let ws = null, state = "connecting";
+const clock = createClockSync({ send: (id) => (ws?.readyState === WebSocket.OPEN ? (ws.send(JSON.stringify({ type: "time", id })), true) : false) });
+
+function connect() {
+  ws?.close();
+  state = "connecting";
+  ws = new WebSocket(url);
+  ws.onopen = async () => {
+    state = "connected";
+    await clock.sync();
+  };
+  ws.onmessage = (e) => { try { const m = JSON.parse(e.data); if (m.type === "time") clock.handle(m); } catch {} };
+  ws.onclose = () => { state = "disconnected"; setTimeout(() => { if (ws?.readyState !== WebSocket.OPEN) connect(); }, 3000); };
+}
+connect();
+setInterval(() => { if (ws?.readyState === WebSocket.OPEN) clock.sync(); }, 15000);
+
+const qr = await loadQrLib();
+let last = 0;
+function loop(t) {
+  const gap = last ? t - last : 0;
+  last = t;
+  $("warn").style.display = document.visibilityState !== "visible" || gap > 50 ? "block" : "none";
+  const now = clock.now();
+  const c = $("qr");
+  if (now != null) {
+    drawQrCode(c, qr, `${PREFIX_REMOTE}${Math.round(now)}`, Math.min(innerHeight * 0.85, innerWidth * 0.6));
+    $("now").textContent = `${Math.round(now) % 100000} ms`;
+  } else {
+    $("now").textContent = "no clock yet";
+  }
+  $("status").textContent = `backend  ${state}\nclock    ${clock.offset != null ? `synced, ±${(clock.rtt / 2).toFixed(1)} ms` : "not synced"}`;
+  requestAnimationFrame(loop);
+}
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>

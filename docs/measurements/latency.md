@@ -9,6 +9,12 @@ same clock, so no sync is needed.
 network, the receiver's jitter buffer and decoding. **Not included:** showing the received frame on a display
 (add ~1 screen frame, ~8–17 ms, for glass to glass).
 
+**In the headset** (the realistic number, incl. Wi-Fi and the headset's decoder): open `qr.html` on the robot
+laptop (next to Reachy, where the caption backend runs) and point Reachy at it; in the headset page choose
+*Settings → Measure on this device (QR on robot laptop)*. The QR then carries the backend's clock, and both devices
+sync to it over the caption WebSocket (`clocksync.js`, best of 12 pings; accuracy ± half the round trip, shown on
+both screens and in the result row).
+
 **Validity:** run it in a Chrome window that is in front and not covered by another window. Chrome throttles hidden
 or covered windows; the QR then changes ~once a second and the result grows to seconds (a test with a fake camera
 showed ~2000 ms for a real 150 ms). Since 2026-10-16 the page detects this, shows a warning and drops those samples.

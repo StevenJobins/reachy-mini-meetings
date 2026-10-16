@@ -39,6 +39,7 @@ function save(key, value) { try { value ? localStorage.setItem(key, value) : loc
 // Faces found by the backend (backend/.../vision.py, {"type": "faces"}): set by app.js.
 let facesHandler = null;
 let depthHandler = null;   // room-scan depth replies (set via captions.onDepth)
+let timeHandler = null;    // clock-sync replies (set via captions.onTime)
 export function onBackendFaces(fn) { facesHandler = fn; }
 
 export function captionsUrl() { return load(URL_KEY, ""); }   // "" = automatic
@@ -370,6 +371,7 @@ export function createCaptions({ three, distM, vfovDeg, cameraModel = null, spea
       else if (msg.type === "me") onMe?.(msg);
       else if (msg.type === "faces") facesHandler?.(msg);
       else if (msg.type === "depth") depthHandler?.(msg);
+      else if (msg.type === "time") timeHandler?.(msg);
     };
     sock.onclose = (e) => {
       if (e.code === 4001) log("captions: tunnel refused this HF account (backend --allow-hf)");
@@ -411,6 +413,14 @@ export function createCaptions({ three, distM, vfovDeg, cameraModel = null, spea
       return true;
     },
     set onDepth(fn) { depthHandler = fn; },
+
+    /** Clock sync ping (latency test across devices); false if not connected. */
+    requestTime(id) {
+      if (ws?.readyState !== WebSocket.OPEN) return false;
+      ws.send(JSON.stringify({ type: "time", id }));
+      return true;
+    },
+    set onTime(fn) { timeHandler = fn; },
 
     sendLog(lines) { if (ws?.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: "log", lines })); },
 
