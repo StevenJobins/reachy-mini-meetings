@@ -30,10 +30,11 @@ better (lower RMS over more views), replace it and note the numbers here.
 
 ## Open notes for Simon
 
-- Code review 2026-10-08 found a merge leftover in `app.js` (`setViewMode`, ~line 470): the function is missing its closing `}`, so the camera-model handler and the calibration capture code are inside it and get re-bound with fresh state on every view-mode toggle (a running auto-capture can no longer be stopped, the file counter restarts). Not touched by Dominic's side, your area.
+- ~~Code review 2026-10-08: merge leftover in `app.js` (`setViewMode` missing its `}`, camera-model / calibration wiring re-bound on every view toggle).~~ Fixed in e07fdd1 (Simon).
 
 ## Status (newest first, one line each: date, who, what, branch)
 
+- 2026-10-16 Simon/Claude: robot connect (`robot.js` connect(), `app.js` connect() message) — touched Dominic's area on request: `autoConnect` now lists busy robots too (`filterBusy: false`), so the page tells "busy (another device)" from "no robot visible for HF account X" (before, both showed "busy"); the signed-in HF account is shown in the status line. Main.
 - 2026-10-08 Dominic/Claude: bug sweep, "Translate me" latency (5-10 s) + language choice (what Reachy speaks,
   what the bubbles show), Depth Anything in the backend. Work on branches `claude/*`, merged to main after a
   test. Does not touch Simon's areas above.

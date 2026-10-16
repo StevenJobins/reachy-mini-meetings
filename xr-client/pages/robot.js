@@ -87,13 +87,19 @@ export function createRobot({ clientId, onStatus, onMeasuredHead, onDoa = () => 
       try {
         res = await Promise.race([reachy.autoConnect({
           wakeOnConnect: false,   // the robot stays asleep until the user taps Start (wake())
+          // List busy robots too, so "busy" and "this account sees no robot" can be told apart: with the SDK's
+          // default both ended in the same "No reachable robots" (and the page always said "busy").
+          filterBusy: false,
           pickRobot: async (robots) => {
             log("robots:", robots.map((r) => `${r.name ?? r.id}${r.busy ? " (busy)" : ""}`).join(", "));
-            return robots.find((r) => !r.busy)?.id ?? null;   // TODO picker when the team has several robots
+            const free = robots.find((r) => !r.busy);   // TODO picker when the team has several robots
+            if (!free) throw Object.assign(new Error(`busy: ${robots.map((r) => r.name ?? r.id).join(", ")}`), { reason: "busy" });
+            return free.id;
           },
         }), timeout]);
       } catch (e) {
         await reachy.stopSession().catch(() => {});
+        if (/no reachable robots/i.test(e?.message ?? "")) e.reason ??= "no-robot";   // empty list for this account
         throw e;
       } finally {
         clearTimeout(timer);
@@ -105,6 +111,9 @@ export function createRobot({ clientId, onStatus, onMeasuredHead, onDoa = () => 
     },
 
     get connected() { return streaming; },
+
+    /** Hugging Face account this page is signed in with (null if unknown). */
+    get username() { return reachy.username ?? null; },
 
     /** The Hugging Face sign-in token (for the caption server's tunnel). The SDK keeps it in memory; its
      *  sessionStorage copy was missing on the headset, so the tunnel refused it as "no account". */

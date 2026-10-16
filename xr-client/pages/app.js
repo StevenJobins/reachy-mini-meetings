@@ -903,11 +903,13 @@ async function connect() {
     const res = await robot.connect();
     show("asleep", `Connected to ${res.robotName ?? "Reachy Mini"}. Tap Wake up.`);
   } catch (e) {
-    log("connect failed:", e?.message ?? e);
-    const busy = /no reachable robots/i.test(e?.message ?? "");
-    show("failed", busy
-      ? "Reachy is busy: another device (or a page that hangs) has it. Close the page on other devices; retrying…"
-      : `Could not connect: ${e?.message ?? e}. Is the robot on and its daemon signed in to Hugging Face? Retrying…`);
+    log("connect failed:", e?.reason ?? "", e?.message ?? e, `(account ${robot.username ?? "?"})`);
+    const who = robot.username ? `"${robot.username}"` : "this account";
+    show("failed", e?.reason === "busy"
+      ? "Reachy is busy: another device is connected (or a page that hangs; it frees itself within ~15 s). Close the page on other devices; retrying…"
+      : e?.reason === "no-robot"
+        ? `No robot visible for the Hugging Face account ${who}. Sign in with the account the robot's daemon uses (Settings → Sign out), or check that the daemon runs and is signed in. Retrying…`
+        : `Could not connect: ${e?.message ?? e}. Is the robot on and its daemon signed in to Hugging Face? Retrying…`);
     clearTimeout(connectRetry);
     connectRetry = setTimeout(connect, 5000);   // the robot may come back (daemon restart, other device leaves)
   }
@@ -985,6 +987,6 @@ $("signout").onclick = () => { robot.signOut(); location.reload(); };
 
 show("busy", "Signing in…");
 const signIn = await robot.signInState();
-status.user = signIn;
+status.user = robot.username ? `${signIn} as ${robot.username}` : signIn;   // which HF account (must see the robot)
 if (signIn === "signed-in") await connect();
 else if (signIn === "signed-out") show("signed-out", "Sign in with Hugging Face to reach your robot.");
