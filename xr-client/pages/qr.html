@@ -25,7 +25,7 @@
     <div id="now" style="font:600 28px ui-monospace,monospace"></div>
     <div id="status">connecting…</div>
     <div id="warn">⚠ This window is covered or in the background: Chrome slows it down and the QR would be stale. Keep it in front.</div>
-    <label>Caption backend (empty = automatic: localhost, else tunnel) <input id="url" placeholder="automatic"></label>
+    <label>Caption backend address (leave empty: found automatically) <input id="url" placeholder="automatic (localhost, else tunnel)"></label>
   </div>
 </main>
 <script type="importmap">
@@ -41,10 +41,18 @@ import { tunnelUrl } from "./captions.js";
 const $ = (id) => document.getElementById(id);
 const URL_KEY = "reachy-xr-qr-backend";
 const LOCAL_URL = "ws://localhost:8766";
-let url = "";   // "" = automatic, like the main page: localhost first, then the tunnel
-try { url = localStorage.getItem(URL_KEY) || ""; } catch {}
+// "" = automatic, like the main page: localhost first, then the tunnel. Anything that is not a ws(s):// address
+// counts as automatic (someone typed the label text into the field, 2026-10-16).
+const clean = (u) => (/^wss?:\/\/\S+$/.test(u.trim()) ? u.trim() : "");
+let url = "";
+try { url = clean(localStorage.getItem(URL_KEY) || ""); } catch {}
 $("url").value = url;
-$("url").onchange = (e) => { url = e.target.value.trim(); try { url ? localStorage.setItem(URL_KEY, url) : localStorage.removeItem(URL_KEY); } catch {} connect(); };
+$("url").onchange = (e) => {
+  url = clean(e.target.value);
+  e.target.value = url;
+  try { url ? localStorage.setItem(URL_KEY, url) : localStorage.removeItem(URL_KEY); } catch {}
+  connect();
+};
 
 // The main page's Hugging Face sign-in (the SDK keeps it in sessionStorage, i.e. per tab): the tunnel only lets in
 // allowed accounts. So on another computer this page must be opened from the main page in the same tab.
