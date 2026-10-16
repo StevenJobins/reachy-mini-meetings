@@ -19,5 +19,5 @@ spread ±3 ms (that offset is the fake camera's own video path).
 
 | Date (UTC) | Page version | Median ms | p10–p90 ms | min/max ms | n | QR read | Page estimate ms | Video | Notes |
 |---|---|---|---|---|---|---|---|---|---|
-| 2026-10-16 11:51 | ? | 381 | 328–446 | 278/539 | 300 | 27 % | 120 | ? | Second run, plausible. QR read in only 27 % of frames (board small/blurred in the picture?). Page version and video size were not recorded in this row. The page's own estimate (120 ms, used to pair frames with poses for reprojection) is ~260 ms too low. |
+| 2026-10-16 11:51 | ? | 381 | 328–446 | 278/539 | 300 | 27 % | 120 | ? | Second run, plausible. **Baseline:** stock daemon on Kevin's Mac (Reachy Mini Control, no `patch_daemon_video.py`: VP8 software encoding, default bitrate). QR read in only 27 % of frames (board small/blurred in the picture?). Page version and video size were not recorded in this row. The page's own estimate (120 ms, used to pair frames with poses for reprojection) is ~260 ms too low. |
 | 2026-10-16 | 0541392 | 1840 | ? | ? | ? | ? | ? | ? | First run. **Invalid:** measured before the throttling check; the window was probably covered (chat app in front). |
