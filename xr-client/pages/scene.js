@@ -9,12 +9,14 @@ import { createVideoSource } from "./videosource.js";
 import { CameraModel } from "./camera.js";
 import { drawDockButton, drawMicButton } from "./icons.js";
 
-export function createScene({ video, vfovDeg, cameraModel = null, distM, statusText, onHeadsetPose, onSelect, onEnd, onFrame, vrButtons = [], warning = () => "", windowMode = "world", log = console.log }) {
-  const renderer = new THREE.WebGLRenderer({ antialias: true });
+export function createScene({ video, vfovDeg, cameraModel = null, distM, statusText, onHeadsetPose, onSelect, onEnd, onFrame, vrButtons = [], warning = () => "", windowMode = "world", perf = "", log = console.log }) {
+  // Perf test (Settings → Perf test): switch one cost off to find what limits the frame rate. Debug only.
+  const perfOff = new Set(perf === "empty" ? ["nosky", "noroom", "novideo"] : [perf]);
+  const renderer = new THREE.WebGLRenderer({ antialias: !perfOff.has("noaa") });
   renderer.xr.enabled = true;
   // The Galaxy XR's native eye buffers are huge: at scale 1 VR ran at 24-35 fps although JS needed ~3 ms per
   // frame (GPU-bound, headset log 2026-10-08). 0.75 renders ~56 % of the pixels; the 1080p video stays sharp.
-  renderer.xr.setFramebufferScaleFactor(0.75);
+  renderer.xr.setFramebufferScaleFactor(perfOff.has("scale50") ? 0.5 : perfOff.has("scale100") ? 1 : 0.75);
   renderer.xr.setFoveation(1);
   renderer.domElement.addEventListener("webglcontextlost", () => log("ERROR webgl context lost (GPU crash / out of memory)"));
   renderer.xr.setReferenceSpaceType("local");
@@ -36,6 +38,7 @@ export function createScene({ video, vfovDeg, cameraModel = null, distM, statusT
         gl_FragColor = vec4(c, 1.0);
       }`,
   }));
+  sky.visible = !perfOff.has("nosky");
   scene.add(sky);
   const floor = new THREE.Mesh(new THREE.CircleGeometry(9, 96), new THREE.MeshBasicMaterial({
     transparent: true, depthWrite: false,
@@ -98,6 +101,7 @@ export function createScene({ video, vfovDeg, cameraModel = null, distM, statusT
   screen.add(bezel);
   const robotView = new THREE.Group();
   robotView.add(screen);
+  robotView.visible = !perfOff.has("novideo");
   scene.add(robotView);
 
   // ---- room panorama (room scan, WP2): frames Reachy took while looking around, world-locked in the room frame
@@ -110,7 +114,7 @@ export function createScene({ video, vfovDeg, cameraModel = null, distM, statusT
   const room = new THREE.Group();
   scene.add(room);
   const roomPatches = new Map();   // key -> { mesh, depth }
-  let roomSeq = 0, roomOn = true;
+  let roomSeq = 0, roomOn = !perfOff.has("noroom");
   const feather = canvasTexture(256, 256, (ctx, w, h) => {
     ctx.fillStyle = "#000"; ctx.fillRect(0, 0, w, h);
     ctx.filter = "blur(10px)"; ctx.fillStyle = "#fff"; ctx.fillRect(14, 14, w - 28, h - 28);
@@ -120,9 +124,10 @@ export function createScene({ video, vfovDeg, cameraModel = null, distM, statusT
   function updateRoomLook() {
     const has = roomOn && roomPatches.size > 0;
     room.visible = roomOn;
-    floor.visible = !has;      // the scanned room replaces the virtual floor ...
+    floor.visible = !has && !perfOff.has("nosky");   // the scanned room replaces the virtual floor ...
     bezel.visible = !has;      // ... and the live video blends into it without a frame
   }
+  updateRoomLook();
 
   // Head-locked debug panel at the top of the view, hidden unless "Debug" is on (More menu).
   const hudCanvas = document.createElement("canvas");
@@ -452,7 +457,9 @@ export function createScene({ video, vfovDeg, cameraModel = null, distM, statusT
     }
     const tUp = performance.now();
     let map = noVideoTex;
-    if (source.mode === "direct") {
+    if (perfOff.has("novideo")) {
+      // perf test: no frame copy or texture upload (WebRTC still decodes)
+    } else if (source.mode === "direct") {
       if (video.readyState >= video.HAVE_CURRENT_DATA && video.videoWidth > 0) { videoTex.needsUpdate = true; map = videoTex; }
       source.update();
     } else {
@@ -478,7 +485,10 @@ export function createScene({ video, vfovDeg, cameraModel = null, distM, statusT
     perfFrames++; perfUpload += upMs; perfRender += performance.now() - tR; perfN += performance.now() - t0;
     if (t0 - perfT > 2000) {
       const n = perfFrames || 1;
-      perfLine = `frame ${(perfFrames * 1000 / (t0 - perfT)).toFixed(0)} fps   js ${(perfN / n).toFixed(1)}ms (video draw ${(perfUpload / n).toFixed(1)}ms, render ${(perfRender / n).toFixed(1)}ms)`;
+      let depthN = 0;
+      for (const p of roomPatches.values()) if (p.depth) depthN++;
+      perfLine = `frame ${(perfFrames * 1000 / (t0 - perfT)).toFixed(0)} fps   js ${(perfN / n).toFixed(1)}ms (video draw ${(perfUpload / n).toFixed(1)}ms, render ${(perfRender / n).toFixed(1)}ms)`
+        + `   perf ${perf || "off"}   room ${roomPatches.size} depth ${depthN}`;
       perfFrames = perfUpload = perfRender = perfN = 0; perfT = t0;
     }
   });

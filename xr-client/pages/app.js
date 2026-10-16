@@ -400,6 +400,9 @@ let captions = null, notes = null;   // created after the scene (they need its t
 const VIEW_KEY = "reachy-xr-view";
 let viewMode = "world";
 try { if (localStorage.getItem(VIEW_KEY) === "comfort") viewMode = "comfort"; } catch {}
+const PERF_KEY = "reachy-xr-perf";   // Settings → Perf test: one cost switched off (scene.js), needs a reload
+let perfMode = "";
+try { perfMode = localStorage.getItem(PERF_KEY) ?? ""; } catch {}
 if (params.get("window")) viewMode = params.get("window") === "robot" || params.get("window") === "world" ? "world" : "comfort";
 const poseHist = [];                 // [t, roll, pitch, yaw] (deg, relative to the base), arrival time
 const cmdHist = [];                  // same for what we commanded
@@ -608,6 +611,7 @@ const scene = createScene({
   },
   // Head-locked buttons in VR: point (controller ray / hand pinch) and select. Select elsewhere = recenter.
   windowMode: viewMode,
+  perf: perfMode,
   vrButtons: [
     { kind: "mic", muted: () => mic.muted || status.mic !== "on", label: () => (mic.muted ? "Muted" : status.mic === "on" ? "Mic on" : "Mic off"), onClick: toggleMic },
     { icon: "hand", label: "Talk", onClick: wantToTalk },
@@ -880,6 +884,11 @@ $("calib-auto").onclick = () => {
   $("calib-auto").textContent = `Auto-capture every 2 s: ${calibTimer ? "on" : "off"}`;
 };
 $("view-mode").onchange = (e) => setViewMode(e.target.value);
+$("perf-mode").value = perfMode;
+$("perf-mode").onchange = (e) => {
+  try { localStorage.setItem(PERF_KEY, e.target.value); } catch {}
+  location.reload();   // scale and anti-aliasing are fixed when the renderer is created
+};
 $("caption-mode").value = captions.mode;
 $("caption-mode").onchange = (e) => captions.setMode(e.target.value);
 function syncLangSelects() {
