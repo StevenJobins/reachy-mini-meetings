@@ -883,6 +883,8 @@ $("show-faces").onchange = (e) => { captions.showFaces = e.target.checked; };
 setInterval(() => {
   const chip = (id, state, text) => { const el = $(id); el.dataset.state = state; el.lastChild.textContent = text; };
   const robotOn = status.ice === "connected";
+  const user = robot.username;
+  chip("chip-user", user ? "ok" : status.user === "-" ? "wait" : "off", user ? `Signed in · ${user}` : "Not signed in");
   chip("chip-robot", robotOn ? "ok" : status.robot === "-" ? "off" : "wait", robotOn ? `Robot · ${awake ? "awake" : "asleep"}` : "Robot");
   chip("chip-camera", awake && status.video !== "-" ? "ok" : "off", "Camera");
   chip("chip-captions", status.captions === "on" ? "ok" : status.captions === "connecting" ? "wait" : "off", "Captions");
@@ -901,7 +903,7 @@ async function connect() {
   show("busy", "Connecting to Reachy Mini…");
   try {
     const res = await robot.connect();
-    show("asleep", `Connected to ${res.robotName ?? "Reachy Mini"}. Tap Wake up.`);
+    show("asleep", `Connected to ${res.robotName ?? "Reachy Mini"}${robot.username ? ` as ${robot.username}` : ""}. Tap Wake up.`);
   } catch (e) {
     log("connect failed:", e?.reason ?? "", e?.message ?? e, `(account ${robot.username ?? "?"})`);
     const who = robot.username ? `"${robot.username}"` : "this account";
