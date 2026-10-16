@@ -513,11 +513,14 @@ const scanTarget = () => (scan.active ? [0, scan.target.pitch, scan.target.yaw] 
 // Camera latency with a QR loop on this computer (latency.js): Settings -> Measure camera latency.
 // Clock sync with the caption backend, for the latency test with the QR on another screen (qr.html).
 const clock = createClockSync({ send: (id) => captions?.requestTime(id) ?? false, log });
+// The Galaxy XR browser sends a desktop user agent (a headset run was labelled "desktop browser", 2026-10-16): ask WebXR.
+let vrCapable = false;
+navigator.xr?.isSessionSupported("immersive-vr").then((ok) => { vrCapable = ok; }).catch(() => {});
 const latencyTest = createLatencyTest({
   video,
   clock,
   getEstimateS: () => videoDelayS,
-  getInfo: () => ({ version: VERSION, video: status.video, device: /Android|Quest|XR/i.test(navigator.userAgent) ? "headset" : "desktop browser" }),
+  getInfo: () => ({ version: VERSION, video: status.video, device: vrCapable || /Android|Quest|XR/i.test(navigator.userAgent) ? "headset" : "desktop browser" }),
   onActive: (on) => { holdPose = on ? [status.meas[1], status.meas[2]] : null; },
   log,
 });
