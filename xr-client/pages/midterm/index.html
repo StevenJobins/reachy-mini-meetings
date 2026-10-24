@@ -3,93 +3,840 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="robots" content="noindex">
-<title>Midterm · team only</title>
+<title>Reachy Mini Meetings · Midterm</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@500;700&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet">
 <style>
-  :root { color-scheme: dark; }
-  html, body { margin: 0; height: 100%; background: #070b16; color: #e9edf6; font: 16px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; }
-  body { display: grid; place-items: center; padding: 16px; box-sizing: border-box;
-    background: radial-gradient(900px 600px at 80% -10%, rgba(56,189,248,.14), transparent 60%), radial-gradient(700px 500px at -10% 110%, rgba(167,139,250,.14), transparent 60%), #070b16; }
-  .card { width: min(520px, 100%); background: rgba(255,255,255,.05); border: 1px solid rgba(255,255,255,.12); border-radius: 22px; padding: 30px; box-sizing: border-box; }
-  .kicker { font: 600 12px ui-monospace, monospace; letter-spacing: .14em; color: #38bdf8; text-transform: uppercase; }
-  h1 { font-size: 30px; line-height: 1.15; margin: 8px 0 10px; }
-  p { color: #b8c1d4; margin: 0 0 14px; }
-  label { display: block; font-weight: 600; margin: 18px 0 6px; }
-  input { width: 100%; box-sizing: border-box; padding: 12px 14px; border-radius: 12px; border: 1px solid rgba(255,255,255,.18); background: rgba(0,0,0,.35); color: #fff; font: 15px ui-monospace, monospace; }
-  button { margin-top: 14px; width: 100%; padding: 13px; border: 0; border-radius: 12px; background: linear-gradient(90deg, #38bdf8, #a78bfa); color: #06101f; font-weight: 700; font-size: 16px; cursor: pointer; }
-  button:disabled { opacity: .6; cursor: wait; }
-  code { font: 14px ui-monospace, monospace; background: rgba(255,255,255,.08); padding: 2px 6px; border-radius: 6px; color: #e0f2fe; }
-  details { margin-top: 18px; color: #b8c1d4; font-size: 14.5px; }
-  summary { cursor: pointer; color: #e9edf6; }
-  #msg { min-height: 22px; margin-top: 12px; font-size: 14.5px; }
-  #msg.err { color: #fb7185; } #msg.ok { color: #4ade80; }
-  a { color: #7dd3fc; }
+  :root {
+    --bg: #070b16; --bg2: #0d1426; --panel: rgba(255,255,255,.045); --panel2: rgba(255,255,255,.075);
+    --line: rgba(255,255,255,.11); --text: #e9edf6; --muted: #8d97ad; --dim: #5d6782;
+    --pose: #4ade80; --video: #38bdf8; --lang: #ff9f2e; --depth: #a78bfa; --hot: #f472b6; --warn: #fbbf24;
+    --head: "Space Grotesk", system-ui, sans-serif; --body: "Inter", system-ui, sans-serif; --mono: "JetBrains Mono", ui-monospace, monospace;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text); font-family: var(--body); overflow: hidden; }
+  #stage { position: fixed; inset: 0; overflow: hidden; }
+  #deck { position: absolute; left: 50%; top: 50%; width: 1600px; height: 900px; transform-origin: center; }
+  .r3d-msg { position: absolute; inset: auto 0 120px 0; text-align: center; font: 500 16px var(--mono); color: var(--muted); }
+  .r3d-fallback { position: absolute; inset: 120px 120px 140px 120px; }
+  .slide { position: absolute; inset: 0; padding: 70px 90px; opacity: 0; visibility: hidden; transition: opacity .55s ease, transform .55s ease, visibility 0s .55s; transform: translateX(40px);
+    background: radial-gradient(1200px 700px at 85% -10%, rgba(56,189,248,.10), transparent 60%), radial-gradient(900px 600px at -10% 110%, rgba(167,139,250,.10), transparent 60%), var(--bg); overflow: hidden; }
+  .slide.active { opacity: 1; visibility: visible; transform: none; transition: opacity .55s ease, transform .55s ease, visibility 0s; }
+  .slide.past { transform: translateX(-40px); }
+  .slide::before { content: ""; position: absolute; inset: 0; pointer-events: none; opacity: .5;
+    background-image: linear-gradient(rgba(255,255,255,.035) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,.035) 1px, transparent 1px); background-size: 40px 40px;
+    mask-image: radial-gradient(ellipse at center, black 30%, transparent 85%); }
+  .slide > * { position: relative; }
+  .kicker { font: 600 15px/1 var(--mono); letter-spacing: .14em; text-transform: uppercase; color: var(--video); margin-bottom: 14px; }
+  h1 { font: 700 84px/1.0 var(--head); margin: 0; letter-spacing: -.02em; }
+  h2 { font: 700 50px/1.08 var(--head); margin: 0 0 30px; letter-spacing: -.015em; }
+  h3 { font: 600 24px/1.2 var(--head); margin: 0 0 10px; }
+  p, li { font-size: 21px; line-height: 1.45; color: #cfd6e6; }
+  .muted { color: var(--muted); }
+  .mono { font-family: var(--mono); }
+  .grad { background: linear-gradient(90deg, #7dd3fc, #a78bfa 55%, #f472b6); -webkit-background-clip: text; background-clip: text; color: transparent; }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 20px; padding: 24px 26px; backdrop-filter: blur(6px); }
+  .chip { display: inline-flex; align-items: center; gap: 8px; padding: 6px 12px; border-radius: 999px; font: 600 14px/1 var(--mono); border: 1px solid var(--line); background: var(--panel2); }
+  .dot { width: 9px; height: 9px; border-radius: 50%; display: inline-block; }
+  .footer { position: absolute; left: 90px; right: 90px; bottom: 26px; display: flex; justify-content: space-between; font: 500 13px var(--mono); color: var(--dim); }
+
+  /* entrance animations, replayed every time a slide becomes active */
+  .a { opacity: 0; }
+  .slide.active .a { animation: rise .8s cubic-bezier(.2,.75,.2,1) var(--d, 0s) both; }
+  .slide.active .a.pop { animation-name: pop; }
+  .slide.active .a.fade { animation-name: fade; }
+  @keyframes rise { from { opacity: 0; transform: translateY(26px); } to { opacity: 1; transform: none; } }
+  @keyframes pop { from { opacity: 0; transform: scale(.86); } to { opacity: 1; transform: none; } }
+  @keyframes fade { from { opacity: 0; } to { opacity: 1; } }
+  .slide.active .draw { stroke-dasharray: var(--len, 1200); stroke-dashoffset: var(--len, 1200); animation: draw 1.4s ease var(--d, 0s) forwards; }
+  @keyframes draw { to { stroke-dashoffset: 0; } }
+
+  /* progress + nav */
+  #progress { position: fixed; left: 0; bottom: 0; height: 3px; background: linear-gradient(90deg, var(--video), var(--depth), var(--hot)); transition: width .5s ease; z-index: 5; }
+  #nav { position: fixed; right: 16px; top: 12px; display: flex; gap: 6px; z-index: 6; opacity: .25; transition: opacity .2s; }
+  #nav:hover { opacity: 1; }
+  #nav button { background: rgba(255,255,255,.08); color: var(--text); border: 1px solid var(--line); border-radius: 10px; font: 600 13px var(--mono); padding: 7px 10px; cursor: pointer; }
+  #notes { position: fixed; left: 50%; bottom: 18px; transform: translateX(-50%); width: min(1100px, 94vw); background: rgba(10,14,28,.94); border: 1px solid var(--line); border-radius: 16px;
+    padding: 16px 20px; z-index: 7; display: none; font-size: 17px; line-height: 1.5; color: #dbe2f0; box-shadow: 0 20px 60px rgba(0,0,0,.5); }
+  #notes.show { display: block; }
+  #notes .meta { display: flex; justify-content: space-between; font: 600 13px var(--mono); color: var(--video); margin-bottom: 8px; }
+  aside.notes { display: none; }
+
+  /* ---------- slide 1: title ---------- */
+  #s-title .left { position: absolute; left: 90px; top: 170px; width: 820px; }
+  #s-title h1 { font-size: 104px; }
+  #s-title .sub { font-size: 28px; color: #cbd3e3; margin: 26px 0 40px; max-width: 760px; line-height: 1.35; }
+  #s-title .team { display: flex; gap: 14px; flex-wrap: wrap; }
+  #s-title .team .chip { font-size: 16px; padding: 10px 16px; }
+  .robot3d { position: absolute; right: 30px; top: 40px; width: 720px; height: 820px; }
+  .robot3d canvas { width: 100% !important; height: 100% !important; display: block; }
+  .halo { position: absolute; right: 120px; top: 220px; width: 560px; height: 560px; border-radius: 50%;
+    background: radial-gradient(circle, rgba(56,189,248,.22), rgba(167,139,250,.10) 45%, transparent 70%); filter: blur(10px); }
+  .orbit { position: absolute; right: 95px; top: 600px; width: 610px; height: 150px; border-radius: 50%; border: 1px solid rgba(125,211,252,.25); transform: rotateX(70deg); }
+
+  /* ---------- slide 2: idea ---------- */
+  .scene2 { display: grid; grid-template-columns: 1fr 160px 1fr; align-items: center; gap: 0; height: 380px; margin-top: 6px; }
+  .scene2 svg { width: 100%; height: 100%; }
+  .problems { display: grid; grid-template-columns: repeat(3, 1fr); gap: 22px; margin-top: 26px; }
+  .problems .card { padding: 22px 24px; }
+  .problems .num { font: 700 15px var(--mono); letter-spacing: .1em; margin-bottom: 10px; }
+  .problems p { margin: 0; font-size: 19px; }
+
+  /* ---------- slide 3: architecture ---------- */
+  #arch { width: 1420px; height: 640px; margin-top: -6px; }
+  #arch .box { fill: rgba(255,255,255,.05); stroke: rgba(255,255,255,.16); stroke-width: 1.4; }
+  #arch .group { fill: rgba(255,255,255,.02); stroke: rgba(255,255,255,.14); stroke-dasharray: 6 6; }
+  #arch text { fill: #dfe5f1; font-family: var(--body); }
+  #arch .t { font: 600 21px var(--head); fill: #fff; }
+  #arch .s { font-size: 15.5px; fill: #aab3c7; }
+  #arch .lbl { font: 600 13.5px var(--mono); }
+  #arch .link { fill: none; stroke-width: 3; }
+
+  /* ---------- slide 4: latency ---------- */
+  .pipe { display: grid; grid-template-columns: repeat(8, 1fr); gap: 10px; margin: 6px 0 0; position: relative; }
+  .stage { background: var(--panel); border: 1px solid var(--line); border-radius: 16px; padding: 16px 12px 14px; text-align: center; min-height: 128px; transition: border-color .25s, background .25s, transform .25s; }
+  .stage .ico { font-size: 30px; height: 40px; }
+  .stage .nm { font: 600 15.5px/1.25 var(--body); color: #e3e8f3; margin-top: 8px; }
+  .stage.lit { border-color: var(--video); background: rgba(56,189,248,.12); transform: translateY(-4px); }
+  .stage.motion.lit { border-color: var(--pose); background: rgba(74,222,128,.12); }
+  .brackets { display: grid; grid-template-columns: 3fr 5fr; gap: 10px; margin-top: 12px; }
+  .brk { border-top: 2px solid; border-radius: 10px 10px 0 0; padding-top: 8px; text-align: center; font: 600 15px var(--mono); }
+  .lat-row { display: grid; grid-template-columns: 1fr 1fr 1.3fr; gap: 22px; margin-top: 26px; }
+  .lat-row.big .card { padding: 34px 30px; min-height: 300px; }
+  .lat-row.big .kpi { font-size: 128px; }
+  .lat-row.big .qr-demo { margin-top: 30px; }
+  .feel { display: grid; grid-template-columns: 1.6fr 1fr; gap: 22px; margin-top: 22px; }
+  .ticks { display: flex; gap: 6px; margin: 14px 0 8px; }
+  .ticks i { flex: 1; height: 34px; border-radius: 6px; background: rgba(56,189,248,.14); border: 1px solid rgba(56,189,248,.35); opacity: .15; transition: opacity .2s; }
+  .ticks i.on { opacity: 1; }
+  .kpi { font: 700 92px/1 var(--head); letter-spacing: -.03em; }
+  .kpi small { font-size: 34px; color: var(--muted); margin-left: 6px; }
+  .qr-demo { display: grid; grid-template-columns: 120px 34px 96px 34px 1fr; align-items: center; gap: 6px; margin-top: 10px; }
+  .qr { width: 112px; height: 112px; background: #fff; border-radius: 10px; padding: 10px; display: grid; grid-template-columns: repeat(11, 1fr); gap: 0; }
+  .qr i { background: #111; }
+  .qr i.w { background: transparent; }
+  .arrow { height: 2px; background: linear-gradient(90deg, var(--line), var(--video)); position: relative; }
+  .arrow::after { content: ""; position: absolute; right: -2px; top: -5px; border: 6px solid transparent; border-left-color: var(--video); }
+  .cam { width: 96px; height: 96px; border-radius: 50%; display: grid; place-items: center; background: radial-gradient(circle at 40% 35%, #1e293b, #020617 70%); border: 1px solid var(--line); }
+  .cam span { width: 46px; height: 46px; border-radius: 50%; background: radial-gradient(circle at 35% 30%, #7dd3fc, #0c4a6e 55%, #020617); box-shadow: 0 0 30px rgba(56,189,248,.45); }
+
+  /* ---------- slide 5: reprojection ---------- */
+  .rp { display: grid; grid-template-columns: 1000px 1fr; gap: 34px; }
+  .rp-row { margin-bottom: 18px; }
+  .rp-row .hd { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 8px; }
+  .rp-row .hd b { font: 600 20px var(--head); }
+  .rp-row canvas { width: 1000px; height: 245px; border-radius: 16px; border: 1px solid var(--line); display: block; background: #000; cursor: ew-resize; }
+  .err { font: 700 17px var(--mono); }
+  .rp ul { list-style: none; padding: 0; margin: 0; display: grid; gap: 18px; }
+  .rp li { background: var(--panel); border: 1px solid var(--line); border-radius: 16px; padding: 20px 20px; font-size: 21px; line-height: 1.38; }
+  .rp li b { color: #fff; }
+  .toggle { display: inline-flex; gap: 0; border: 1px solid var(--line); border-radius: 999px; overflow: hidden; }
+  .toggle button { background: transparent; color: var(--muted); border: 0; font: 600 13px var(--mono); padding: 7px 12px; cursor: pointer; }
+  .toggle button.on { background: rgba(56,189,248,.18); color: #fff; }
+
+  /* ---------- slide 6: status ---------- */
+  .wps { display: grid; grid-template-columns: repeat(5, 1fr); gap: 16px; }
+  .wp { background: var(--panel); border: 1px solid var(--line); border-radius: 18px; padding: 30px 22px; min-height: 500px; position: relative; overflow: hidden; }
+  .wp::before { content: ""; position: absolute; left: 0; right: 0; top: 0; height: 4px; background: var(--c); }
+  .wp .id { font: 700 14px var(--mono); color: var(--c); letter-spacing: .08em; }
+  .wp h3 { font-size: 28px; margin: 8px 0 4px; }
+  .wp .lead { font: 500 13px var(--mono); color: var(--muted); margin-bottom: 14px; }
+  .wp ul { list-style: none; padding: 0; margin: 0; display: grid; gap: 28px; }
+  .wp li { font-size: 23px; line-height: 1.3; display: grid; grid-template-columns: 26px 1fr; gap: 6px; color: #d5dceb; }
+  .st { font: 700 18px var(--mono); }
+  .st.ok { color: var(--pose); } .st.wip { color: var(--warn); } .st.open { color: var(--dim); }
+  .legend { display: flex; gap: 22px; margin-top: 26px; font: 500 15px var(--mono); color: var(--muted); align-items: center; }
+  .perf { display: flex; align-items: center; gap: 22px; margin-top: 16px; }
+  .fpsbar { flex: 1; height: 16px; background: rgba(255,255,255,.06); border-radius: 99px; position: relative; overflow: hidden; }
+  .fpsbar i { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 99px; }
+
+  /* ---------- slide 7: open-television ---------- */
+  .otv { display: grid; grid-template-columns: 560px 1fr; gap: 40px; }
+  .loop { width: 100%; height: 340px; margin-top: 20px; }
+  table.cmp { width: 100%; border-collapse: separate; border-spacing: 0; font-size: 22px; }
+  table.cmp th, table.cmp td { padding: 26px 14px; border-bottom: 1px solid var(--line); text-align: left; vertical-align: top; }
+  table.cmp th { font: 600 15px var(--mono); color: var(--muted); letter-spacing: .04em; }
+  table.cmp td:first-child { color: var(--muted); font-size: 16px; width: 180px; }
+  .yes { color: var(--pose); font-weight: 700; } .no { color: #fb7185; font-weight: 700; }
+  .take { display: grid; gap: 18px; margin-top: 26px; }
+  .take div { display: grid; grid-template-columns: 34px 1fr; gap: 10px; font-size: 22px; line-height: 1.38; color: #d5dceb; }
+  .take b { color: #fff; }
+  .take .n { width: 30px; height: 30px; border-radius: 50%; display: grid; place-items: center; font: 700 14px var(--mono); background: rgba(167,139,250,.18); color: var(--depth); }
+
+  /* ---------- slide 8: next steps ---------- */
+  .next { display: grid; grid-template-columns: 1fr 1fr; gap: 26px; }
+  .next .card { padding: 20px 24px; min-height: 0; }
+  .mig { display: grid; grid-template-columns: 1fr 70px 1fr; gap: 0; align-items: start; margin: 16px 0 14px; position: relative; height: 300px; }
+  .col { border: 1px dashed var(--line); border-radius: 14px; padding: 12px; height: 100%; }
+  .col .ttl { font: 600 13px var(--mono); color: var(--muted); margin-bottom: 8px; letter-spacing: .05em; }
+  .mod { position: absolute; font: 600 14px var(--mono); padding: 7px 11px; border-radius: 9px; background: rgba(74,222,128,.12); border: 1px solid rgba(74,222,128,.35); color: #bbf7d0; white-space: nowrap; }
+  .mod.rw { background: rgba(244,114,182,.10); border-color: rgba(244,114,182,.35); color: #fbcfe8; }
+  .mod.keep { background: rgba(56,189,248,.10); border-color: rgba(56,189,248,.35); color: #bae6fd; }
+  .why { display: grid; gap: 8px; }
+  .why div { font-size: 19px; line-height: 1.38; color: #d5dceb; padding-left: 22px; position: relative; }
+  .why div::before { content: "→"; position: absolute; left: 0; color: var(--c, var(--video)); font-weight: 700; }
+  #splat { width: 100%; height: 300px; border-radius: 14px; display: block; background: #050814; border: 1px solid var(--line); margin: 16px 0 14px; }
+  .timeline { position: relative; margin-top: 22px; height: 74px; }
+  .timeline .bar { position: absolute; left: 0; right: 0; top: 18px; height: 4px; background: rgba(255,255,255,.08); border-radius: 4px; }
+  .timeline .fill { position: absolute; left: 0; top: 18px; height: 4px; width: 0; background: linear-gradient(90deg, var(--video), var(--depth), var(--hot)); border-radius: 4px; }
+  .slide.active .timeline .fill { animation: grow 2.4s ease .6s forwards; }
+  @keyframes grow { to { width: 100%; } }
+  .ms { position: absolute; top: 0; transform: translateX(-50%); text-align: center; width: 190px; }
+  .ms i { display: block; width: 14px; height: 14px; margin: 13px auto 8px; border-radius: 50%; background: var(--bg); border: 3px solid var(--c); }
+  .ms span { font: 600 13.5px/1.25 var(--mono); color: #cfd6e6; }
+
+  /* ---------- slide 9: thanks ---------- */
+  #s-end .left { position: absolute; left: 90px; top: 230px; width: 820px; }
+  #s-end h1 { font-size: 120px; }
 </style>
 </head>
 <body>
-<form class="card" id="form" autocomplete="off">
-  <div class="kicker">Reachy Mini Meetings · Midterm</div>
-  <h1>Team only</h1>
-  <p>Only collaborators of <code>StevenJobins/reachy-mini-meetings</code> can open this presentation. Unlock it with your GitHub account.</p>
-  <label for="token">GitHub token</label>
-  <input id="token" type="password" placeholder="gho_… or ghp_…" spellcheck="false">
-  <button id="go" type="submit">Unlock</button>
-  <div id="msg"></div>
-  <details>
-    <summary>Where do I get a token?</summary>
-    <p style="margin-top:10px">Easiest, with the GitHub CLI: run <code>gh auth token</code> in a terminal and paste the output.</p>
-    <p>Or create a classic token with the <code>repo</code> scope (fine-grained tokens cannot read a repository of another user): <a href="https://github.com/settings/tokens/new?scopes=repo&amp;description=Reachy%20midterm%20deck" target="_blank" rel="noopener">github.com/settings/tokens/new</a>.</p>
-    <p>The token is only sent to <code>api.github.com</code> to read the deck key, and is not stored. The key stays in this tab until you close it.</p>
-  </details>
-</form>
+<div id="stage"><div id="deck">
+
+<!-- ======================================================= 1 TITLE -->
+<section class="slide" id="s-title" data-t="10">
+  <div class="halo"></div><div class="orbit"></div>
+  <div class="robot3d" id="robot-slot-1"><div class="r3d-msg">loading 3D model…</div><svg class="r3d-fallback" viewBox="150 120 200 190" style="display:none"><rect x="222" y="236" width="56" height="58" rx="14" fill="#e8edf5"/><ellipse cx="250" cy="206" rx="46" ry="36" fill="#f4f6fa"/><rect x="216" y="192" width="68" height="26" rx="13" fill="#1f2937"/><circle cx="236" cy="205" r="8" fill="#38bdf8"/><circle cx="264" cy="205" r="6" fill="#64748b"/><path d="M232 172 q-10 -30 -24 -40" stroke="#94a3b8" stroke-width="4" fill="none" stroke-linecap="round"/><path d="M268 172 q10 -30 24 -40" stroke="#94a3b8" stroke-width="4" fill="none" stroke-linecap="round"/></svg></div>
+  <div class="left">
+    <div class="kicker a" style="--d:.1s">ETH Zürich · Mixed Reality · Midterm 2026</div>
+    <h1 class="a" style="--d:.2s">Reachy Mini<br><span class="grad">Meetings</span></h1>
+    <div class="sub a" style="--d:.35s">Join a meeting in person — through a robot head, from a VR headset anywhere.</div>
+    <div class="team a" style="--d:.5s">
+      <span class="chip"><span class="dot" style="background:var(--lang)"></span>Dominic Ill</span>
+      <span class="chip"><span class="dot" style="background:var(--video)"></span>Kevin Stöckli</span>
+      <span class="chip"><span class="dot" style="background:var(--pose)"></span>Simon Thut</span>
+    </div>
+    <p class="muted a" style="--d:.65s;font-size:17px;margin-top:22px">Supervisors: Zuria Bauer, René Zurbrügg</p>
+  </div>
+  <div class="footer"><span>reachy-mini-meetings</span><span>3D model: Pollen Robotics reachy_mini (Apache-2.0)</span></div>
+  <aside class="notes">Simon, ~10 s. "We let you attend a real meeting through a small robot: Reachy Mini sits at the table, you wear a headset."</aside>
+</section>
+
+<!-- ======================================================= 2 IDEA -->
+<section class="slide" id="s-idea" data-t="25">
+  <div class="kicker a">The idea</div>
+  <h2 class="a" style="--d:.1s">You are in the room — <span class="grad">as Reachy Mini</span></h2>
+  <div class="scene2">
+    <svg viewBox="0 0 560 380" class="a" style="--d:.25s">
+      <defs><linearGradient id="g-h" x1="0" x2="1"><stop offset="0" stop-color="#38bdf8"/><stop offset="1" stop-color="#a78bfa"/></linearGradient></defs>
+      <circle cx="280" cy="190" r="150" fill="rgba(56,189,248,.06)" stroke="rgba(255,255,255,.08)"/>
+      <g id="remote-head" style="transform-origin:280px 190px">
+        <ellipse cx="280" cy="180" rx="78" ry="92" fill="#1b2438" stroke="#33415c" stroke-width="2"/>
+        <rect x="196" y="140" width="168" height="62" rx="28" fill="url(#g-h)"/>
+        <rect x="210" y="152" width="140" height="38" rx="19" fill="#0b1222" opacity=".85"/>
+        <circle cx="252" cy="171" r="8" fill="#7dd3fc" opacity=".9"/><circle cx="308" cy="171" r="8" fill="#7dd3fc" opacity=".9"/>
+        <path d="M232 238 q48 26 96 0" stroke="#6b7a99" stroke-width="5" fill="none" stroke-linecap="round"/>
+      </g>
+      <path d="M150 330 q130 -60 260 0" stroke="#33415c" stroke-width="40" fill="none" stroke-linecap="round"/>
+      <text x="280" y="372" text-anchor="middle" fill="#8d97ad" font-family="JetBrains Mono" font-size="15">remote · Galaxy XR headset</text>
+    </svg>
+    <svg viewBox="0 0 160 380">
+      <path d="M10 170 C 60 120, 100 120, 150 170" stroke="#4ade80" stroke-width="3" fill="none" stroke-dasharray="6 8"><animate attributeName="stroke-dashoffset" from="0" to="-28" dur=".8s" repeatCount="indefinite"/></path>
+      <path d="M150 215 C 100 265, 60 265, 10 215" stroke="#38bdf8" stroke-width="3" fill="none" stroke-dasharray="6 8"><animate attributeName="stroke-dashoffset" from="0" to="-28" dur=".8s" repeatCount="indefinite"/></path>
+      <text x="80" y="118" text-anchor="middle" fill="#4ade80" font-family="JetBrains Mono" font-size="13">head pose</text>
+      <text x="80" y="285" text-anchor="middle" fill="#38bdf8" font-family="JetBrains Mono" font-size="13">video + audio</text>
+    </svg>
+    <svg viewBox="0 0 560 380" class="a" style="--d:.4s">
+      <ellipse cx="280" cy="300" rx="250" ry="58" fill="#1a2236" stroke="#2c3854"/>
+      <g fill="#2a3550"><circle cx="90" cy="190" r="30"/><rect x="58" y="222" width="64" height="70" rx="26"/>
+        <circle cx="470" cy="190" r="30"/><rect x="438" y="222" width="64" height="70" rx="26"/>
+        <circle cx="380" cy="150" r="26"/><rect x="352" y="178" width="56" height="58" rx="22"/></g>
+      <g fill="#ff9f2e" opacity=".95"><rect x="392" y="92" width="150" height="40" rx="14"/><path d="M420 132 l10 14 l10 -14z"/></g>
+      <text x="467" y="118" text-anchor="middle" fill="#1b1206" font-family="Inter" font-weight="700" font-size="15">„Grüezi zäme!"</text>
+      <g id="mini-robot" style="transform-origin:250px 250px">
+        <rect x="222" y="236" width="56" height="58" rx="14" fill="#e8edf5"/>
+        <ellipse cx="250" cy="206" rx="46" ry="36" fill="#f4f6fa"/>
+        <rect x="216" y="192" width="68" height="26" rx="13" fill="#1f2937"/>
+        <circle cx="236" cy="205" r="8" fill="#38bdf8"/><circle cx="264" cy="205" r="6" fill="#64748b"/>
+        <path d="M232 172 q-10 -30 -24 -40" stroke="#1f2937" stroke-width="4" fill="none" stroke-linecap="round"><animateTransform attributeName="transform" type="rotate" values="-8 232 172;10 232 172;-8 232 172" dur="2.2s" repeatCount="indefinite"/></path>
+        <path d="M268 172 q10 -30 24 -40" stroke="#1f2937" stroke-width="4" fill="none" stroke-linecap="round"><animateTransform attributeName="transform" type="rotate" values="8 268 172;-10 268 172;8 268 172" dur="2.2s" repeatCount="indefinite"/></path>
+      </g>
+      <text x="280" y="372" text-anchor="middle" fill="#8d97ad" font-family="JetBrains Mono" font-size="15">meeting room · Reachy Mini at the table</text>
+    </svg>
+  </div>
+  <div class="problems">
+    <div class="card a" style="--d:.55s"><div class="num" style="color:var(--video)">I · LATENCY</div><h3>The view lags your head</h3><p>Robot and video take ~¼ s to follow.</p></div>
+    <div class="card a" style="--d:.7s"><div class="num" style="color:var(--lang)">II · LANGUAGE</div><h3>Follow any language</h3><p>Translated bubbles above the speaker.</p></div>
+    <div class="card a" style="--d:.85s"><div class="num" style="color:var(--pose)">III · PRESENCE</div><h3>Be seen listening</h3><p>Look at the speaker, signal, laugh.</p></div>
+  </div>
+  <aside class="notes">Simon, ~25 s. Your head moves the robot, video and audio come back. Three problems: latency, language, presence. Today: how it is built and how we handle latency.</aside>
+</section>
+
+<!-- ======================================================= 3 ARCHITECTURE -->
+<section class="slide" id="s-arch" data-t="35">
+  <div class="kicker a">How it is built today</div>
+  <h2 class="a" style="--d:.1s">One link in the headset. No install.</h2>
+  <svg id="arch" viewBox="0 0 1500 640" class="a fade" style="--d:.2s">
+    <defs>
+      <marker id="ah" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10z" fill="context-stroke"/></marker>
+      <filter id="glow"><feGaussianBlur stdDeviation="3" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+    </defs>
+    <!-- cloud row -->
+    <g class="a" style="--d:.35s"><rect class="box" x="430" y="20" width="250" height="88" rx="16"/><text class="t" x="450" y="56">GitHub Pages</text><text class="s" x="450" y="84">the app · push = live in 1 min</text></g>
+    <g class="a" style="--d:.45s"><rect class="box" x="705" y="20" width="320" height="88" rx="16"/><text class="t" x="725" y="56">Hugging Face + Pollen central</text><text class="s" x="725" y="84">sign-in · connection setup</text></g>
+    <g class="a" style="--d:.55s"><rect class="box" x="1050" y="20" width="270" height="88" rx="16"/><text class="t" x="1070" y="56">Cloudflare tunnel</text><text class="s" x="1070" y="84">secure link to the backend</text></g>
+    <!-- headset -->
+    <g class="a" style="--d:.3s">
+      <rect class="box" x="20" y="200" width="350" height="300" rx="22" style="stroke:rgba(56,189,248,.5)"/>
+      <text class="t" x="44" y="242">Galaxy XR headset</text>
+      <text class="s" x="44" y="270">a web page (WebXR) in Chrome</text>
+      <g class="s" style="font-size:17px"><text x="44" y="330">◉ video, world-locked</text><text x="44" y="370">◉ speech bubbles</text><text x="44" y="410">◉ head pose → robot</text><text x="44" y="450">◉ voice → room</text></g>
+    </g>
+    <!-- laptop group -->
+    <g class="a" style="--d:.45s">
+      <rect class="group" x="770" y="170" width="420" height="450" rx="24"/>
+      <text class="lbl" x="790" y="198" fill="#8d97ad">ROBOT LAPTOP · Apple silicon Mac</text>
+      <rect class="box" x="790" y="214" width="380" height="150" rx="18" style="stroke:rgba(56,189,248,.5)"/>
+      <text class="t" x="812" y="252">Reachy daemon <tspan class="s">(Pollen)</tspan></text>
+      <text class="s" x="812" y="290">WebRTC video + audio · motors</text>
+                  <rect class="box" x="790" y="384" width="380" height="218" rx="18" style="stroke:rgba(255,159,46,.55)"/>
+      <text class="t" x="812" y="422">Caption backend <tspan class="s">(ours, Python)</tspan></text>
+      <text class="s" x="812" y="460">speech → Whisper → DeepL</text>
+      <text class="s" x="812" y="490">who speaks (mic direction + faces)</text>
+      <text class="s" x="812" y="520">depth for the room scan</text>
+      <text class="s" x="812" y="550">Reachy speaks for you (TTS)</text>
+    </g>
+    <!-- robot -->
+    <g class="a" style="--d:.6s">
+      <rect class="box" x="1250" y="250" width="230" height="250" rx="22" style="stroke:rgba(74,222,128,.5)"/>
+      <text class="t" x="1272" y="290">Reachy Mini</text>
+      <g class="s"><text x="1272" y="334">camera</text><text x="1272" y="366">4 microphones</text><text x="1272" y="398">speaker</text><text x="1272" y="430">9 motors</text></g>
+    </g>
+    <!-- links -->
+    <path id="p-video" class="link draw" style="--d:.8s;stroke:#38bdf8" d="M790 280 C 640 280, 520 300, 372 300" marker-end="url(#ah)"/>
+    <path id="p-pose" class="link draw" style="--d:.9s;stroke:#4ade80" d="M372 340 C 520 340, 640 320, 790 320" marker-end="url(#ah)"/>
+    <path id="p-cap" class="link draw" style="--d:1s;stroke:#ff9f2e" d="M790 470 C 620 470, 520 430, 372 420" marker-end="url(#ah)"/>
+    <path id="p-voice" class="link draw" style="--d:1.1s;stroke:#ff9f2e;stroke-dasharray:6 7" d="M372 460 C 520 480, 640 540, 790 540" marker-end="url(#ah)"/>
+    <path class="link draw" style="--d:1.2s;stroke:#8d97ad;stroke-width:2;stroke-dasharray:5 6" d="M260 200 C 290 120, 380 70, 428 64"/>
+    <path class="link draw" style="--d:1.25s;stroke:#8d97ad;stroke-width:2;stroke-dasharray:5 6" d="M330 200 C 420 140, 640 140, 760 110"/>
+    <path class="link draw" style="--d:1.3s;stroke:#8d97ad;stroke-width:2;stroke-dasharray:5 6" d="M1170 384 C 1200 260, 1190 160, 1185 110"/>
+    <path id="p-usb1" class="link draw" style="--d:1.2s;stroke:#4ade80" d="M1172 300 L 1248 320"/>
+    <path id="p-usb2" class="link draw" style="--d:1.25s;stroke:#ff9f2e" d="M1248 420 L 1172 460"/>
+    <g class="lbl a" style="--d:1.4s"><text x="470" y="268" style="fill:#38bdf8">video ↓</text><text x="470" y="370" style="fill:#4ade80">head pose ↑</text>
+      <text x="470" y="410" style="fill:#ff9f2e">captions ↓</text><text x="440" y="560" style="fill:#ff9f2e">your voice ↑</text><text x="1196" y="250" style="fill:#8d97ad">USB</text></g>
+    <!-- packets -->
+    <g filter="url(#glow)">
+      <circle r="6" fill="#38bdf8"><animateMotion dur="1.6s" repeatCount="indefinite"><mpath href="#p-video"/></animateMotion></circle>
+      <circle r="6" fill="#38bdf8"><animateMotion dur="1.6s" begin=".53s" repeatCount="indefinite"><mpath href="#p-video"/></animateMotion></circle>
+      <circle r="6" fill="#38bdf8"><animateMotion dur="1.6s" begin="1.06s" repeatCount="indefinite"><mpath href="#p-video"/></animateMotion></circle>
+      <circle r="5" fill="#4ade80"><animateMotion dur="1.2s" repeatCount="indefinite"><mpath href="#p-pose"/></animateMotion></circle>
+      <circle r="5" fill="#4ade80"><animateMotion dur="1.2s" begin=".6s" repeatCount="indefinite"><mpath href="#p-pose"/></animateMotion></circle>
+      <circle r="6" fill="#ff9f2e"><animateMotion dur="2.4s" repeatCount="indefinite"><mpath href="#p-cap"/></animateMotion></circle>
+      <circle r="5" fill="#ff9f2e"><animateMotion dur="2.8s" begin="1s" repeatCount="indefinite"><mpath href="#p-voice"/></animateMotion></circle>
+      <circle r="5" fill="#4ade80"><animateMotion dur=".9s" repeatCount="indefinite"><mpath href="#p-usb1"/></animateMotion></circle>
+      <circle r="5" fill="#ff9f2e"><animateMotion dur="1.1s" repeatCount="indefinite"><mpath href="#p-usb2"/></animateMotion></circle>
+    </g>
+  </svg>
+  <div class="footer"><span>plain web app: push to GitHub = live in a minute</span><span></span></div>
+  <aside class="notes">Dominic, ~35 s. The headset only opens a web page — no install. Through Pollen's connection the robot laptop streams video and audio, the headset sends its head pose. Our own backend on the laptop turns room speech into translated bubbles, finds who speaks, and lets Reachy speak for you.</aside>
+</section>
+
+<!-- ======================================================= 4 LATENCY -->
+<section class="slide" id="s-lat" data-t="30">
+  <div class="kicker a">Problem I · latency</div>
+  <h2 class="a" style="--d:.1s">Every head turn travels a long way</h2>
+  <div class="pipe" id="pipe">
+    <div class="stage motion a" style="--d:.15s"><div class="ico">🥽</div><div class="nm">You turn your head</div></div>
+    <div class="stage motion a" style="--d:.2s"><div class="ico">📡</div><div class="nm">Pose to robot</div></div>
+    <div class="stage motion a" style="--d:.25s"><div class="ico">⚙️</div><div class="nm">Head moves</div></div>
+    <div class="stage a" style="--d:.3s"><div class="ico">📷</div><div class="nm">Camera</div></div>
+    <div class="stage a" style="--d:.35s"><div class="ico">🧮</div><div class="nm">Encode</div></div>
+    <div class="stage a" style="--d:.4s"><div class="ico">📶</div><div class="nm">Network</div></div>
+    <div class="stage a" style="--d:.45s"><div class="ico">⏳</div><div class="nm">Decode</div></div>
+    <div class="stage a" style="--d:.5s"><div class="ico">👁️</div><div class="nm">You see it</div></div>
+  </div>
+  <div class="brackets a" style="--d:.55s">
+    <div class="brk" style="border-color:var(--pose);color:var(--pose)">robot motion</div>
+    <div class="brk" style="border-color:var(--video);color:var(--video)">video</div>
+  </div>
+  <div class="lat-row big" style="grid-template-columns:1fr 1fr 1fr;margin-top:56px">
+    <div class="card a" style="--d:.65s">
+      <div class="muted mono" style="font-size:14px;letter-spacing:.08em">VIDEO DELAY, MEASURED</div>
+      <div class="kpi"><span id="kpi-lat">0</span><small>ms</small></div>
+      <p style="margin:10px 0 0;font-size:19px">median, very steady</p>
+    </div>
+    <div class="card a" style="--d:.8s">
+      <div class="muted mono" style="font-size:14px;letter-spacing:.08em">A QUICK HEAD TURN</div>
+      <div class="kpi" style="color:#fb7185">23°<small>off</small></div>
+      <p style="margin:10px 0 0;font-size:19px">if the picture just followed your head</p>
+    </div>
+    <div class="card a" style="--d:.95s">
+      <div class="muted mono" style="font-size:14px;letter-spacing:.08em">HOW WE MEASURE · QR LOOP</div>
+      <div class="qr-demo">
+        <div><div class="qr" id="qr"></div></div><div class="arrow"></div>
+        <div class="cam"><span></span></div><div class="arrow"></div>
+        <div class="mono" style="font-size:15px;line-height:1.6">Δt</div>
+      </div>
+      <p style="margin:12px 0 0;font-size:16px" class="muted">a QR with the time, filmed by Reachy</p>
+    </div>
+  </div>
+  <aside class="notes">Kevin, ~30 s. Two delays add up: the head has to move, then each frame goes through camera, encoder, network and decoder. We measure it with a QR code that shows the time and is filmed by Reachy: 233 ms, very steady. A quick head turn would leave the picture over 20° off — that is what makes people sick.</aside>
+</section>
+
+<!-- ======================================================= 5 REPROJECTION -->
+<section class="slide" id="s-rp" data-t="40">
+  <div class="kicker a">How we hide it today</div>
+  <h2 class="a" style="--d:.1s">Keep the picture <span class="grad">where it belongs in the room</span></h2>
+  <div class="rp">
+    <div>
+      <div class="rp-row a" style="--d:.2s">
+        <div class="hd"><b>Naive: video glued to your head</b><span class="err" id="err-naive" style="color:#fb7185">—</span></div>
+        <canvas id="rp-naive" width="1000" height="245"></canvas>
+      </div>
+      <div class="rp-row a" style="--d:.35s">
+        <div class="hd"><b>Ours: world-locked at the robot's measured pose</b><span class="err" id="err-ours" style="color:var(--pose)">0° off</span></div>
+        <canvas id="rp-ours" width="1000" height="245"></canvas>
+      </div>
+      <div class="a" style="--d:.5s;display:flex;gap:16px;align-items:center;font:500 15px var(--mono);color:var(--muted)">
+        <span>move the mouse over a view to turn your head</span>
+        <span class="toggle" id="scan-toggle"><button class="on" data-v="1">room scan on</button><button data-v="0">off</button></span>
+      </div>
+    </div>
+    <ul>
+      <li class="a" style="--d:.3s"><b>Placed where the robot looked</b> when the frame was taken.</li>
+      <li class="a" style="--d:.45s"><b>Calibrated lens</b> → straight lines stay straight.</li>
+      <li class="a" style="--d:.6s"><b>Room scan</b> fills the edges instead of black.</li>
+    </ul>
+  </div>
+  <aside class="notes">Kevin, ~40 s. Top: video glued to your head — when you turn, the old frame shows the old direction and the room swims. Bottom: our approach — each frame is pinned in the room where the robot was looking. Your view moves over a still room, the window catches up, and the room scan fills the gap. (Mouse over a view to steer it.)</aside>
+</section>
+
+<!-- ======================================================= 6 STATUS -->
+<section class="slide" id="s-status" data-t="25">
+  <div class="kicker a">Where we are</div>
+  <h2 class="a" style="--d:.1s">Running end to end</h2>
+  <div class="wps">
+    <div class="wp a" style="--d:.15s;--c:var(--pose)"><div class="id">WP1</div><h3>Teleoperation</h3><div class="lead">all</div><ul>
+      <li><span class="st ok">✓</span>head + body follow you</li><li><span class="st ok">✓</span>two-way audio</li><li><span class="st ok">✓</span>latency measured</li></ul></div>
+    <div class="wp a" style="--d:.25s;--c:var(--video)"><div class="id">WP2</div><h3>Reprojection</h3><div class="lead">Kevin</div><ul>
+      <li><span class="st ok">✓</span>world-locked video</li><li><span class="st ok">✓</span>calibrated lens</li><li><span class="st wip">◐</span>room scan + depth</li></ul></div>
+    <div class="wp a" style="--d:.35s;--c:var(--hot)"><div class="id">WP3</div><h3>Speaker & gestures</h3><div class="lead">Simon</div><ul>
+      <li><span class="st ok">✓</span>looks at the speaker</li><li><span class="st ok">✓</span>"I want to speak", laugh</li><li><span class="st open">○</span>gestures from face tracking</li></ul></div>
+    <div class="wp a" style="--d:.45s;--c:var(--lang)"><div class="id">WP4</div><h3>Language</h3><div class="lead">Dominic</div><ul>
+      <li><span class="st ok">✓</span>translated bubbles</li><li><span class="st ok">✓</span>Reachy speaks for you</li><li><span class="st ok">✓</span>meeting notes</li></ul></div>
+    <div class="wp a" style="--d:.55s;--c:var(--depth)"><div class="id">WP5</div><h3>Evaluation</h3><div class="lead">all</div><ul>
+      <li><span class="st wip">◐</span>latency in the headset</li><li><span class="st open">○</span>user study</li><li><span class="st open">○</span>live demo</li></ul></div>
+  </div>
+  <div class="legend a" style="--d:.7s"><span><b class="st ok">✓</b> works</span><span><b class="st wip">◐</b> in testing</span><span><b class="st open">○</b> open</span></div>
+  <aside class="notes">Simon, ~25 s. Everything runs end to end: teleoperation, reprojection, speaker following, translated bubbles. In testing: room scan with depth and the latency in the headset. Open: the user study and the demo.</aside>
+</section>
+
+<!-- ======================================================= 7 OPEN-TELEVISION -->
+<section class="slide" id="s-otv" data-t="20">
+  <div class="kicker a">Inspiration · related work</div>
+  <h2 class="a" style="--d:.1s">Open-TeleVision <span class="muted" style="font-size:28px;font-weight:500">Cheng et al., CoRL 2024</span></h2>
+  <div class="otv">
+    <div>
+      <svg class="loop a" viewBox="0 0 560 250" style="--d:.2s">
+        <rect x="10" y="40" width="150" height="170" rx="18" fill="rgba(255,255,255,.05)" stroke="rgba(255,255,255,.16)"/>
+        <text x="85" y="78" text-anchor="middle" fill="#fff" font-family="Space Grotesk" font-weight="600" font-size="19">Operator</text>
+        <text x="85" y="104" text-anchor="middle" fill="#8d97ad" font-size="14">Vision Pro · WebXR</text>
+        <text x="85" y="150" text-anchor="middle" font-size="40">🥽</text>
+        <rect x="400" y="40" width="150" height="170" rx="18" fill="rgba(255,255,255,.05)" stroke="rgba(255,255,255,.16)"/>
+        <text x="475" y="78" text-anchor="middle" fill="#fff" font-family="Space Grotesk" font-weight="600" font-size="19">Humanoid</text>
+        <text x="475" y="104" text-anchor="middle" fill="#8d97ad" font-size="14">active neck + stereo cam</text>
+        <text x="475" y="150" text-anchor="middle" font-size="40">🤖</text>
+        <path d="M165 95 C 260 60, 300 60, 395 95" stroke="#4ade80" stroke-width="3" fill="none" stroke-dasharray="7 7"><animate attributeName="stroke-dashoffset" from="0" to="-28" dur=".6s" repeatCount="indefinite"/></path>
+        <path d="M395 160 C 300 195, 260 195, 165 160" stroke="#38bdf8" stroke-width="3" fill="none" stroke-dasharray="7 7"><animate attributeName="stroke-dashoffset" from="0" to="-28" dur=".6s" repeatCount="indefinite"/></path>
+        <text x="280" y="58" text-anchor="middle" fill="#4ade80" font-family="JetBrains Mono" font-size="13">head · wrist · hand poses</text>
+        <text x="280" y="214" text-anchor="middle" fill="#38bdf8" font-family="JetBrains Mono" font-size="13">stereo video</text>
+        <circle cx="280" cy="128" r="30" fill="rgba(167,139,250,.16)" stroke="#a78bfa"/><text x="280" y="134" text-anchor="middle" fill="#ddd6fe" font-family="JetBrains Mono" font-weight="700" font-size="16">60 Hz</text>
+      </svg>
+      <div class="take">
+        <div class="a" style="--d:.4s"><span class="n">1</span><span><b>Same core idea:</b> a camera head that follows yours.</span></div>
+        <div class="a" style="--d:.55s"><span class="n">2</span><span><b>Their user study</b> (stereo vs mono) is our template: reprojection on vs off.</span></div>
+      </div>
+    </div>
+    <table class="cmp a" style="--d:.3s">
+      <tr><th></th><th>Open-TeleVision</th><th style="color:#7dd3fc">Reachy Mini Meetings</th></tr>
+      <tr><td>Goal</td><td>manipulation, robot-learning data</td><td>attending a meeting</td></tr>
+      <tr><td>Vision</td><td>stereo, 2 × 480 × 640</td><td>mono, wide-angle</td></tr>
+      <tr><td>Hides latency</td><td><span class="muted">–</span> not their focus (60 Hz loop)</td><td><span class="yes">✓</span> world-locked reprojection</td></tr>
+      <tr><td>Language</td><td><span class="no">✗</span></td><td><span class="yes">✓</span> bubbles + robot voice</td></tr>
+      <tr><td>Depth</td><td><span class="yes">✓</span> stereo</td><td><span class="yes">◐</span> learned depth</td></tr>
+    </table>
+  </div>
+  <aside class="notes">Simon, ~20 s. Open-TeleVision inspired us: same idea, a camera head that follows the operator. They target manipulation with stereo; we target meetings, so latency hiding and language matter. We borrow their user-study design: reprojection on vs off.</aside>
+</section>
+
+<!-- ======================================================= 8 NEXT STEPS -->
+<section class="slide" id="s-next" data-t="35">
+  <div class="kicker a">Next steps</div>
+  <h2 class="a" style="--d:.1s">Next: <span class="grad">native app</span> and <span class="grad">Gaussian splats</span></h2>
+  <div class="next">
+    <div class="card a" style="--d:.2s">
+      <h3><span style="color:var(--pose)">①</span> Chrome WebXR → Unity (OpenXR, Android XR)</h3>
+      <div class="mig" id="mig">
+        <div class="col"><div class="ttl">TODAY · JS</div></div><div></div><div class="col"><div class="ttl">UNITY · C#</div></div>
+      </div>
+      <div class="why" style="--c:var(--pose)">
+        <div><b>Faster video path:</b> in Chrome, frame copies cost us half the frame rate (72 → 34 fps).</div>
+        <div><b>Face + eye tracking</b> for laughing and gaze — not available in WebXR.</div>
+      </div>
+    </div>
+    <div class="card a" style="--d:.35s">
+      <h3><span style="color:var(--depth)">②</span> Room scan → 3D Gaussian Splatting</h3>
+      <canvas id="splat" width="1300" height="600"></canvas>
+      <div class="why" style="--c:var(--depth)">
+        <div><b>From our room scan:</b> we already know every camera pose.</div>
+        <div><b>Result:</b> a photoreal 3D room behind the live video.</div>
+      </div>
+    </div>
+  </div>
+  <div class="timeline a" style="--d:.5s">
+    <div class="bar"></div><div class="fill"></div>
+    <div class="ms" style="left:6%;--c:var(--video)"><i></i><span>latency in<br>the headset</span></div>
+    <div class="ms" style="left:36%;--c:var(--pose)"><i></i><span>Unity<br>prototype</span></div>
+    <div class="ms" style="left:65%;--c:var(--depth)"><i></i><span>splat room</span></div>
+    <div class="ms" style="left:94%;--c:var(--hot)"><i></i><span>user study<br>+ demo</span></div>
+  </div>
+  <aside class="notes">Simon, ~35 s. Two next steps. One: move from Chrome to Unity — in the browser, frame copies halved our frame rate, and we want face and eye tracking. Our logic is already separate from rendering, so the port is mostly the rendering. Two: Gaussian splatting — our room scan already knows every camera pose, so we can train a photoreal 3D room and show it behind the live video. Then user study and demo.</aside>
+</section>
+
+<!-- ======================================================= 9 END -->
+<section class="slide" id="s-end" data-t="5">
+  <div class="halo"></div><div class="orbit"></div>
+  <div class="robot3d" id="robot-slot-2"><div class="r3d-msg">loading 3D model…</div><svg class="r3d-fallback" viewBox="150 120 200 190" style="display:none"><rect x="222" y="236" width="56" height="58" rx="14" fill="#e8edf5"/><ellipse cx="250" cy="206" rx="46" ry="36" fill="#f4f6fa"/><rect x="216" y="192" width="68" height="26" rx="13" fill="#1f2937"/><circle cx="236" cy="205" r="8" fill="#38bdf8"/><circle cx="264" cy="205" r="6" fill="#64748b"/><path d="M232 172 q-10 -30 -24 -40" stroke="#94a3b8" stroke-width="4" fill="none" stroke-linecap="round"/><path d="M268 172 q10 -30 24 -40" stroke="#94a3b8" stroke-width="4" fill="none" stroke-linecap="round"/></svg></div>
+  <div class="left">
+    <div class="kicker a">Thank you</div>
+    <h1 class="a" style="--d:.1s">Questions<span class="grad">?</span></h1>
+    <p class="a" style="--d:.3s;font-size:24px;margin-top:30px">Try it: <span class="mono" style="color:#7dd3fc">stevenjobins.github.io/reachy-mini-meetings</span></p>
+    <div class="team a" style="--d:.45s;display:flex;gap:12px;margin-top:30px">
+      <span class="chip"><span class="dot" style="background:var(--lang)"></span>Dominic Ill</span>
+      <span class="chip"><span class="dot" style="background:var(--video)"></span>Kevin Stöckli</span>
+      <span class="chip"><span class="dot" style="background:var(--pose)"></span>Simon Thut</span>
+    </div>
+  </div>
+  <aside class="notes">Thank you — questions. If there is time: live demo in the headset.</aside>
+</section>
+
+</div></div>
+
+<div id="progress"></div>
+<div id="nav"><button id="nav-prev">←</button><button id="nav-notes">notes (N)</button><button id="nav-full">full (F)</button><button id="nav-next">→</button></div>
+<div id="notes"><div class="meta"><span id="notes-slide"></span><span id="notes-time"></span></div><div id="notes-text"></div></div>
+
 <script type="module">
-// The deck is in the public repo only encrypted (deck.enc, AES-256-GCM, presentation/midterm/build.py). Its key is the
-// repository Actions variable MIDTERM_DECK_KEY, which the GitHub API only returns to collaborators of the repo.
-const REPO = "StevenJobins/reachy-mini-meetings", VAR = "MIDTERM_DECK_KEY", AAD = "reachy-midterm-v1";
-const SS_KEY = "reachy-midterm-key";
-const $ = (id) => document.getElementById(id);
-const msg = (text, cls = "") => { $("msg").textContent = text; $("msg").className = cls; };
-const b64 = (s) => Uint8Array.from(atob(s), (c) => c.charCodeAt(0));
+const $ = (s, r = document) => r.querySelector(s);
+const slides = [...document.querySelectorAll(".slide")];
+const deck = $("#deck");
+let cur = 0, started = null;
+const enter = {}, leave = {};
 
-async function open(keyB64) {
-  const data = new Uint8Array(await (await fetch("deck.enc", { cache: "no-store" })).arrayBuffer());
-  const key = await crypto.subtle.importKey("raw", b64(keyB64), "AES-GCM", false, ["decrypt"]);
-  const plain = await crypto.subtle.decrypt({ name: "AES-GCM", iv: data.slice(0, 12), additionalData: new TextEncoder().encode(AAD) }, key, data.slice(12));
-  try { sessionStorage.setItem(SS_KEY, keyB64); } catch {}
-  const html = new TextDecoder().decode(plain);
-  document.open(); document.write(html); document.close();
+function fit() {
+  const s = Math.min(innerWidth / 1600, innerHeight / 900);
+  deck.style.transform = `translate(-50%, -50%) scale(${s})`;
+}
+addEventListener("resize", fit); fit();
+
+function go(i) {
+  i = Math.max(0, Math.min(slides.length - 1, i));
+  const prev = slides[cur];
+  if (i !== cur) leave[prev.id]?.();
+  slides.forEach((s, k) => { s.classList.toggle("past", k < i); if (k !== i) s.classList.remove("active"); });
+  const s = slides[i];
+  s.classList.remove("active"); void s.offsetWidth; s.classList.add("active");   // replays the entrance animations
+  cur = i;
+  enter[s.id]?.();
+  $("#progress").style.width = `${(i + 1) / slides.length * 100}%`;
+  history.replaceState(null, "", `#${i + 1}`);
+  const budget = slides.slice(0, i + 1).reduce((a, x) => a + Number(x.dataset.t || 0), 0);
+  $("#notes-slide").textContent = `slide ${i + 1}/${slides.length} · ~${s.dataset.t}s · cumulative target ${Math.floor(budget / 60)}:${String(budget % 60).padStart(2, "0")}`;
+  $("#notes-text").textContent = s.querySelector("aside.notes")?.textContent.trim() ?? "";
+  if (!started && i > 0) started = performance.now();
+}
+setInterval(() => {
+  if (!started) { $("#notes-time").textContent = "timer starts on slide 2"; return; }
+  const t = Math.round((performance.now() - started) / 1000);
+  $("#notes-time").textContent = `elapsed ${Math.floor(t / 60)}:${String(t % 60).padStart(2, "0")} / 5:00`;
+}, 500);
+
+addEventListener("keydown", (e) => {
+  if (["ArrowRight", "PageDown", " ", "Enter"].includes(e.key)) { e.preventDefault(); go(cur + 1); }
+  else if (["ArrowLeft", "PageUp", "Backspace"].includes(e.key)) { e.preventDefault(); go(cur - 1); }
+  else if (e.key === "Home") go(0);
+  else if (e.key === "End") go(slides.length - 1);
+  else if (e.key === "n" || e.key === "N") $("#notes").classList.toggle("show");
+  else if (e.key === "f" || e.key === "F") toggleFull();
+  else if (e.key === "t" || e.key === "T") started = performance.now();
+});
+function toggleFull() { document.fullscreenElement ? document.exitFullscreen() : document.documentElement.requestFullscreen().catch(() => {}); }
+$("#nav-prev").onclick = () => go(cur - 1);
+$("#nav-next").onclick = () => go(cur + 1);
+$("#nav-notes").onclick = () => $("#notes").classList.toggle("show");
+$("#nav-full").onclick = toggleFull;
+let tx = null;
+addEventListener("touchstart", (e) => { tx = e.touches[0].clientX; }, { passive: true });
+addEventListener("touchend", (e) => { if (tx == null) return; const dx = e.changedTouches[0].clientX - tx; if (Math.abs(dx) > 50) go(cur + (dx < 0 ? 1 : -1)); tx = null; });
+
+/* ---------------- 3D Reachy Mini (slides 1 and 9) ---------------- */
+let robot = null;
+async function initRobot() {
+  const THREE = await import("https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js");
+  const [meta, bin] = await Promise.all([fetch("reachy.json").then((r) => { if (!r.ok) throw new Error(`reachy.json ${r.status}`); return r.json(); }), fetch("reachy.bin").then((r) => { if (!r.ok) throw new Error(`reachy.bin ${r.status}`); return r.arrayBuffer(); })]);
+  const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+  if (!renderer.getContext()) throw new Error("no WebGL");
+  renderer.setPixelRatio(Math.min(2, devicePixelRatio));
+  renderer.outputColorSpace = THREE.SRGBColorSpace;
+  renderer.toneMapping = THREE.ACESFilmicToneMapping; renderer.toneMappingExposure = 1.05;
+  const scene = new THREE.Scene();
+  const cam = new THREE.PerspectiveCamera(28, 720 / 820, 0.01, 10);
+  cam.position.set(0, 0.25, 1.05); cam.lookAt(0, 0.19, 0);
+  scene.add(new THREE.HemisphereLight(0xdbeafe, 0x1e1b4b, 1.4));
+  const key = new THREE.DirectionalLight(0xffffff, 2.4); key.position.set(0.6, 1, 0.9); scene.add(key);
+  const rim = new THREE.DirectionalLight(0x7dd3fc, 2.2); rim.position.set(-0.8, 0.5, -0.6); scene.add(rim);
+  const fill = new THREE.DirectionalLight(0xa78bfa, 1.0); fill.position.set(-0.6, -0.2, 0.8); scene.add(fill);
+  // MuJoCo is z-up with the face along +x: turn it y-up, face towards the camera
+  const root = new THREE.Group(); root.rotation.set(-Math.PI / 2, 0, 0);
+  const yawWrap = new THREE.Group(); yawWrap.add(root); yawWrap.rotation.y = -Math.PI / 2 + 0.35; scene.add(yawWrap);
+  const nodes = {};
+  const view = (o, n, T) => new T(bin, o, n);
+  for (const g of meta.groups) {
+    const geo = new THREE.BufferGeometry();
+    const qp = view(g.pos[0], g.pos[1], Uint16Array), [lo, sc] = g.q, pos = new Float32Array(qp.length);   // 16-bit positions in the group's box
+    for (let i = 0; i < qp.length; i++) pos[i] = lo[i % 3] + qp[i] * sc[i % 3];
+    geo.setAttribute("position", new THREE.BufferAttribute(pos, 3));
+    geo.setAttribute("color", new THREE.BufferAttribute(view(g.col[0], g.col[1], Uint8Array), 3, true));
+    geo.setIndex(new THREE.BufferAttribute(view(g.idx[0], g.idx[1], g.idxType === "u32" ? Uint32Array : Uint16Array), 1));
+    geo.computeVertexNormals();
+    const mesh = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.42, metalness: 0.08 }));
+    const pivot = new THREE.Group(); pivot.position.fromArray(g.pivot); pivot.add(mesh);
+    nodes[g.name] = { pivot, axis: g.axis ? new THREE.Vector3().fromArray(g.axis).normalize() : null, g };
+  }
+  // hierarchy: base <- upper (body yaw) <- head <- antennas; pivots are in world coordinates, so re-parent with offsets
+  const attach = (child, parent) => { const p = nodes[parent].g.pivot, c = nodes[child].g.pivot;
+    nodes[child].pivot.position.set(c[0] - p[0], c[1] - p[1], c[2] - p[2]); nodes[parent].pivot.add(nodes[child].pivot); };
+  root.add(nodes.base.pivot);
+  attach("upper", "base"); attach("head", "upper"); attach("right_antenna", "head"); attach("left_antenna", "head");
+  const shadow = new THREE.Mesh(new THREE.CircleGeometry(0.11, 48), new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.28 }));
+  shadow.rotation.x = -Math.PI / 2; shadow.position.y = -0.001; scene.add(shadow);
+  const q = new THREE.Quaternion();
+  function pose(t) {
+    nodes.upper.pivot.rotation.set(0, 0, 0.32 * Math.sin(t * 0.45));
+    nodes.head.pivot.rotation.set(0.05 * Math.sin(t * 0.9), -0.12 + 0.10 * Math.sin(t * 0.7 + 1), 0.10 * Math.sin(t * 0.55));
+    for (const [n, ph] of [["right_antenna", 0], ["left_antenna", 1.3]]) {
+      const a = nodes[n]; q.setFromAxisAngle(a.axis, 0.45 * Math.sin(t * 2.1 + ph) + 0.15 * Math.sin(t * 5.3 + ph)); a.pivot.quaternion.copy(q);
+    }
+    yawWrap.rotation.y = -Math.PI / 2 + 0.35 + 0.18 * Math.sin(t * 0.21);
+  }
+  let raf = 0, slot = null;
+  const loop = (ms) => { pose(ms / 1000); renderer.render(scene, cam); raf = requestAnimationFrame(loop); };
+  robot = {
+    show(el) {
+      slot = el; el.querySelector(".r3d-msg")?.remove(); el.append(renderer.domElement);
+      renderer.setSize(el.clientWidth || 720, el.clientHeight || 820, false);
+      cancelAnimationFrame(raf); raf = requestAnimationFrame(loop);
+    },
+    hide() { cancelAnimationFrame(raf); },
+  };
+}
+const robotReady = initRobot().catch((e) => {   // show why, and a drawn robot instead
+  console.warn("3D model:", e);
+  document.querySelectorAll(".robot3d").forEach((el) => {
+    el.querySelector(".r3d-msg").textContent = `3D model not available (${e?.message ?? e})`;
+    el.querySelector(".r3d-fallback").style.display = "";
+  });
+});
+enter["s-title"] = () => robotReady.then(() => robot?.show($("#robot-slot-1")));
+leave["s-title"] = () => robot?.hide();
+enter["s-end"] = () => robotReady.then(() => robot?.show($("#robot-slot-2")));
+leave["s-end"] = () => robot?.hide();
+
+/* ---------------- slide 2: remote head looks around, robot follows ---------------- */
+{
+  let raf = 0;
+  const loop = (ms) => {
+    const t = ms / 1000, yaw = 14 * Math.sin(t * 0.9) + 6 * Math.sin(t * 2.1);
+    $("#remote-head").style.transform = `rotate(${yaw * 0.5}deg) translateX(${yaw * 0.9}px)`;
+    const lag = 14 * Math.sin((t - 0.35) * 0.9) + 6 * Math.sin((t - 0.35) * 2.1);
+    $("#mini-robot").style.transform = `rotate(${lag * 0.6}deg)`;
+    raf = requestAnimationFrame(loop);
+  };
+  enter["s-idea"] = () => { cancelAnimationFrame(raf); raf = requestAnimationFrame(loop); };
+  leave["s-idea"] = () => cancelAnimationFrame(raf);
 }
 
-async function gh(path, token) {
-  const r = await fetch(`https://api.github.com${path}`, { headers: { Authorization: `Bearer ${token}`, Accept: "application/vnd.github+json" }, cache: "no-store" });
-  return { status: r.status, body: r.ok ? await r.json() : null };
+/* ---------------- slide 4: latency pipeline + QR ---------------- */
+{
+  const stages = [...document.querySelectorAll("#pipe .stage")];
+  const qr = $("#qr");
+  for (let i = 0; i < 121; i++) qr.append(document.createElement("i"));
+  const finder = (r, c) => { const f = (r0, c0) => r >= r0 && r < r0 + 3 && c >= c0 && c < c0 + 3; return f(0, 0) || f(0, 8) || f(8, 0); };
+  let timers = [], raf = 0;
+  const redrawQr = () => [...qr.children].forEach((el, k) => { const r = Math.floor(k / 11), c = k % 11; el.className = finder(r, c) || Math.random() > 0.5 ? "" : "w"; });
+  enter["s-lat"] = () => {
+    timers.forEach(clearInterval); timers = [];
+    let k = 0;
+    timers.push(setInterval(() => { stages.forEach((s, i) => s.classList.toggle("lit", i === k % (stages.length + 2))); k++; }, 330));
+    timers.push(setInterval(redrawQr, 160));
+    const t0 = performance.now() + 700;
+    cancelAnimationFrame(raf);
+    const count = (ms) => { const p = Math.min(1, Math.max(0, (ms - t0) / 1400)); $("#kpi-lat").textContent = Math.round(233 * (1 - Math.pow(1 - p, 3))); if (p < 1) raf = requestAnimationFrame(count); };
+    raf = requestAnimationFrame(count);
+  };
+  leave["s-lat"] = () => { timers.forEach(clearInterval); timers = []; cancelAnimationFrame(raf); };
 }
 
-$("form").onsubmit = async (e) => {
-  e.preventDefault();
-  let token = $("token").value.trim();
-  $("token").value = "";
-  if (!token) { msg("Paste a GitHub token first.", "err"); return; }
-  $("go").disabled = true; msg("Checking your GitHub account…");
-  try {
-    const me = await gh("/user", token);
-    if (me.status === 401) throw new Error("GitHub does not accept this token (expired or mistyped).");
-    const login = me.body?.login ?? "?";
-    const v = await gh(`/repos/${REPO}/actions/variables/${VAR}`, token);
-    token = null;
-    if (v.status === 403 || v.status === 404) throw new Error(`@${login} has no access: only collaborators of ${REPO} can open this (classic tokens need the repo scope).`);
-    if (!v.body?.value) throw new Error(`GitHub answered ${v.status}; try again.`);
-    msg(`Signed in as @${login}. Decrypting…`, "ok");
-    await open(v.body.value);
-  } catch (err) {
-    msg(err?.name === "OperationError" ? "The key does not fit the deck (deck.enc was built with another key)." : (err?.message ?? String(err)), "err");
-    $("go").disabled = false;
-  } finally { token = null; }
-};
+/* ---------------- slide 5: reprojection simulation ---------------- */
+{
+  const PX = 10;                       // pixels per degree, in the panorama and the 100° view (1000 px)
+  const W = 360 * PX, H = 245, FOV = 100, WIN = 76;   // window ≈ the camera's horizontal field of view
+  const pano = document.createElement("canvas"); pano.width = W; pano.height = H;
+  const grey = document.createElement("canvas"); grey.width = W; grey.height = H;
+  { // a stylised meeting room around 360°: azimuth a (deg, -180..180) -> x = (a + 180) * PX
+    const c = pano.getContext("2d");
+    const wall = c.createLinearGradient(0, 0, 0, H); wall.addColorStop(0, "#334155"); wall.addColorStop(0.62, "#1e293b"); wall.addColorStop(0.62, "#3f2d22"); wall.addColorStop(1, "#24170f");
+    c.fillStyle = wall; c.fillRect(0, 0, W, H);
+    const X = (a) => (a + 180) * PX;
+    for (let a = -180; a < 180; a += 30) { c.fillStyle = "rgba(255,255,255,.04)"; c.fillRect(X(a), 0, 3, H * 0.62); }
+    c.fillStyle = "#e2e8f0"; c.fillRect(X(-128), 34, 300, 70); c.fillStyle = "#94a3b8"; c.font = "bold 22px Inter"; c.fillText("WP2 · latency", X(-124), 64); c.fillText("y = f(t − τ)", X(-124), 92);
+    const sky = c.createLinearGradient(0, 30, 0, 110); sky.addColorStop(0, "#7dd3fc"); sky.addColorStop(1, "#bae6fd");
+    c.fillStyle = sky; c.fillRect(X(100), 26, 340, 92); c.fillStyle = "#0f172a"; c.fillRect(X(100) + 168, 26, 6, 92);
+    c.fillStyle = "#166534"; c.beginPath(); c.ellipse(X(150), 100, 26, 40, 0, 0, 7); c.fill(); c.fillStyle = "#78350f"; c.fillRect(X(150) - 12, 130, 24, 30);
+    const people = [[-62, "#f472b6", "#fde68a"], [-24, "#38bdf8", "#7c2d12"], [22, "#a78bfa", "#111827"], [62, "#4ade80", "#b45309"]];
+    for (const [a, shirt, hair] of people) {
+      const x = X(a);
+      c.fillStyle = shirt; c.beginPath(); c.roundRect(x - 34, 130, 68, 78, 24); c.fill();
+      c.fillStyle = "#f5d0b5"; c.beginPath(); c.arc(x, 108, 23, 0, 7); c.fill();
+      c.fillStyle = hair; c.beginPath(); c.arc(x, 100, 24, Math.PI, 0); c.fill();
+    }
+    c.fillStyle = "#57534e"; c.fillRect(0, 172, W, 16);
+    c.fillStyle = "#ff9f2e"; c.beginPath(); c.roundRect(X(22) - 70, 20, 140, 34, 12); c.fill(); c.fillStyle = "#1b1206"; c.font = "bold 17px Inter"; c.textAlign = "center"; c.fillText("„Hallo zäme“", X(22), 43);
+    const g = grey.getContext("2d"); g.filter = "grayscale(1) brightness(.55) contrast(.9)"; g.drawImage(pano, 0, 0);
+  }
+  const cvN = $("#rp-naive"), cvO = $("#rp-ours"), cn = cvN.getContext("2d"), co = cvO.getContext("2d");
+  let scanOn = true, mouseYaw = null, mouseAt = 0, raf = 0, last = 0;
+  document.querySelectorAll("#scan-toggle button").forEach((b) => b.onclick = () => {
+    scanOn = b.dataset.v === "1"; document.querySelectorAll("#scan-toggle button").forEach((x) => x.classList.toggle("on", x === b)); });
+  for (const cv of [cvN, cvO]) cv.addEventListener("mousemove", (e) => {
+    const r = cv.getBoundingClientRect(); mouseYaw = ((e.clientX - r.left) / r.width - 0.5) * 140; mouseAt = performance.now(); });
+  // simulation state: you (headset yaw), robot head yaw (rate-limited, follows with a command delay), frames carry the yaw at capture
+  const script = [-55, 10, 58, -20, 35, -65, 0, 45];
+  let you = 0, robotYaw = 0, target = 0, si = 0, nextAt = 0;
+  const hist = [];                      // [time, robot yaw] for the video delay
+  const LAT = 0.233, CMD = 0.06, RATE = 90;  // s, s, deg/s
+  const crop = (ctx, src, viewL, a0, a1) => {   // draw panorama azimuths a0..a1 into the view whose left edge is viewL
+    const wrap = (a) => ((a + 180) % 360 + 360) % 360 - 180;
+    for (let a = a0; a < a1;) {
+      const aw = wrap(a), seg = Math.min(a1 - a, 180 - aw);
+      ctx.drawImage(src, (aw + 180) * PX, 0, seg * PX, H, (a - viewL) * PX, 0, seg * PX, H);
+      a += seg;
+    }
+  };
+  const gauge = (ctx, yYou, yFrame) => {
+    const x = 940, y = H - 50, r = 34;
+    ctx.save(); ctx.translate(x, y);
+    ctx.fillStyle = "rgba(7,11,22,.75)"; ctx.beginPath(); ctx.arc(0, 0, r + 8, 0, 7); ctx.fill();
+    ctx.strokeStyle = "rgba(255,255,255,.2)"; ctx.beginPath(); ctx.arc(0, 0, r, 0, 7); ctx.stroke();
+    const ray = (deg, col, w) => { const a = (deg - 90) * Math.PI / 180; ctx.strokeStyle = col; ctx.lineWidth = w; ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(Math.cos(a) * r, Math.sin(a) * r); ctx.stroke(); };
+    ray(yFrame, "#38bdf8", 4); ray(yYou, "#ffffff", 2.5);
+    ctx.restore();
+  };
+  function frame(ms) {
+    const t = ms / 1000, dt = last ? Math.min(0.05, t - last) : 0.016; last = t;
+    if (mouseYaw != null && ms - mouseAt < 2500) target = mouseYaw;
+    else if (t > nextAt) { target = script[si++ % script.length]; nextAt = t + 1.9; }
+    you += (target - you) * Math.min(1, dt * 7);                       // your head: quick
+    hist.push([t, you]); while (hist.length && hist[0][0] < t - 2) hist.shift();
+    const at = (tt) => { let v = hist[0]?.[1] ?? 0; for (const [ts, y] of hist) { if (ts > tt) break; v = y; } return v; };
+    const cmd = at(t - CMD);                                            // the robot gets your pose a bit later
+    robotYaw += Math.max(-RATE * dt, Math.min(RATE * dt, cmd - robotYaw));
+    (frame.rh ??= []).push([t, robotYaw]); while (frame.rh[0][0] < t - 2) frame.rh.shift();
+    let fy = frame.rh[0][1]; for (const [ts, y] of frame.rh) { if (ts > t - LAT) break; fy = y; }   // yaw when the shown frame was captured
+    const viewL = you - FOV / 2;
+    // naive: window centred in the view, showing what the robot saw
+    cn.fillStyle = "#000"; cn.fillRect(0, 0, 1000, H);
+    cn.save(); cn.beginPath(); cn.rect((FOV - WIN) / 2 * PX, 0, WIN * PX, H); cn.clip();
+    crop(cn, pano, fy - FOV / 2, fy - WIN / 2, fy + WIN / 2); cn.restore();
+    cn.strokeStyle = "rgba(255,255,255,.7)"; cn.lineWidth = 3; cn.strokeRect((FOV - WIN) / 2 * PX + 1.5, 1.5, WIN * PX - 3, H - 3);
+    gauge(cn, you - you, fy - you);
+    // ours: room scan (or black), the live window at the frame's yaw
+    co.fillStyle = "#000"; co.fillRect(0, 0, 1000, H);
+    if (scanOn) crop(co, grey, viewL, viewL, viewL + FOV);
+    const w0 = Math.max(viewL, fy - WIN / 2), w1 = Math.min(viewL + FOV, fy + WIN / 2);
+    if (w1 > w0) {
+      co.save(); co.beginPath(); co.rect((w0 - viewL) * PX, 0, (w1 - w0) * PX, H); co.clip(); crop(co, pano, viewL, w0, w1); co.restore();
+      co.strokeStyle = "#38bdf8"; co.lineWidth = 3; co.strokeRect((fy - WIN / 2 - viewL) * PX + 1.5, 1.5, WIN * PX - 3, H - 3);
+    }
+    gauge(co, 0, fy - you);
+    const off = Math.abs(you - fy);
+    $("#err-naive").textContent = `${off.toFixed(0)}° off — the room swims`;
+    $("#err-ours").textContent = `0° off — window catches up ${off > 2 ? `(${off.toFixed(0)}° behind)` : ""}`;
+    raf = requestAnimationFrame(frame);
+  }
+  enter["s-rp"] = () => { cancelAnimationFrame(raf); last = 0; raf = requestAnimationFrame(frame); };
+  leave["s-rp"] = () => cancelAnimationFrame(raf);
+}
 
-let saved = null;
-try { saved = sessionStorage.getItem(SS_KEY); } catch {}
-if (saved) open(saved).catch(() => { try { sessionStorage.removeItem(SS_KEY); } catch {} msg("Please unlock again.", "err"); });
+/* ---------------- slide 8: module migration + splats ---------------- */
+{
+  const mig = $("#mig");
+  const mods = [["pose.js", ""], ["camera.js", ""], ["speaker.js", ""], ["gestures.js", ""], ["clocksync.js", ""], ["scene.js · UI", "rw"], ["WebRTC client", "rw"]];
+  const els = mods.map(([n, k], i) => { const d = document.createElement("div"); d.className = `mod ${k}`; d.textContent = n; mig.append(d); return d; });
+  const keep = document.createElement("div"); keep.className = "mod keep"; keep.textContent = "robot daemon · backend · protocol: unchanged"; mig.append(keep);
+  let timers = [];
+  const place = (moved) => els.forEach((d, i) => {
+    const col = i < 5 ? (moved > i ? 1 : 0) : (moved > i ? 1 : 0), y = 34 + (i % 7) * 31;
+    d.style.transition = "left .9s cubic-bezier(.2,.8,.2,1), top .9s, opacity .5s";
+    d.style.left = col ? "calc(50% + 50px)" : "12px"; d.style.top = `${y}px`;
+    if (i >= 5) d.textContent = moved > i ? `${mods[i][0].replace(" · UI", "").replace("scene.js", "rendering + UI")} (rewrite)` : mods[i][0];
+  });
+  keep.style.left = "12px"; keep.style.top = "256px"; keep.style.position = "absolute";
+  // splats
+  const cv = $("#splat"), cx = cv.getContext("2d"), SW = cv.width, SH = cv.height;
+  const room = document.createElement("canvas"); room.width = 260; room.height = 120;
+  { const c = room.getContext("2d");
+    const wall = c.createLinearGradient(0, 0, 0, 120); wall.addColorStop(0, "#475569"); wall.addColorStop(.6, "#334155"); wall.addColorStop(.6, "#5b4636"); wall.addColorStop(1, "#3b2a1f");
+    c.fillStyle = wall; c.fillRect(0, 0, 260, 120);
+    c.fillStyle = "#bae6fd"; c.fillRect(176, 12, 70, 44); c.fillStyle = "#e2e8f0"; c.fillRect(16, 16, 74, 36);
+    c.fillStyle = "#166534"; c.beginPath(); c.ellipse(160, 58, 10, 18, 0, 0, 7); c.fill();
+    for (const [x, s, h] of [[70, "#f472b6", "#fde68a"], [120, "#38bdf8", "#7c2d12"], [200, "#a78bfa", "#111827"]]) {
+      c.fillStyle = s; c.beginPath(); c.roundRect(x - 15, 56, 30, 34, 10); c.fill(); c.fillStyle = "#f5d0b5"; c.beginPath(); c.arc(x, 46, 10, 0, 7); c.fill();
+      c.fillStyle = h; c.beginPath(); c.arc(x, 42, 10.5, Math.PI, 0); c.fill(); }
+    c.fillStyle = "#78716c"; c.fillRect(0, 84, 260, 8);
+  }
+  const px = room.getContext("2d").getImageData(0, 0, 260, 120).data;
+  const N = 4200, sp = [];
+  for (let i = 0; i < N; i++) {
+    const u = Math.random() * 260, v = Math.random() * 120, k = (Math.floor(v) * 260 + Math.floor(u)) * 4;
+    const depth = v > 72 ? 0.2 + (v - 72) / 60 : 1 - Math.abs(u - 130) / 400;   // floor near, wall far
+    sp.push({ tx: u / 260, ty: v / 120, z: depth, col: `rgba(${px[k]},${px[k + 1]},${px[k + 2]},`, s: 4 + Math.random() * 8, rot: Math.random() * Math.PI, asp: 0.35 + Math.random() * 0.6,
+      sx: Math.random(), sy: Math.random(), delay: Math.random() * 0.6 });
+  }
+  let raf = 0, t0 = 0;
+  const draw = (ms) => {
+    const t = (ms - t0) / 1000;
+    cx.fillStyle = "#050814"; cx.fillRect(0, 0, SW, SH);
+    const cyc = t % 9, assemble = Math.min(1, Math.max(0, (cyc - 0.2) / 2.6));
+    const par = Math.sin(t * 0.9) * 26;
+    for (const p of sp) {
+      const a = Math.min(1, Math.max(0, (assemble - p.delay * 0.4) / 0.6)), e = 1 - Math.pow(1 - a, 3);
+      const x = (p.sx + (p.tx - p.sx) * e) * SW + par * p.z * e, y = (p.sy + (p.ty - p.sy) * e) * SH;
+      cx.fillStyle = p.col + (0.10 + 0.55 * e) + ")";
+      cx.beginPath(); cx.ellipse(x, y, p.s * (1.6 - 0.6 * e), p.s * p.asp, p.rot * (1 - e) + 0.2, 0, 7); cx.fill();
+    }
+    if (assemble >= 1) {   // the live video window in front of the splat room
+      const fade = Math.min(1, (cyc - 2.8) / 0.8), w = SW * 0.34, h = SH * 0.5, x = SW / 2 - w / 2 + par * 0.15, y = SH * 0.2;
+      cx.globalAlpha = fade;
+      cx.drawImage(room, 260 * (x / SW), 120 * (y / SH), 260 * (w / SW), 120 * (h / SH), x, y, w, h);
+      cx.strokeStyle = "#38bdf8"; cx.lineWidth = 4; cx.strokeRect(x, y, w, h);
+      cx.fillStyle = "#38bdf8"; cx.font = "600 26px JetBrains Mono"; cx.fillText("live video", x + 12, y - 12);
+      cx.globalAlpha = 1;
+    }
+    cx.fillStyle = "rgba(167,139,250,.9)"; cx.font = "600 24px JetBrains Mono";
+    cx.fillText(assemble < 1 ? "optimising Gaussians…" : "splat room · parallax as you move", 22, SH - 22);
+    raf = requestAnimationFrame(draw);
+  };
+  enter["s-next"] = () => {
+    timers.forEach(clearTimeout); timers = []; place(0);
+    for (let i = 1; i <= mods.length; i++) timers.push(setTimeout(() => place(i), 700 + i * 380));
+    cancelAnimationFrame(raf); t0 = performance.now(); raf = requestAnimationFrame(draw);
+  };
+  leave["s-next"] = () => { timers.forEach(clearTimeout); cancelAnimationFrame(raf); };
+}
+
+go(Math.max(0, (parseInt(location.hash.slice(1)) || 1) - 1));
 </script>
 </body>
 </html>

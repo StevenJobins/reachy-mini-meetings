@@ -34,7 +34,7 @@ better (lower RMS over more views), replace it and note the numbers here.
 
 ## Status (newest first, one line each: date, who, what, branch)
 
-- 2026-10-24 Simon/Claude: midterm slides at `xr-client/pages/midterm/` (team only: encrypted `deck.enc`, key = repo Actions variable `MIDTERM_DECK_KEY`, unlock with a GitHub token; edit via `presentation/midterm/build.py decrypt` / `encrypt`). Main.
+- 2026-10-24 Simon/Claude: midterm slides, public at `xr-client/pages/midterm/index.html` (one HTML file; 3D model from `presentation/midterm/export_reachy_model.py`). Main.
 - 2026-10-16 Simon/Claude: room scan showed one photo 12 times since the direct VideoFrame upload (be9e67f): `captureFrame` read `source.canvas`, which is no longer redrawn. Now `videosource.currentImage()` (the current VideoFrame in track mode). Kevin: keep this in mind if the canvas path changes again. Main.
 - 2026-10-16 Simon/Claude: `captions.js` (your area): Simon's Mac tunnel key added to `TRUSTED_KEYS` (backend now also runs there, for the headset latency test). Main.
 - 2026-10-16 Simon/Claude: `captions.js` (your area): `tunnelUrl` is now exported (one word), so `qr.html` finds the backend like the main page (localhost, else tunnel with the tab's HF sign-in). Settings gets a link "Open the QR page" (same tab, keeps the sign-in). Main.

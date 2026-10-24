@@ -44,5 +44,3 @@ node_modules/
 *.mov
 *.bag
 
-# Midterm deck plaintext (only the encrypted deck.enc is committed, see presentation/midterm/build.py)
-presentation/midterm/deck.html
