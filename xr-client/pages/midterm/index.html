@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Midterm · team only</title>
+<style>
+  :root { color-scheme: dark; }
+  html, body { margin: 0; height: 100%; background: #070b16; color: #e9edf6; font: 16px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  body { display: grid; place-items: center; padding: 16px; box-sizing: border-box;
+    background: radial-gradient(900px 600px at 80% -10%, rgba(56,189,248,.14), transparent 60%), radial-gradient(700px 500px at -10% 110%, rgba(167,139,250,.14), transparent 60%), #070b16; }
+  .card { width: min(520px, 100%); background: rgba(255,255,255,.05); border: 1px solid rgba(255,255,255,.12); border-radius: 22px; padding: 30px; box-sizing: border-box; }
+  .kicker { font: 600 12px ui-monospace, monospace; letter-spacing: .14em; color: #38bdf8; text-transform: uppercase; }
+  h1 { font-size: 30px; line-height: 1.15; margin: 8px 0 10px; }
+  p { color: #b8c1d4; margin: 0 0 14px; }
+  label { display: block; font-weight: 600; margin: 18px 0 6px; }
+  input { width: 100%; box-sizing: border-box; padding: 12px 14px; border-radius: 12px; border: 1px solid rgba(255,255,255,.18); background: rgba(0,0,0,.35); color: #fff; font: 15px ui-monospace, monospace; }
+  button { margin-top: 14px; width: 100%; padding: 13px; border: 0; border-radius: 12px; background: linear-gradient(90deg, #38bdf8, #a78bfa); color: #06101f; font-weight: 700; font-size: 16px; cursor: pointer; }
+  button:disabled { opacity: .6; cursor: wait; }
+  code { font: 14px ui-monospace, monospace; background: rgba(255,255,255,.08); padding: 2px 6px; border-radius: 6px; color: #e0f2fe; }
+  details { margin-top: 18px; color: #b8c1d4; font-size: 14.5px; }
+  summary { cursor: pointer; color: #e9edf6; }
+  #msg { min-height: 22px; margin-top: 12px; font-size: 14.5px; }
+  #msg.err { color: #fb7185; } #msg.ok { color: #4ade80; }
+  a { color: #7dd3fc; }
+</style>
+</head>
+<body>
+<form class="card" id="form" autocomplete="off">
+  <div class="kicker">Reachy Mini Meetings · Midterm</div>
+  <h1>Team only</h1>
+  <p>Only collaborators of <code>StevenJobins/reachy-mini-meetings</code> can open this presentation. Unlock it with your GitHub account.</p>
+  <label for="token">GitHub token</label>
+  <input id="token" type="password" placeholder="gho_… or ghp_…" spellcheck="false">
+  <button id="go" type="submit">Unlock</button>
+  <div id="msg"></div>
+  <details>
+    <summary>Where do I get a token?</summary>
+    <p style="margin-top:10px">Easiest, with the GitHub CLI: run <code>gh auth token</code> in a terminal and paste the output.</p>
+    <p>Or create a classic token with the <code>repo</code> scope (fine-grained tokens cannot read a repository of another user): <a href="https://github.com/settings/tokens/new?scopes=repo&amp;description=Reachy%20midterm%20deck" target="_blank" rel="noopener">github.com/settings/tokens/new</a>.</p>
+    <p>The token is only sent to <code>api.github.com</code> to read the deck key, and is not stored. The key stays in this tab until you close it.</p>
+  </details>
+</form>
+<script type="module">
+// The deck is in the public repo only encrypted (deck.enc, AES-256-GCM, presentation/midterm/build.py). Its key is the
+// repository Actions variable MIDTERM_DECK_KEY, which the GitHub API only returns to collaborators of the repo.
+const REPO = "StevenJobins/reachy-mini-meetings", VAR = "MIDTERM_DECK_KEY", AAD = "reachy-midterm-v1";
+const SS_KEY = "reachy-midterm-key";
+const $ = (id) => document.getElementById(id);
+const msg = (text, cls = "") => { $("msg").textContent = text; $("msg").className = cls; };
+const b64 = (s) => Uint8Array.from(atob(s), (c) => c.charCodeAt(0));
+
+async function open(keyB64) {
+  const data = new Uint8Array(await (await fetch("deck.enc", { cache: "no-store" })).arrayBuffer());
+  const key = await crypto.subtle.importKey("raw", b64(keyB64), "AES-GCM", false, ["decrypt"]);
+  const plain = await crypto.subtle.decrypt({ name: "AES-GCM", iv: data.slice(0, 12), additionalData: new TextEncoder().encode(AAD) }, key, data.slice(12));
+  try { sessionStorage.setItem(SS_KEY, keyB64); } catch {}
+  const html = new TextDecoder().decode(plain);
+  document.open(); document.write(html); document.close();
+}
+
+async function gh(path, token) {
+  const r = await fetch(`https://api.github.com${path}`, { headers: { Authorization: `Bearer ${token}`, Accept: "application/vnd.github+json" }, cache: "no-store" });
+  return { status: r.status, body: r.ok ? await r.json() : null };
+}
+
+$("form").onsubmit = async (e) => {
+  e.preventDefault();
+  let token = $("token").value.trim();
+  $("token").value = "";
+  if (!token) { msg("Paste a GitHub token first.", "err"); return; }
+  $("go").disabled = true; msg("Checking your GitHub account…");
+  try {
+    const me = await gh("/user", token);
+    if (me.status === 401) throw new Error("GitHub does not accept this token (expired or mistyped).");
+    const login = me.body?.login ?? "?";
+    const v = await gh(`/repos/${REPO}/actions/variables/${VAR}`, token);
+    token = null;
+    if (v.status === 403 || v.status === 404) throw new Error(`@${login} has no access: only collaborators of ${REPO} can open this (classic tokens need the repo scope).`);
+    if (!v.body?.value) throw new Error(`GitHub answered ${v.status}; try again.`);
+    msg(`Signed in as @${login}. Decrypting…`, "ok");
+    await open(v.body.value);
+  } catch (err) {
+    msg(err?.name === "OperationError" ? "The key does not fit the deck (deck.enc was built with another key)." : (err?.message ?? String(err)), "err");
+    $("go").disabled = false;
+  } finally { token = null; }
+};
+
+let saved = null;
+try { saved = sessionStorage.getItem(SS_KEY); } catch {}
+if (saved) open(saved).catch(() => { try { sessionStorage.removeItem(SS_KEY); } catch {} msg("Please unlock again.", "err"); });
+</script>
+</body>
+</html>
