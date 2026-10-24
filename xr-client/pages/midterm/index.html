@@ -153,16 +153,16 @@
 
   /* ---------- slide 7: open-television ---------- */
   .otv { display: grid; grid-template-columns: 560px 1fr; gap: 40px; }
-  .loop { width: 100%; height: 340px; margin-top: 20px; }
+  .loop { width: 100%; height: 400px; margin-top: 0; }
   table.cmp { width: 100%; border-collapse: separate; border-spacing: 0; font-size: 22px; }
   table.cmp th, table.cmp td { padding: 26px 14px; border-bottom: 1px solid var(--line); text-align: left; vertical-align: top; }
   table.cmp th { font: 600 15px var(--mono); color: var(--muted); letter-spacing: .04em; }
   table.cmp td:first-child { color: var(--muted); font-size: 16px; width: 180px; }
   .yes { color: var(--pose); font-weight: 700; } .no { color: #fb7185; font-weight: 700; }
-  .take { display: grid; gap: 18px; margin-top: 26px; }
-  .take div { display: grid; grid-template-columns: 34px 1fr; gap: 10px; font-size: 22px; line-height: 1.38; color: #d5dceb; }
+  .take { display: grid; gap: 30px; margin-top: 26px; }
+  .take div { display: grid; grid-template-columns: 44px 1fr; gap: 12px; font-size: 29px; line-height: 1.38; color: #d5dceb; }
   .take b { color: #fff; }
-  .take .n { width: 30px; height: 30px; border-radius: 50%; display: grid; place-items: center; font: 700 14px var(--mono); background: rgba(167,139,250,.18); color: var(--depth); }
+  .take .n { width: 38px; height: 38px; border-radius: 50%; display: grid; place-items: center; font: 700 14px var(--mono); background: rgba(167,139,250,.18); color: var(--depth); }
 
   /* ---------- slide 8: next steps ---------- */
   .next { display: grid; grid-template-columns: 1fr 1fr; gap: 26px; }
@@ -176,7 +176,6 @@
   .why { display: grid; gap: 8px; }
   .why div { font-size: 19px; line-height: 1.38; color: #d5dceb; padding-left: 22px; position: relative; }
   .why div::before { content: "→"; position: absolute; left: 0; color: var(--c, var(--video)); font-weight: 700; }
-  #splat { width: 100%; height: 300px; border-radius: 14px; display: block; background: #050814; border: 1px solid var(--line); margin: 16px 0 14px; }
   .timeline { position: relative; margin-top: 22px; height: 74px; }
   .timeline .bar { position: absolute; left: 0; right: 0; top: 18px; height: 4px; background: rgba(255,255,255,.08); border-radius: 4px; }
   .timeline .fill { position: absolute; left: 0; top: 18px; height: 4px; width: 0; background: linear-gradient(90deg, var(--video), var(--depth), var(--hot)); border-radius: 4px; }
@@ -185,6 +184,29 @@
   .ms { position: absolute; top: 0; transform: translateX(-50%); text-align: center; width: 190px; }
   .ms i { display: block; width: 14px; height: 14px; margin: 13px auto 8px; border-radius: 50%; background: var(--bg); border: 3px solid var(--c); }
   .ms span { font: 600 13.5px/1.25 var(--mono); color: #cfd6e6; }
+
+  /* ---------- VR view ---------- */
+  #vr { width: 1420px; height: 600px; border-radius: 22px; border: 1px solid var(--line); display: block; background: #000; }
+  .vr-keys { display: flex; gap: 14px; margin-top: 16px; }
+  .vr-keys .chip { font-size: 15px; padding: 9px 14px; }
+  /* ---------- next steps (3 cards) ---------- */
+  .next3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 22px; }
+  .next3 .card { padding: 30px 28px; min-height: 470px; }
+  .next3 h3 { font-size: 30px; }
+  .bars { display: grid; gap: 16px; margin: 26px 0 26px; }
+  .bars div { display: grid; grid-template-columns: 170px 1fr 74px; align-items: center; gap: 10px; font: 600 16px var(--mono); color: #cfd6e6; }
+  .bars .track { height: 24px; border-radius: 99px; background: rgba(255,255,255,.06); overflow: hidden; }
+  .bars .track i { display: block; height: 100%; width: 0; border-radius: 99px; background: linear-gradient(90deg, var(--video), #7dd3fc); transition: width 1.2s cubic-bezier(.2,.8,.2,1); }
+  .bars .track i.q { background: repeating-linear-gradient(90deg, rgba(56,189,248,.35) 0 10px, rgba(56,189,248,.12) 10px 20px); }
+  .people { display: grid; grid-template-columns: repeat(5, 1fr); gap: 14px; margin: 26px 0 26px; }
+  .people i { height: 64px; border-radius: 14px; background: rgba(255,255,255,.06); border: 1px solid var(--line); display: grid; place-items: center; font: 700 15px var(--mono); color: var(--muted); transition: background .4s, color .4s, border-color .4s; }
+  .people i.a { background: rgba(255,159,46,.18); border-color: rgba(255,159,46,.5); color: #ffd19a; }
+  .people i.b { background: rgba(56,189,248,.16); border-color: rgba(56,189,248,.45); color: #bae6fd; }
+  .port { position: relative; height: 176px; margin: 26px 0 26px; }
+  .port .lane { position: absolute; top: 0; bottom: 0; width: 44%; border: 1px dashed var(--line); border-radius: 12px; }
+  .port .lane span { position: absolute; top: 8px; left: 10px; font: 600 12px var(--mono); color: var(--muted); }
+  .port .mod { font-size: 15px; padding: 6px 10px; }
+  .next3 .why div { font-size: 21px; }
 
   /* ---------- slide 9: thanks ---------- */
   #s-end .left { position: absolute; left: 90px; top: 230px; width: 820px; }
@@ -264,7 +286,7 @@
 </section>
 
 <!-- ======================================================= 3 ARCHITECTURE -->
-<section class="slide" id="s-arch" data-t="35">
+<section class="slide" id="s-arch" data-t="30">
   <div class="kicker a">How it is built today</div>
   <h2 class="a" style="--d:.1s">One link in the headset. No install.</h2>
   <svg id="arch" viewBox="0 0 1500 640" class="a fade" style="--d:.2s">
@@ -332,6 +354,20 @@
   <aside class="notes">Dominic, ~35 s. The headset only opens a web page — no install. Through Pollen's connection the robot laptop streams video and audio, the headset sends its head pose. Our own backend on the laptop turns room speech into translated bubbles, finds who speaks, and lets Reachy speak for you.</aside>
 </section>
 
+<!-- ======================================================= VR VIEW -->
+<section class="slide" id="s-vr" data-t="25">
+  <div class="kicker a">In the headset today</div>
+  <h2 class="a" style="--d:.1s">What you see — and the menu</h2>
+  <canvas id="vr" class="a fade" style="--d:.2s" width="2840" height="1200"></canvas>
+  <div class="vr-keys">
+    <span class="chip a" style="--d:.4s"><span class="dot" style="background:var(--video)"></span>live video, pinned in the room</span>
+    <span class="chip a" style="--d:.5s"><span class="dot" style="background:#9ca3af"></span>room scan around it</span>
+    <span class="chip a" style="--d:.6s"><span class="dot" style="background:#fff"></span>translated bubble above the speaker</span>
+    <span class="chip a" style="--d:.7s"><span class="dot" style="background:var(--lang)"></span>dock: mic, talk, laugh, translate, notes, more</span>
+  </div>
+  <aside class="notes">Dominic or Simon, ~25 s. This is the headset view (simulated with the app's real dock drawing code). The live video is pinned in the room, the room scan fills the rest. Bubbles appear above whoever speaks, original and translation. The dock below works like a video call: mic in the middle, "Talk" to signal you want to speak, "Laugh", "Translate" for Reachy speaking for you, notes, and "More" for the view and room-scan settings.</aside>
+</section>
+
 <!-- ======================================================= 4 LATENCY -->
 <section class="slide" id="s-lat" data-t="30">
   <div class="kicker a">Problem I · latency</div>
@@ -375,7 +411,7 @@
 </section>
 
 <!-- ======================================================= 5 REPROJECTION -->
-<section class="slide" id="s-rp" data-t="40">
+<section class="slide" id="s-rp" data-t="35">
   <div class="kicker a">How we hide it today</div>
   <h2 class="a" style="--d:.1s">Keep the picture <span class="grad">where it belongs in the room</span></h2>
   <div class="rp">
@@ -403,7 +439,7 @@
 </section>
 
 <!-- ======================================================= 6 STATUS -->
-<section class="slide" id="s-status" data-t="25">
+<section class="slide" id="s-status" data-t="20">
   <div class="kicker a">Where we are</div>
   <h2 class="a" style="--d:.1s">Running end to end</h2>
   <div class="wps">
@@ -424,74 +460,67 @@
 
 <!-- ======================================================= 7 OPEN-TELEVISION -->
 <section class="slide" id="s-otv" data-t="20">
-  <div class="kicker a">Inspiration · related work</div>
+  <div class="kicker a">Inspiration</div>
   <h2 class="a" style="--d:.1s">Open-TeleVision <span class="muted" style="font-size:28px;font-weight:500">Cheng et al., CoRL 2024</span></h2>
-  <div class="otv">
-    <div>
-      <svg class="loop a" viewBox="0 0 560 250" style="--d:.2s">
-        <rect x="10" y="40" width="150" height="170" rx="18" fill="rgba(255,255,255,.05)" stroke="rgba(255,255,255,.16)"/>
-        <text x="85" y="78" text-anchor="middle" fill="#fff" font-family="Space Grotesk" font-weight="600" font-size="19">Operator</text>
-        <text x="85" y="104" text-anchor="middle" fill="#8d97ad" font-size="14">Vision Pro · WebXR</text>
-        <text x="85" y="150" text-anchor="middle" font-size="40">🥽</text>
-        <rect x="400" y="40" width="150" height="170" rx="18" fill="rgba(255,255,255,.05)" stroke="rgba(255,255,255,.16)"/>
-        <text x="475" y="78" text-anchor="middle" fill="#fff" font-family="Space Grotesk" font-weight="600" font-size="19">Humanoid</text>
-        <text x="475" y="104" text-anchor="middle" fill="#8d97ad" font-size="14">active neck + stereo cam</text>
-        <text x="475" y="150" text-anchor="middle" font-size="40">🤖</text>
-        <path d="M165 95 C 260 60, 300 60, 395 95" stroke="#4ade80" stroke-width="3" fill="none" stroke-dasharray="7 7"><animate attributeName="stroke-dashoffset" from="0" to="-28" dur=".6s" repeatCount="indefinite"/></path>
-        <path d="M395 160 C 300 195, 260 195, 165 160" stroke="#38bdf8" stroke-width="3" fill="none" stroke-dasharray="7 7"><animate attributeName="stroke-dashoffset" from="0" to="-28" dur=".6s" repeatCount="indefinite"/></path>
-        <text x="280" y="58" text-anchor="middle" fill="#4ade80" font-family="JetBrains Mono" font-size="13">head · wrist · hand poses</text>
-        <text x="280" y="214" text-anchor="middle" fill="#38bdf8" font-family="JetBrains Mono" font-size="13">stereo video</text>
-        <circle cx="280" cy="128" r="30" fill="rgba(167,139,250,.16)" stroke="#a78bfa"/><text x="280" y="134" text-anchor="middle" fill="#ddd6fe" font-family="JetBrains Mono" font-weight="700" font-size="16">60 Hz</text>
-      </svg>
-      <div class="take">
-        <div class="a" style="--d:.4s"><span class="n">1</span><span><b>Same core idea:</b> a camera head that follows yours.</span></div>
-        <div class="a" style="--d:.55s"><span class="n">2</span><span><b>Their user study</b> (stereo vs mono) is our template: reprojection on vs off.</span></div>
-      </div>
+  <div class="otv" style="grid-template-columns:680px 1fr;align-items:center;min-height:600px">
+    <svg class="loop a" viewBox="0 0 560 250" style="--d:.2s">
+      <rect x="10" y="40" width="150" height="170" rx="18" fill="rgba(255,255,255,.05)" stroke="rgba(255,255,255,.16)"/>
+      <text x="85" y="78" text-anchor="middle" fill="#fff" font-family="Space Grotesk" font-weight="600" font-size="19">Operator</text>
+      <text x="85" y="104" text-anchor="middle" fill="#8d97ad" font-size="14">Vision Pro · WebXR</text>
+      <text x="85" y="150" text-anchor="middle" font-size="40">🥽</text>
+      <rect x="400" y="40" width="150" height="170" rx="18" fill="rgba(255,255,255,.05)" stroke="rgba(255,255,255,.16)"/>
+      <text x="475" y="78" text-anchor="middle" fill="#fff" font-family="Space Grotesk" font-weight="600" font-size="19">Humanoid</text>
+      <text x="475" y="104" text-anchor="middle" fill="#8d97ad" font-size="14">neck + stereo camera</text>
+      <text x="475" y="150" text-anchor="middle" font-size="40">🤖</text>
+      <path d="M165 95 C 260 60, 300 60, 395 95" stroke="#4ade80" stroke-width="3" fill="none" stroke-dasharray="7 7"><animate attributeName="stroke-dashoffset" from="0" to="-28" dur=".6s" repeatCount="indefinite"/></path>
+      <path d="M395 160 C 300 195, 260 195, 165 160" stroke="#38bdf8" stroke-width="3" fill="none" stroke-dasharray="7 7"><animate attributeName="stroke-dashoffset" from="0" to="-28" dur=".6s" repeatCount="indefinite"/></path>
+      <text x="280" y="58" text-anchor="middle" fill="#4ade80" font-family="JetBrains Mono" font-size="13">head + hand poses</text>
+      <text x="280" y="214" text-anchor="middle" fill="#38bdf8" font-family="JetBrains Mono" font-size="13">2 × 480×640 video</text>
+      <circle cx="280" cy="128" r="30" fill="rgba(167,139,250,.16)" stroke="#a78bfa"/><text x="280" y="134" text-anchor="middle" fill="#ddd6fe" font-family="JetBrains Mono" font-weight="700" font-size="16">60 Hz</text>
+    </svg>
+    <div class="take" style="margin-top:0">
+      <div class="a" style="--d:.35s"><span class="n">1</span><span><b>Same core idea:</b> a camera head that follows yours.</span></div>
+      <div class="a" style="--d:.5s"><span class="n">2</span><span><b>Small video, fast loop:</b> 480×640 at 60 Hz. We send 1080p → test 720p.</span></div>
+      <div class="a" style="--d:.65s"><span class="n">3</span><span><b>Their user study</b> (stereo vs mono) → ours: reprojection on vs off.</span></div>
     </div>
-    <table class="cmp a" style="--d:.3s">
-      <tr><th></th><th>Open-TeleVision</th><th style="color:#7dd3fc">Reachy Mini Meetings</th></tr>
-      <tr><td>Goal</td><td>manipulation, robot-learning data</td><td>attending a meeting</td></tr>
-      <tr><td>Vision</td><td>stereo, 2 × 480 × 640</td><td>mono, wide-angle</td></tr>
-      <tr><td>Hides latency</td><td><span class="muted">–</span> not their focus (60 Hz loop)</td><td><span class="yes">✓</span> world-locked reprojection</td></tr>
-      <tr><td>Language</td><td><span class="no">✗</span></td><td><span class="yes">✓</span> bubbles + robot voice</td></tr>
-      <tr><td>Depth</td><td><span class="yes">✓</span> stereo</td><td><span class="yes">◐</span> learned depth</td></tr>
-    </table>
   </div>
-  <aside class="notes">Simon, ~20 s. Open-TeleVision inspired us: same idea, a camera head that follows the operator. They target manipulation with stereo; we target meetings, so latency hiding and language matter. We borrow their user-study design: reprojection on vs off.</aside>
+  <aside class="notes">Simon, ~20 s. Open-TeleVision does what we do for robot manipulation: the camera head follows the operator. Two things we take: they stream small images at a fast 60 Hz loop — we send 1080p, so we will test 720p. And their user study compares stereo and mono; ours compares reprojection on and off.</aside>
 </section>
 
 <!-- ======================================================= 8 NEXT STEPS -->
 <section class="slide" id="s-next" data-t="35">
   <div class="kicker a">Next steps</div>
-  <h2 class="a" style="--d:.1s">Next: <span class="grad">native app</span> and <span class="grad">Gaussian splats</span></h2>
-  <div class="next">
+  <h2 class="a" style="--d:.1s">Measure, test with people, then go native</h2>
+  <div class="next3">
     <div class="card a" style="--d:.2s">
-      <h3><span style="color:var(--pose)">①</span> Chrome WebXR → Unity (OpenXR, Android XR)</h3>
-      <div class="mig" id="mig">
-        <div class="col"><div class="ttl">TODAY · JS</div></div><div></div><div class="col"><div class="ttl">UNITY · C#</div></div>
+      <h3><span style="color:var(--video)">①</span> Latency study</h3>
+      <div class="bars" id="bars">
+        <div><span>1080p VP8 · today</span><span class="track"><i data-w="78"></i></span><span>233 ms</span></div>
+        <div><span>720p</span><span class="track"><i class="q" data-w="60"></i></span><span>?</span></div>
+        <div><span>H.264 hardware</span><span class="track"><i class="q" data-w="48"></i></span><span>?</span></div>
+        <div><span>in the headset</span><span class="track"><i class="q" data-w="88"></i></span><span>?</span></div>
       </div>
-      <div class="why" style="--c:var(--pose)">
-        <div><b>Faster video path:</b> in Chrome, frame copies cost us half the frame rate (72 → 34 fps).</div>
-        <div><b>Face + eye tracking</b> for laughing and gaze — not available in WebXR.</div>
-      </div>
+      <div class="why" style="--c:var(--video)"><div>Glass to glass in the headset, over Wi-Fi.</div><div>Head vs picture error, reprojection on vs off.</div></div>
     </div>
     <div class="card a" style="--d:.35s">
-      <h3><span style="color:var(--depth)">②</span> Room scan → 3D Gaussian Splatting</h3>
-      <canvas id="splat" width="1300" height="600"></canvas>
-      <div class="why" style="--c:var(--depth)">
-        <div><b>From our room scan:</b> we already know every camera pose.</div>
-        <div><b>Result:</b> a photoreal 3D room behind the live video.</div>
-      </div>
+      <h3><span style="color:var(--lang)">②</span> User study</h3>
+      <div class="people" id="people"></div>
+      <div class="why" style="--c:var(--lang)"><div>8–10 people, each tries both versions.</div><div>Follow a talk, find the speaker. Measure time, sickness, presence.</div></div>
+    </div>
+    <div class="card a" style="--d:.5s">
+      <h3><span style="color:var(--pose)">③</span> Unity prototype</h3>
+      <div class="port" id="port"><div class="lane" style="left:0"><span>WEB · JS</span></div><div class="lane" style="right:0"><span>UNITY · C#</span></div></div>
+      <div class="why" style="--c:var(--pose)"><div>Faster video: in Chrome, frame copies halved our fps.</div><div>Face + eye tracking for laugh and gaze.</div></div>
     </div>
   </div>
   <div class="timeline a" style="--d:.5s">
     <div class="bar"></div><div class="fill"></div>
-    <div class="ms" style="left:6%;--c:var(--video)"><i></i><span>latency in<br>the headset</span></div>
+    <div class="ms" style="left:6%;--c:var(--video)"><i></i><span>latency<br>study</span></div>
     <div class="ms" style="left:36%;--c:var(--pose)"><i></i><span>Unity<br>prototype</span></div>
-    <div class="ms" style="left:65%;--c:var(--depth)"><i></i><span>splat room</span></div>
-    <div class="ms" style="left:94%;--c:var(--hot)"><i></i><span>user study<br>+ demo</span></div>
+    <div class="ms" style="left:65%;--c:var(--lang)"><i></i><span>user<br>study</span></div>
+    <div class="ms" style="left:94%;--c:var(--hot)"><i></i><span>live demo<br>meeting</span></div>
   </div>
-  <aside class="notes">Simon, ~35 s. Two next steps. One: move from Chrome to Unity — in the browser, frame copies halved our frame rate, and we want face and eye tracking. Our logic is already separate from rendering, so the port is mostly the rendering. Two: Gaussian splatting — our room scan already knows every camera pose, so we can train a photoreal 3D room and show it behind the live video. Then user study and demo.</aside>
+  <aside class="notes">Simon, ~35 s. First we measure: latency in the headset over Wi-Fi, 720p instead of 1080p, hardware H.264 encoding, and how far the picture is off your head direction with and without reprojection. Then a user study: 8 to 10 people, each tries both, we measure time, sickness and presence. In parallel a Unity prototype: Chrome's frame copies halved our frame rate, and Unity gives us face and eye tracking. The logic ports one to one; we switch only if the numbers say so. Then the live demo.</aside>
 </section>
 
 <!-- ======================================================= 9 END -->
@@ -518,6 +547,7 @@
 <div id="notes"><div class="meta"><span id="notes-slide"></span><span id="notes-time"></span></div><div id="notes-text"></div></div>
 
 <script type="module">
+import { drawDockButton, drawMicButton } from "../icons.js";   // the app's own dock drawing (VR view slide)
 const $ = (s, r = document) => r.querySelector(s);
 const slides = [...document.querySelectorAll(".slide")];
 const deck = $("#deck");
@@ -769,71 +799,123 @@ leave["s-end"] = () => robot?.hide();
   leave["s-rp"] = () => cancelAnimationFrame(raf);
 }
 
-/* ---------------- slide 8: module migration + splats ---------------- */
+/* ---------------- next steps: bars, study participants, port ---------------- */
 {
-  const mig = $("#mig");
-  const mods = [["pose.js", ""], ["camera.js", ""], ["speaker.js", ""], ["gestures.js", ""], ["clocksync.js", ""], ["scene.js · UI", "rw"], ["WebRTC client", "rw"]];
-  const els = mods.map(([n, k], i) => { const d = document.createElement("div"); d.className = `mod ${k}`; d.textContent = n; mig.append(d); return d; });
-  const keep = document.createElement("div"); keep.className = "mod keep"; keep.textContent = "robot daemon · backend · protocol: unchanged"; mig.append(keep);
+  const bars = [...document.querySelectorAll("#bars i")];
+  const people = $("#people"); for (let i = 0; i < 10; i++) { const d = document.createElement("i"); d.textContent = `P${i + 1}`; people.append(d); }
+  const port = $("#port");
+  const mods = ["pose.js", "camera.js", "speaker.js", "gestures.js"];
+  const chips = mods.map((n, i) => { const d = document.createElement("div"); d.className = "mod"; d.textContent = n; d.style.top = `${34 + i * 34}px`; port.append(d); return d; });
   let timers = [];
-  const place = (moved) => els.forEach((d, i) => {
-    const col = i < 5 ? (moved > i ? 1 : 0) : (moved > i ? 1 : 0), y = 34 + (i % 7) * 31;
-    d.style.transition = "left .9s cubic-bezier(.2,.8,.2,1), top .9s, opacity .5s";
-    d.style.left = col ? "calc(50% + 50px)" : "12px"; d.style.top = `${y}px`;
-    if (i >= 5) d.textContent = moved > i ? `${mods[i][0].replace(" · UI", "").replace("scene.js", "rendering + UI")} (rewrite)` : mods[i][0];
-  });
-  keep.style.left = "12px"; keep.style.top = "256px"; keep.style.position = "absolute";
-  // splats
-  const cv = $("#splat"), cx = cv.getContext("2d"), SW = cv.width, SH = cv.height;
-  const room = document.createElement("canvas"); room.width = 260; room.height = 120;
-  { const c = room.getContext("2d");
-    const wall = c.createLinearGradient(0, 0, 0, 120); wall.addColorStop(0, "#475569"); wall.addColorStop(.6, "#334155"); wall.addColorStop(.6, "#5b4636"); wall.addColorStop(1, "#3b2a1f");
-    c.fillStyle = wall; c.fillRect(0, 0, 260, 120);
-    c.fillStyle = "#bae6fd"; c.fillRect(176, 12, 70, 44); c.fillStyle = "#e2e8f0"; c.fillRect(16, 16, 74, 36);
-    c.fillStyle = "#166534"; c.beginPath(); c.ellipse(160, 58, 10, 18, 0, 0, 7); c.fill();
-    for (const [x, s, h] of [[70, "#f472b6", "#fde68a"], [120, "#38bdf8", "#7c2d12"], [200, "#a78bfa", "#111827"]]) {
-      c.fillStyle = s; c.beginPath(); c.roundRect(x - 15, 56, 30, 34, 10); c.fill(); c.fillStyle = "#f5d0b5"; c.beginPath(); c.arc(x, 46, 10, 0, 7); c.fill();
-      c.fillStyle = h; c.beginPath(); c.arc(x, 42, 10.5, Math.PI, 0); c.fill(); }
-    c.fillStyle = "#78716c"; c.fillRect(0, 84, 260, 8);
-  }
-  const px = room.getContext("2d").getImageData(0, 0, 260, 120).data;
-  const N = 4200, sp = [];
-  for (let i = 0; i < N; i++) {
-    const u = Math.random() * 260, v = Math.random() * 120, k = (Math.floor(v) * 260 + Math.floor(u)) * 4;
-    const depth = v > 72 ? 0.2 + (v - 72) / 60 : 1 - Math.abs(u - 130) / 400;   // floor near, wall far
-    sp.push({ tx: u / 260, ty: v / 120, z: depth, col: `rgba(${px[k]},${px[k + 1]},${px[k + 2]},`, s: 4 + Math.random() * 8, rot: Math.random() * Math.PI, asp: 0.35 + Math.random() * 0.6,
-      sx: Math.random(), sy: Math.random(), delay: Math.random() * 0.6 });
-  }
-  let raf = 0, t0 = 0;
-  const draw = (ms) => {
-    const t = (ms - t0) / 1000;
-    cx.fillStyle = "#050814"; cx.fillRect(0, 0, SW, SH);
-    const cyc = t % 9, assemble = Math.min(1, Math.max(0, (cyc - 0.2) / 2.6));
-    const par = Math.sin(t * 0.9) * 26;
-    for (const p of sp) {
-      const a = Math.min(1, Math.max(0, (assemble - p.delay * 0.4) / 0.6)), e = 1 - Math.pow(1 - a, 3);
-      const x = (p.sx + (p.tx - p.sx) * e) * SW + par * p.z * e, y = (p.sy + (p.ty - p.sy) * e) * SH;
-      cx.fillStyle = p.col + (0.10 + 0.55 * e) + ")";
-      cx.beginPath(); cx.ellipse(x, y, p.s * (1.6 - 0.6 * e), p.s * p.asp, p.rot * (1 - e) + 0.2, 0, 7); cx.fill();
-    }
-    if (assemble >= 1) {   // the live video window in front of the splat room
-      const fade = Math.min(1, (cyc - 2.8) / 0.8), w = SW * 0.34, h = SH * 0.5, x = SW / 2 - w / 2 + par * 0.15, y = SH * 0.2;
-      cx.globalAlpha = fade;
-      cx.drawImage(room, 260 * (x / SW), 120 * (y / SH), 260 * (w / SW), 120 * (h / SH), x, y, w, h);
-      cx.strokeStyle = "#38bdf8"; cx.lineWidth = 4; cx.strokeRect(x, y, w, h);
-      cx.fillStyle = "#38bdf8"; cx.font = "600 26px JetBrains Mono"; cx.fillText("live video", x + 12, y - 12);
-      cx.globalAlpha = 1;
-    }
-    cx.fillStyle = "rgba(167,139,250,.9)"; cx.font = "600 24px JetBrains Mono";
-    cx.fillText(assemble < 1 ? "optimising Gaussians…" : "splat room · parallax as you move", 22, SH - 22);
-    raf = requestAnimationFrame(draw);
-  };
   enter["s-next"] = () => {
-    timers.forEach(clearTimeout); timers = []; place(0);
-    for (let i = 1; i <= mods.length; i++) timers.push(setTimeout(() => place(i), 700 + i * 380));
-    cancelAnimationFrame(raf); t0 = performance.now(); raf = requestAnimationFrame(draw);
+    timers.forEach(clearTimeout); timers.forEach(clearInterval); timers = [];
+    bars.forEach((b) => (b.style.width = "0"));
+    timers.push(setTimeout(() => bars.forEach((b) => (b.style.width = `${b.dataset.w}%`)), 500));
+    const ps = [...people.children]; ps.forEach((p) => (p.className = ""));
+    let k = 0; timers.push(setInterval(() => { ps.forEach((p, i) => (p.className = i <= k % 12 ? ((i + Math.floor(k / 12)) % 2 ? "a" : "b") : "")); k++; }, 260));
+    chips.forEach((c) => { c.style.transition = "none"; c.style.left = "10px"; });
+    chips.forEach((c, i) => timers.push(setTimeout(() => { c.style.transition = "left .9s cubic-bezier(.2,.8,.2,1)"; c.style.left = "calc(56% + 10px)"; }, 900 + i * 400)));
   };
-  leave["s-next"] = () => { timers.forEach(clearTimeout); cancelAnimationFrame(raf); };
+  leave["s-next"] = () => { timers.forEach(clearTimeout); timers.forEach(clearInterval); timers = []; };
+}
+
+/* ---------------- VR view: simulated headset view with the app's real dock (icons.js) ---------------- */
+{
+  const cv = $("#vr"), cx = cv.getContext("2d"), W = 1420, H = 600, PXD = 14.2;   // px per degree; the view shows 100°
+  cx.scale(2, 2);
+  const RW = 200 * PXD;   // the room covers -100°..+100°
+  const room = document.createElement("canvas"); room.width = RW; room.height = H;
+  const grey = document.createElement("canvas"); grey.width = RW; grey.height = H;
+  const X = (az) => (az + 100) * PXD;
+  { const c = room.getContext("2d");
+    const wall = c.createLinearGradient(0, 0, 0, H); wall.addColorStop(0, "#3b4a5e"); wall.addColorStop(.66, "#243041"); wall.addColorStop(.66, "#4a3527"); wall.addColorStop(1, "#2a1d14");
+    c.fillStyle = wall; c.fillRect(0, 0, RW, H);
+    for (let az = -100; az < 100; az += 25) { c.fillStyle = "rgba(255,255,255,.035)"; c.fillRect(X(az), 0, 4, H * .66); }
+    c.fillStyle = "#e5e7eb"; c.fillRect(X(-78), 70, 420, 190); c.fillStyle = "#64748b"; c.font = "600 30px Inter"; c.fillText("Agenda", X(-74), 116);
+    c.fillStyle = "#94a3b8"; c.font = "24px Inter"; ["1  Budget", "2  Demo", "3  Next steps"].forEach((t, i) => c.fillText(t, X(-74), 160 + i * 34));
+    const sky = c.createLinearGradient(0, 60, 0, 280); sky.addColorStop(0, "#7dd3fc"); sky.addColorStop(1, "#e0f2fe");
+    c.fillStyle = sky; c.fillRect(X(58), 60, 460, 220); c.fillStyle = "#1f2937"; c.fillRect(X(58) + 226, 60, 8, 220);
+    c.fillStyle = "#166534"; c.beginPath(); c.ellipse(X(84), 300, 40, 66, 0, 0, 7); c.fill(); c.fillStyle = "#78350f"; c.fillRect(X(84) - 22, 350, 44, 50);
+    c.fillStyle = "#6b5545"; c.fillRect(0, 430, RW, 26);
+    for (const [az, shirt, hair] of [[-34, "#f472b6", "#fde68a"], [-10, "#38bdf8", "#7c2d12"], [14, "#a78bfa", "#111827"], [38, "#4ade80", "#b45309"]]) {
+      const x = X(az);
+      c.fillStyle = shirt; c.beginPath(); c.roundRect(x - 62, 330, 124, 130, 44); c.fill();
+      c.fillStyle = "#f2c7a5"; c.beginPath(); c.arc(x, 290, 42, 0, 7); c.fill();
+      c.fillStyle = hair; c.beginPath(); c.arc(x, 276, 44, Math.PI, 0); c.fill();
+    }
+    const g = grey.getContext("2d"); g.filter = "grayscale(1) brightness(.5)"; g.drawImage(room, 0, 0);
+  }
+  // dock buttons, drawn once with the app's code (256 x 320 like scene.js)
+  const btn = (draw) => { const c = document.createElement("canvas"); c.width = 256; c.height = 320; draw(c.getContext("2d"), 256, 320); return c; };
+  const main = [["hand", "Talk"], ["laugh", "Laugh"], ["languages", "Translate"], ["message-square", "Both"], ["notebook-pen", "Notes", true], ["volume-2", "Sound", true], ["ellipsis", "More"]];
+  const more = [["audio-lines", "Viktor"], ["bot", "Reachy: auto"], ["message-circle", "Bubbles: en"], ["globe", "World-locked"], ["scan-line", "Scan room"], ["house", "Room on", true], ["rotate-ccw", "Recenter"], ["x", "Exit VR"]];
+  const mk = ([icon, text, active], hover = false) => btn((c, w, h) => drawDockButton(c, w, h, { icon, text, active: !!active, hover }));
+  const mainImg = main.map((b) => [mk(b), mk(b, true)]), moreImg = more.map((b) => [mk(b), mk(b, true)]);
+  const lessImg = [mk(["x", "Less"]), mk(["x", "Less"], true)];
+  const micImg = btn((c, w, h) => drawMicButton(c, w, h, false, false, "Mic on"));
+  const BW = 74, BH = 92, MW = 96, MH = 120, STEP = 90, DY = 452;
+  const layout = (open) => {   // like layoutDock() in scene.js: mic in the middle, the rest left / right, "More" row below
+    const pos = []; const left = main.slice(0, 3), right = main.slice(3), gap = (MW + BW) / 2 + 16;
+    left.forEach((_, i) => pos.push({ k: "m", i, x: W / 2 - gap - (left.length - 1 - i) * STEP, y: DY }));
+    right.forEach((_, i) => pos.push({ k: "m", i: 3 + i, x: W / 2 + gap + i * STEP, y: DY }));
+    if (open) more.forEach((_, i) => pos.push({ k: "x", i, x: W / 2 + (i - (more.length - 1) / 2) * STEP, y: DY + 104 }));
+    return pos;
+  };
+  // pointer script: [time s, target {k, i} or null, action]
+  const script = [[0, null], [1.2, { k: "m", i: 0 }], [2.0, { k: "m", i: 0 }, "click"], [3.6, { k: "m", i: 2 }], [4.6, { k: "m", i: 6 }], [5.3, { k: "m", i: 6 }, "open"],
+    [6.6, { k: "x", i: 3 }], [8.0, { k: "x", i: 5 }], [9.4, { k: "m", i: 6 }], [10.1, { k: "m", i: 6 }, "close"], [11.4, null]];
+  const LOOP = 12.5;
+  const lines = { de: "Hallo zäme, wämmer aafange?", en: "Hello everyone, shall we start?" };
+  let raf = 0, t0 = 0;
+  const frame = (ms) => {
+    const t = (ms - t0) / 1000, lt = t % LOOP;
+    const yaw = 7 * Math.sin(t * 0.35);                  // your head, slowly looking around
+    const viewL = yaw - 50;
+    cx.drawImage(grey, X(viewL), 0, 100 * PXD, H, 0, 0, W, H);   // room scan
+    // live video window, world-locked at the robot's direction (a little behind your head)
+    const robot = 7 * Math.sin((t - 0.4) * 0.35), w0 = robot - 36, w1 = robot + 36;
+    const x0 = (w0 - viewL) * PXD, x1 = (w1 - viewL) * PXD, y0 = 34, y1 = 470;
+    cx.save(); cx.beginPath(); cx.roundRect(x0, y0, x1 - x0, y1 - y0, 18); cx.clip();
+    cx.drawImage(room, X(w0), y0, 72 * PXD, y1 - y0, x0, y0, x1 - x0, y1 - y0); cx.restore();
+    cx.strokeStyle = "rgba(255,255,255,.22)"; cx.lineWidth = 3; cx.beginPath(); cx.roundRect(x0, y0, x1 - x0, y1 - y0, 18); cx.stroke();
+    // speech bubble above the person at +14° (partial → final → translation)
+    const words = lines.de.split(" "), nW = Math.min(words.length, Math.floor(lt / 0.45) + 1), final = lt > 2.6, tr = lt > 3.3;
+    const main_ = tr ? lines.en : words.slice(0, nW).join(" "), sub_ = tr ? `de: ${lines.de}` : "";
+    const hx = (14 - viewL) * PXD + (robot - yaw) * 0;   // world-locked like the video
+    cx.font = `${final ? "600" : "italic 500"} 26px Inter`; const mw = cx.measureText(main_).width;
+    cx.font = "16px Inter"; const sw = sub_ ? cx.measureText(sub_).width : 0;
+    const bw = Math.max(mw, sw) + 60, bh = sub_ ? 84 : 58, by = 164 - bh;
+    cx.fillStyle = final ? "rgba(255,255,255,.95)" : "rgba(255,255,255,.78)";
+    cx.beginPath(); cx.roundRect(hx - bw / 2, by, bw, bh, 18); cx.moveTo(hx - 13, by + bh - 1); cx.lineTo(hx, by + bh + 16); cx.lineTo(hx + 13, by + bh - 1); cx.fill();
+    cx.fillStyle = "#a78bfa"; cx.beginPath(); cx.roundRect(hx - bw / 2 + 8, by + 10, 6, bh - 20, 3); cx.fill();
+    cx.textBaseline = "top"; cx.font = `${final ? "600" : "italic 500"} 26px Inter`; cx.fillStyle = final ? "#111" : "#444"; cx.fillText(main_, hx - bw / 2 + 26, by + 14);
+    if (sub_) { cx.font = "16px Inter"; cx.fillStyle = "#666"; cx.fillText(sub_, hx - bw / 2 + 26, by + 52); }
+    // pointer state from the script
+    let cur = script[0]; for (const st of script) if (st[0] <= lt) cur = st;
+    const open = lt >= 5.3 && lt < 10.1;
+    const pos = layout(open);
+    const tgt = cur[1] && pos.find((p) => p.k === cur[1].k && p.i === cur[1].i);
+    // dock
+    cx.globalAlpha = 0.97;
+    pos.forEach((p) => {
+      const hov = tgt === p;
+      const img = p.k === "x" ? moreImg[p.i] : p.i === 6 && open ? lessImg : mainImg[p.i];
+      cx.drawImage(img[hov ? 1 : 0], p.x - BW / 2, p.y - BH / 2, BW, BH);
+    });
+    cx.drawImage(micImg, W / 2 - MW / 2, DY - MH / 2 - 6, MW, MH);
+    cx.globalAlpha = 1;
+    // pointer ray from the right hand
+    if (tgt) {
+      const hx2 = W * 0.86, hy2 = H + 20, px = tgt.x, py = tgt.y - 6;
+      const g = cx.createLinearGradient(hx2, hy2, px, py); g.addColorStop(0, "rgba(255,255,255,0)"); g.addColorStop(1, "rgba(255,255,255,.85)");
+      cx.strokeStyle = g; cx.lineWidth = 3; cx.beginPath(); cx.moveTo(hx2, hy2); cx.lineTo(px, py); cx.stroke();
+      cx.fillStyle = "#fff"; cx.beginPath(); cx.arc(px, py, 6, 0, 7); cx.fill();
+      if (cur[2] && lt - cur[0] < 0.4) { cx.strokeStyle = "rgba(255,171,61,.9)"; cx.lineWidth = 3; cx.beginPath(); cx.arc(px, py, 10 + (lt - cur[0]) * 60, 0, 7); cx.stroke(); }
+    }
+    raf = requestAnimationFrame(frame);
+  };
+  enter["s-vr"] = () => { cancelAnimationFrame(raf); t0 = performance.now(); raf = requestAnimationFrame(frame); };
+  leave["s-vr"] = () => cancelAnimationFrame(raf);
 }
 
 go(Math.max(0, (parseInt(location.hash.slice(1)) || 1) - 1));
