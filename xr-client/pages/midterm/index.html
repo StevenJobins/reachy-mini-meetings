@@ -191,22 +191,40 @@
   .vr-keys .chip { font-size: 15px; padding: 9px 14px; }
   /* ---------- next steps (3 cards) ---------- */
   .next3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 22px; }
-  .next3 .card { padding: 30px 28px; min-height: 470px; }
-  .next3 h3 { font-size: 30px; }
-  .bars { display: grid; gap: 16px; margin: 26px 0 26px; }
+  .next3 .card { padding: 24px 26px; min-height: 0; }
+  .next3 h3 { font-size: 27px; }
+  .bars { display: grid; gap: 12px; margin: 18px 0 18px; }
   .bars div { display: grid; grid-template-columns: 170px 1fr 74px; align-items: center; gap: 10px; font: 600 16px var(--mono); color: #cfd6e6; }
   .bars .track { height: 24px; border-radius: 99px; background: rgba(255,255,255,.06); overflow: hidden; }
   .bars .track i { display: block; height: 100%; width: 0; border-radius: 99px; background: linear-gradient(90deg, var(--video), #7dd3fc); transition: width 1.2s cubic-bezier(.2,.8,.2,1); }
   .bars .track i.q { background: repeating-linear-gradient(90deg, rgba(56,189,248,.35) 0 10px, rgba(56,189,248,.12) 10px 20px); }
-  .people { display: grid; grid-template-columns: repeat(5, 1fr); gap: 14px; margin: 26px 0 26px; }
-  .people i { height: 64px; border-radius: 14px; background: rgba(255,255,255,.06); border: 1px solid var(--line); display: grid; place-items: center; font: 700 15px var(--mono); color: var(--muted); transition: background .4s, color .4s, border-color .4s; }
+  .people { display: grid; grid-template-columns: repeat(5, 1fr); gap: 12px; margin: 18px 0 18px; }
+  .people i { height: 52px; border-radius: 14px; background: rgba(255,255,255,.06); border: 1px solid var(--line); display: grid; place-items: center; font: 700 15px var(--mono); color: var(--muted); transition: background .4s, color .4s, border-color .4s; }
   .people i.a { background: rgba(255,159,46,.18); border-color: rgba(255,159,46,.5); color: #ffd19a; }
   .people i.b { background: rgba(56,189,248,.16); border-color: rgba(56,189,248,.45); color: #bae6fd; }
-  .port { position: relative; height: 176px; margin: 26px 0 26px; }
+  .port { position: relative; height: 172px; margin: 18px 0 18px; }
   .port .lane { position: absolute; top: 0; bottom: 0; width: 44%; border: 1px dashed var(--line); border-radius: 12px; }
   .port .lane span { position: absolute; top: 8px; left: 10px; font: 600 12px var(--mono); color: var(--muted); }
   .port .mod { font-size: 15px; padding: 6px 10px; }
   .next3 .why div { font-size: 21px; }
+
+  /* ---------- 4-slide version ---------- */
+  .prog { list-style: none; padding: 0; margin: 0; display: grid; gap: 14px; }
+  .prog li { display: grid; grid-template-columns: 28px 1fr; font-size: 21px; line-height: 1.3; color: #dbe2f0; }
+  .blk { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; }
+  .blk .card { display: grid; grid-template-columns: 70px 1fr; gap: 16px; padding: 28px 28px; border-left: 4px solid var(--c); min-height: 315px; align-content: center; }
+  .blk .ic { font-size: 44px; }
+  .blk h3 { font-size: 28px; margin-bottom: 10px; }
+  .blk p { margin: 0 0 12px; font-size: 21px; }
+  .blk .fix { color: var(--c); font-weight: 600; margin: 0; }
+  .dates { position: relative; height: 120px; margin: 64px 30px 0; }
+  .dates .bar { position: absolute; left: 0; right: 0; top: 10px; height: 4px; background: rgba(255,255,255,.08); border-radius: 4px; }
+  .dates .fill { position: absolute; left: 0; top: 10px; height: 4px; width: 0; background: linear-gradient(90deg, #fff, var(--video), var(--pose), var(--lang), var(--hot), var(--depth)); border-radius: 4px; }
+  .slide.active .dates .fill { animation: grow 2.4s ease .8s forwards; }
+  .dm { position: absolute; top: 0; transform: translateX(-50%); text-align: center; width: 200px; }
+  .dm i { display: block; width: 18px; height: 18px; margin: 3px auto 10px; border-radius: 50%; background: var(--bg); border: 4px solid var(--c); }
+  .dm b { display: block; font: 700 18px var(--mono); color: var(--c); }
+  .dm span { font: 500 14.5px/1.3 var(--mono); color: #cfd6e6; }
 
   /* ---------- slide 9: thanks ---------- */
   #s-end .left { position: absolute; left: 90px; top: 230px; width: 820px; }
@@ -216,282 +234,93 @@
 <body>
 <div id="stage"><div id="deck">
 
-<!-- ======================================================= 1 TITLE -->
-<section class="slide" id="s-title" data-t="10">
-  <div class="halo"></div><div class="orbit"></div>
-  <div class="robot3d" id="robot-slot-1"><div class="r3d-msg">loading 3D model…</div><svg class="r3d-fallback" viewBox="150 120 200 190" style="display:none"><rect x="222" y="236" width="56" height="58" rx="14" fill="#e8edf5"/><ellipse cx="250" cy="206" rx="46" ry="36" fill="#f4f6fa"/><rect x="216" y="192" width="68" height="26" rx="13" fill="#1f2937"/><circle cx="236" cy="205" r="8" fill="#38bdf8"/><circle cx="264" cy="205" r="6" fill="#64748b"/><path d="M232 172 q-10 -30 -24 -40" stroke="#94a3b8" stroke-width="4" fill="none" stroke-linecap="round"/><path d="M268 172 q10 -30 24 -40" stroke="#94a3b8" stroke-width="4" fill="none" stroke-linecap="round"/></svg></div>
-  <div class="left">
-    <div class="kicker a" style="--d:.1s">ETH Zürich · Mixed Reality · Midterm 2026</div>
-    <h1 class="a" style="--d:.2s">Reachy Mini<br><span class="grad">Meetings</span></h1>
-    <div class="sub a" style="--d:.35s">Join a meeting in person — through a robot head, from a VR headset anywhere.</div>
-    <div class="team a" style="--d:.5s">
-      <span class="chip"><span class="dot" style="background:var(--lang)"></span>Dominic Ill</span>
-      <span class="chip"><span class="dot" style="background:var(--video)"></span>Kevin Stöckli</span>
-      <span class="chip"><span class="dot" style="background:var(--pose)"></span>Simon Thut</span>
-    </div>
-    <p class="muted a" style="--d:.65s;font-size:17px;margin-top:22px">Supervisors: Zuria Bauer, René Zurbrügg</p>
-  </div>
-  <div class="footer"><span>reachy-mini-meetings</span><span>3D model: Pollen Robotics reachy_mini (Apache-2.0)</span></div>
-  <aside class="notes">Simon, ~10 s. "We let you attend a real meeting through a small robot: Reachy Mini sits at the table, you wear a headset."</aside>
-</section>
-
-<!-- ======================================================= 2 IDEA -->
-<section class="slide" id="s-idea" data-t="25">
-  <div class="kicker a">The idea</div>
-  <h2 class="a" style="--d:.1s">You are in the room — <span class="grad">as Reachy Mini</span></h2>
-  <div class="scene2">
-    <svg viewBox="0 0 560 380" class="a" style="--d:.25s">
-      <defs><linearGradient id="g-h" x1="0" x2="1"><stop offset="0" stop-color="#38bdf8"/><stop offset="1" stop-color="#a78bfa"/></linearGradient></defs>
-      <circle cx="280" cy="190" r="150" fill="rgba(56,189,248,.06)" stroke="rgba(255,255,255,.08)"/>
-      <g id="remote-head" style="transform-origin:280px 190px">
-        <ellipse cx="280" cy="180" rx="78" ry="92" fill="#1b2438" stroke="#33415c" stroke-width="2"/>
-        <rect x="196" y="140" width="168" height="62" rx="28" fill="url(#g-h)"/>
-        <rect x="210" y="152" width="140" height="38" rx="19" fill="#0b1222" opacity=".85"/>
-        <circle cx="252" cy="171" r="8" fill="#7dd3fc" opacity=".9"/><circle cx="308" cy="171" r="8" fill="#7dd3fc" opacity=".9"/>
-        <path d="M232 238 q48 26 96 0" stroke="#6b7a99" stroke-width="5" fill="none" stroke-linecap="round"/>
-      </g>
-      <path d="M150 330 q130 -60 260 0" stroke="#33415c" stroke-width="40" fill="none" stroke-linecap="round"/>
-      <text x="280" y="372" text-anchor="middle" fill="#8d97ad" font-family="JetBrains Mono" font-size="15">remote · Galaxy XR headset</text>
-    </svg>
-    <svg viewBox="0 0 160 380">
-      <path d="M10 170 C 60 120, 100 120, 150 170" stroke="#4ade80" stroke-width="3" fill="none" stroke-dasharray="6 8"><animate attributeName="stroke-dashoffset" from="0" to="-28" dur=".8s" repeatCount="indefinite"/></path>
-      <path d="M150 215 C 100 265, 60 265, 10 215" stroke="#38bdf8" stroke-width="3" fill="none" stroke-dasharray="6 8"><animate attributeName="stroke-dashoffset" from="0" to="-28" dur=".8s" repeatCount="indefinite"/></path>
-      <text x="80" y="118" text-anchor="middle" fill="#4ade80" font-family="JetBrains Mono" font-size="13">head pose</text>
-      <text x="80" y="285" text-anchor="middle" fill="#38bdf8" font-family="JetBrains Mono" font-size="13">video + audio</text>
-    </svg>
-    <svg viewBox="0 0 560 380" class="a" style="--d:.4s">
-      <ellipse cx="280" cy="300" rx="250" ry="58" fill="#1a2236" stroke="#2c3854"/>
-      <g fill="#2a3550"><circle cx="90" cy="190" r="30"/><rect x="58" y="222" width="64" height="70" rx="26"/>
-        <circle cx="470" cy="190" r="30"/><rect x="438" y="222" width="64" height="70" rx="26"/>
-        <circle cx="380" cy="150" r="26"/><rect x="352" y="178" width="56" height="58" rx="22"/></g>
-      <g fill="#ff9f2e" opacity=".95"><rect x="392" y="92" width="150" height="40" rx="14"/><path d="M420 132 l10 14 l10 -14z"/></g>
-      <text x="467" y="118" text-anchor="middle" fill="#1b1206" font-family="Inter" font-weight="700" font-size="15">„Grüezi zäme!"</text>
-      <g id="mini-robot" style="transform-origin:250px 250px">
-        <rect x="222" y="236" width="56" height="58" rx="14" fill="#e8edf5"/>
-        <ellipse cx="250" cy="206" rx="46" ry="36" fill="#f4f6fa"/>
-        <rect x="216" y="192" width="68" height="26" rx="13" fill="#1f2937"/>
-        <circle cx="236" cy="205" r="8" fill="#38bdf8"/><circle cx="264" cy="205" r="6" fill="#64748b"/>
-        <path d="M232 172 q-10 -30 -24 -40" stroke="#1f2937" stroke-width="4" fill="none" stroke-linecap="round"><animateTransform attributeName="transform" type="rotate" values="-8 232 172;10 232 172;-8 232 172" dur="2.2s" repeatCount="indefinite"/></path>
-        <path d="M268 172 q10 -30 24 -40" stroke="#1f2937" stroke-width="4" fill="none" stroke-linecap="round"><animateTransform attributeName="transform" type="rotate" values="8 268 172;-10 268 172;8 268 172" dur="2.2s" repeatCount="indefinite"/></path>
-      </g>
-      <text x="280" y="372" text-anchor="middle" fill="#8d97ad" font-family="JetBrains Mono" font-size="15">meeting room · Reachy Mini at the table</text>
-    </svg>
-  </div>
-  <div class="problems">
-    <div class="card a" style="--d:.55s"><div class="num" style="color:var(--video)">I · LATENCY</div><h3>The view lags your head</h3><p>Robot and video take ~¼ s to follow.</p></div>
-    <div class="card a" style="--d:.7s"><div class="num" style="color:var(--lang)">II · LANGUAGE</div><h3>Follow any language</h3><p>Translated bubbles above the speaker.</p></div>
-    <div class="card a" style="--d:.85s"><div class="num" style="color:var(--pose)">III · PRESENCE</div><h3>Be seen listening</h3><p>Look at the speaker, signal, laugh.</p></div>
-  </div>
-  <aside class="notes">Simon, ~25 s. Your head moves the robot, video and audio come back. Three problems: latency, language, presence. Today: how it is built and how we handle latency.</aside>
-</section>
-
-<!-- ======================================================= 3 ARCHITECTURE -->
-<section class="slide" id="s-arch" data-t="30">
-  <div class="kicker a">How it is built today</div>
-  <h2 class="a" style="--d:.1s">One link in the headset. No install.</h2>
-  <svg id="arch" viewBox="0 0 1500 640" class="a fade" style="--d:.2s">
-    <defs>
-      <marker id="ah" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10z" fill="context-stroke"/></marker>
-      <filter id="glow"><feGaussianBlur stdDeviation="3" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
-    </defs>
-    <!-- cloud row -->
-    <g class="a" style="--d:.35s"><rect class="box" x="430" y="20" width="250" height="88" rx="16"/><text class="t" x="450" y="56">GitHub Pages</text><text class="s" x="450" y="84">the app · push = live in 1 min</text></g>
-    <g class="a" style="--d:.45s"><rect class="box" x="705" y="20" width="320" height="88" rx="16"/><text class="t" x="725" y="56">Hugging Face + Pollen central</text><text class="s" x="725" y="84">sign-in · connection setup</text></g>
-    <g class="a" style="--d:.55s"><rect class="box" x="1050" y="20" width="270" height="88" rx="16"/><text class="t" x="1070" y="56">Cloudflare tunnel</text><text class="s" x="1070" y="84">secure link to the backend</text></g>
-    <!-- headset -->
-    <g class="a" style="--d:.3s">
-      <rect class="box" x="20" y="200" width="350" height="300" rx="22" style="stroke:rgba(56,189,248,.5)"/>
-      <text class="t" x="44" y="242">Galaxy XR headset</text>
-      <text class="s" x="44" y="270">a web page (WebXR) in Chrome</text>
-      <g class="s" style="font-size:17px"><text x="44" y="330">◉ video, world-locked</text><text x="44" y="370">◉ speech bubbles</text><text x="44" y="410">◉ head pose → robot</text><text x="44" y="450">◉ voice → room</text></g>
-    </g>
-    <!-- laptop group -->
-    <g class="a" style="--d:.45s">
-      <rect class="group" x="770" y="170" width="420" height="450" rx="24"/>
-      <text class="lbl" x="790" y="198" fill="#8d97ad">ROBOT LAPTOP · Apple silicon Mac</text>
-      <rect class="box" x="790" y="214" width="380" height="150" rx="18" style="stroke:rgba(56,189,248,.5)"/>
-      <text class="t" x="812" y="252">Reachy daemon <tspan class="s">(Pollen)</tspan></text>
-      <text class="s" x="812" y="290">WebRTC video + audio · motors</text>
-                  <rect class="box" x="790" y="384" width="380" height="218" rx="18" style="stroke:rgba(255,159,46,.55)"/>
-      <text class="t" x="812" y="422">Caption backend <tspan class="s">(ours, Python)</tspan></text>
-      <text class="s" x="812" y="460">speech → Whisper → DeepL</text>
-      <text class="s" x="812" y="490">who speaks (mic direction + faces)</text>
-      <text class="s" x="812" y="520">depth for the room scan</text>
-      <text class="s" x="812" y="550">Reachy speaks for you (TTS)</text>
-    </g>
-    <!-- robot -->
-    <g class="a" style="--d:.6s">
-      <rect class="box" x="1250" y="250" width="230" height="250" rx="22" style="stroke:rgba(74,222,128,.5)"/>
-      <text class="t" x="1272" y="290">Reachy Mini</text>
-      <g class="s"><text x="1272" y="334">camera</text><text x="1272" y="366">4 microphones</text><text x="1272" y="398">speaker</text><text x="1272" y="430">9 motors</text></g>
-    </g>
-    <!-- links -->
-    <path id="p-video" class="link draw" style="--d:.8s;stroke:#38bdf8" d="M790 280 C 640 280, 520 300, 372 300" marker-end="url(#ah)"/>
-    <path id="p-pose" class="link draw" style="--d:.9s;stroke:#4ade80" d="M372 340 C 520 340, 640 320, 790 320" marker-end="url(#ah)"/>
-    <path id="p-cap" class="link draw" style="--d:1s;stroke:#ff9f2e" d="M790 470 C 620 470, 520 430, 372 420" marker-end="url(#ah)"/>
-    <path id="p-voice" class="link draw" style="--d:1.1s;stroke:#ff9f2e;stroke-dasharray:6 7" d="M372 460 C 520 480, 640 540, 790 540" marker-end="url(#ah)"/>
-    <path class="link draw" style="--d:1.2s;stroke:#8d97ad;stroke-width:2;stroke-dasharray:5 6" d="M260 200 C 290 120, 380 70, 428 64"/>
-    <path class="link draw" style="--d:1.25s;stroke:#8d97ad;stroke-width:2;stroke-dasharray:5 6" d="M330 200 C 420 140, 640 140, 760 110"/>
-    <path class="link draw" style="--d:1.3s;stroke:#8d97ad;stroke-width:2;stroke-dasharray:5 6" d="M1170 384 C 1200 260, 1190 160, 1185 110"/>
-    <path id="p-usb1" class="link draw" style="--d:1.2s;stroke:#4ade80" d="M1172 300 L 1248 320"/>
-    <path id="p-usb2" class="link draw" style="--d:1.25s;stroke:#ff9f2e" d="M1248 420 L 1172 460"/>
-    <g class="lbl a" style="--d:1.4s"><text x="470" y="268" style="fill:#38bdf8">video ↓</text><text x="470" y="370" style="fill:#4ade80">head pose ↑</text>
-      <text x="470" y="410" style="fill:#ff9f2e">captions ↓</text><text x="440" y="560" style="fill:#ff9f2e">your voice ↑</text><text x="1196" y="250" style="fill:#8d97ad">USB</text></g>
-    <!-- packets -->
-    <g filter="url(#glow)">
-      <circle r="6" fill="#38bdf8"><animateMotion dur="1.6s" repeatCount="indefinite"><mpath href="#p-video"/></animateMotion></circle>
-      <circle r="6" fill="#38bdf8"><animateMotion dur="1.6s" begin=".53s" repeatCount="indefinite"><mpath href="#p-video"/></animateMotion></circle>
-      <circle r="6" fill="#38bdf8"><animateMotion dur="1.6s" begin="1.06s" repeatCount="indefinite"><mpath href="#p-video"/></animateMotion></circle>
-      <circle r="5" fill="#4ade80"><animateMotion dur="1.2s" repeatCount="indefinite"><mpath href="#p-pose"/></animateMotion></circle>
-      <circle r="5" fill="#4ade80"><animateMotion dur="1.2s" begin=".6s" repeatCount="indefinite"><mpath href="#p-pose"/></animateMotion></circle>
-      <circle r="6" fill="#ff9f2e"><animateMotion dur="2.4s" repeatCount="indefinite"><mpath href="#p-cap"/></animateMotion></circle>
-      <circle r="5" fill="#ff9f2e"><animateMotion dur="2.8s" begin="1s" repeatCount="indefinite"><mpath href="#p-voice"/></animateMotion></circle>
-      <circle r="5" fill="#4ade80"><animateMotion dur=".9s" repeatCount="indefinite"><mpath href="#p-usb1"/></animateMotion></circle>
-      <circle r="5" fill="#ff9f2e"><animateMotion dur="1.1s" repeatCount="indefinite"><mpath href="#p-usb2"/></animateMotion></circle>
-    </g>
-  </svg>
-  <div class="footer"><span>plain web app: push to GitHub = live in a minute</span><span></span></div>
-  <aside class="notes">Dominic, ~35 s. The headset only opens a web page — no install. Through Pollen's connection the robot laptop streams video and audio, the headset sends its head pose. Our own backend on the laptop turns room speech into translated bubbles, finds who speaks, and lets Reachy speak for you.</aside>
-</section>
-
-<!-- ======================================================= VR VIEW -->
-<section class="slide" id="s-vr" data-t="25">
-  <div class="kicker a">In the headset today</div>
-  <h2 class="a" style="--d:.1s">What you see — and the menu</h2>
-  <canvas id="vr" class="a fade" style="--d:.2s" width="2840" height="1200"></canvas>
-  <div class="vr-keys">
-    <span class="chip a" style="--d:.4s"><span class="dot" style="background:var(--video)"></span>live video, pinned in the room</span>
-    <span class="chip a" style="--d:.5s"><span class="dot" style="background:#9ca3af"></span>room scan around it</span>
-    <span class="chip a" style="--d:.6s"><span class="dot" style="background:#fff"></span>translated bubble above the speaker</span>
-    <span class="chip a" style="--d:.7s"><span class="dot" style="background:var(--lang)"></span>dock: mic, talk, laugh, translate, notes, more</span>
-  </div>
-  <aside class="notes">Dominic or Simon, ~25 s. This is the headset view (simulated with the app's real dock drawing code). The live video is pinned in the room, the room scan fills the rest. Bubbles appear above whoever speaks, original and translation. The dock below works like a video call: mic in the middle, "Talk" to signal you want to speak, "Laugh", "Translate" for Reachy speaking for you, notes, and "More" for the view and room-scan settings.</aside>
-</section>
-
-<!-- ======================================================= 4 LATENCY -->
-<section class="slide" id="s-lat" data-t="30">
-  <div class="kicker a">Problem I · latency</div>
-  <h2 class="a" style="--d:.1s">Every head turn travels a long way</h2>
-  <div class="pipe" id="pipe">
-    <div class="stage motion a" style="--d:.15s"><div class="ico">🥽</div><div class="nm">You turn your head</div></div>
-    <div class="stage motion a" style="--d:.2s"><div class="ico">📡</div><div class="nm">Pose to robot</div></div>
-    <div class="stage motion a" style="--d:.25s"><div class="ico">⚙️</div><div class="nm">Head moves</div></div>
-    <div class="stage a" style="--d:.3s"><div class="ico">📷</div><div class="nm">Camera</div></div>
-    <div class="stage a" style="--d:.35s"><div class="ico">🧮</div><div class="nm">Encode</div></div>
-    <div class="stage a" style="--d:.4s"><div class="ico">📶</div><div class="nm">Network</div></div>
-    <div class="stage a" style="--d:.45s"><div class="ico">⏳</div><div class="nm">Decode</div></div>
-    <div class="stage a" style="--d:.5s"><div class="ico">👁️</div><div class="nm">You see it</div></div>
-  </div>
-  <div class="brackets a" style="--d:.55s">
-    <div class="brk" style="border-color:var(--pose);color:var(--pose)">robot motion</div>
-    <div class="brk" style="border-color:var(--video);color:var(--video)">video</div>
-  </div>
-  <div class="lat-row big" style="grid-template-columns:1fr 1fr 1fr;margin-top:56px">
-    <div class="card a" style="--d:.65s">
-      <div class="muted mono" style="font-size:14px;letter-spacing:.08em">VIDEO DELAY, MEASURED</div>
-      <div class="kpi"><span id="kpi-lat">0</span><small>ms</small></div>
-      <p style="margin:10px 0 0;font-size:19px">median, very steady</p>
-      <p class="muted" style="margin:14px 0 0;font-size:15px;line-height:1.4">Pollen reports ~100 ms: Reachy Mini Wireless, H.264, hardware decode, 5 GHz Wi-Fi.<br>Ours: Lite on a Mac, VP8 in software, 1080p.</p>
-    </div>
-    <div class="card a" style="--d:.8s">
-      <div class="muted mono" style="font-size:14px;letter-spacing:.08em">A QUICK HEAD TURN</div>
-      <div class="kpi" style="color:#fb7185">23°<small>off</small></div>
-      <p style="margin:10px 0 0;font-size:19px">if the picture just followed your head</p>
-    </div>
-    <div class="card a" style="--d:.95s">
-      <div class="muted mono" style="font-size:14px;letter-spacing:.08em">HOW WE MEASURE · QR LOOP</div>
-      <div class="qr-demo">
-        <div><div class="qr" id="qr"></div></div><div class="arrow"></div>
-        <div class="cam"><span></span></div><div class="arrow"></div>
-        <div class="mono" style="font-size:15px;line-height:1.6">Δt</div>
-      </div>
-      <p style="margin:12px 0 0;font-size:16px" class="muted">a QR with the time, filmed by Reachy</p>
-    </div>
-  </div>
-  <aside class="notes">Kevin, ~30 s. (Pollen measured ~100 ms with the Wireless version and hardware H.264; we use the Lite on a laptop with software VP8 at 1080p.) Two delays add up: the head has to move, then each frame goes through camera, encoder, network and decoder. We measure it with a QR code that shows the time and is filmed by Reachy: 233 ms, very steady. A quick head turn would leave the picture over 20° off — that is what makes people sick.</aside>
-</section>
-
-<!-- ======================================================= 5 REPROJECTION -->
-<section class="slide" id="s-rp" data-t="35">
-  <div class="kicker a">How we hide it today</div>
-  <h2 class="a" style="--d:.1s">Keep the picture <span class="grad">where it belongs in the room</span></h2>
-  <div class="rp">
+<!-- ======================================================= 1 PROGRESS -->
+<section class="slide" id="p1" data-parts="s-title s-vr demo" data-t="50">
+  <div class="kicker a">Reachy Mini Meetings · Midterm · Dominic Ill · Kevin Stöckli · Simon Thut</div>
+  <h2 class="a" style="--d:.1s">Progress: <span class="grad">a meeting through a robot</span>, end to end</h2>
+  <div style="display:grid;grid-template-columns:400px 1fr;gap:30px;align-items:start">
     <div>
-      <div class="rp-row a" style="--d:.2s">
+      <div class="robot3d" id="robot-slot-1" style="position:relative;right:auto;top:auto;width:360px;height:410px;margin:-30px 0 -20px 10px"><div class="r3d-msg">loading 3D model…</div></div>
+      <ul class="prog">
+        <li class="a" style="--d:.3s"><span class="st ok">✓</span>Head + body follow you, two-way audio</li>
+        <li class="a" style="--d:.4s"><span class="st ok">✓</span>Video pinned in the room, calibrated lens</li>
+        <li class="a" style="--d:.5s"><span class="st ok">✓</span>Looks at the speaker; talk + laugh</li>
+        <li class="a" style="--d:.6s"><span class="st ok">✓</span>Translated bubbles; Reachy speaks for you</li>
+        <li class="a" style="--d:.7s"><span class="st wip">◐</span>Room scan with depth (testing)</li>
+      </ul>
+    </div>
+    <div class="a fade" style="--d:.2s">
+      <div style="position:relative;width:990px;height:418px">
+        <canvas id="vr" width="2840" height="1200" style="width:990px;height:418px"></canvas>
+        <video id="demo" muted loop playsinline style="display:none;position:absolute;inset:0;width:990px;height:418px;object-fit:cover;border-radius:22px;border:1px solid var(--line);background:#000"></video>
+      </div>
+      <div class="vr-keys" id="vr-keys">
+        <span class="chip"><span class="dot" style="background:var(--video)"></span>live video, pinned in the room</span>
+        <span class="chip"><span class="dot" style="background:#fff"></span>translated bubble above the speaker</span>
+        <span class="chip"><span class="dot" style="background:var(--lang)"></span>dock: mic, talk, laugh, translate, notes</span>
+      </div>
+      <div class="muted mono" id="vr-cap" style="font-size:13px;margin-top:10px">headset view, simulated with the app's own dock drawing code</div>
+    </div>
+  </div>
+  <aside class="notes">~50 s (Simon). We join a real meeting through Reachy Mini from a Galaxy XR headset — a web app, one link. What works today: the robot head and body follow you, two-way audio; the video is pinned in the room with a calibrated lens; Reachy turns to whoever speaks; bubbles show the translation above the speaker, and Reachy can speak for you. In testing: a room scan with depth. On the right: what you see in the headset, with the dock — mic, talk, laugh, translate, notes.</aside>
+</section>
+
+<!-- ======================================================= 2 LATENCY -->
+<section class="slide" id="p2" data-parts="s-lat s-rp" data-t="55">
+  <div class="kicker a">Core problem · latency</div>
+  <h2 class="a" style="--d:.1s">233 ms late — <span class="grad">so we pin the picture in the room</span></h2>
+  <div style="display:grid;grid-template-columns:400px 1fr;gap:30px">
+    <div style="display:grid;gap:18px;align-content:start">
+      <div class="card a" style="--d:.2s">
+        <div class="muted mono" style="font-size:14px;letter-spacing:.08em">VIDEO DELAY, MEASURED</div>
+        <div class="kpi"><span id="kpi-lat">0</span><small>ms</small></div>
+        <p style="margin:8px 0 0;font-size:19px">median, very steady</p>
+        <p class="muted" style="margin:12px 0 0;font-size:15px;line-height:1.4">Pollen reports ~100 ms: Reachy Mini Wireless, H.264, hardware decode, 5 GHz Wi-Fi.<br>Ours: Lite on a Mac, VP8 in software, 1080p.</p>
+      </div>
+      <div class="card a" style="--d:.35s">
+        <div class="muted mono" style="font-size:14px;letter-spacing:.08em">HOW WE MEASURE · QR LOOP</div>
+        <div class="qr-demo">
+          <div><div class="qr" id="qr"></div></div><div class="arrow"></div>
+          <div class="cam"><span></span></div><div class="arrow"></div>
+          <div class="mono" style="font-size:15px;line-height:1.6">Δt</div>
+        </div>
+      </div>
+    </div>
+    <div>
+      <div class="rp-row a" style="--d:.25s">
         <div class="hd"><b>Naive: video glued to your head</b><span class="err" id="err-naive" style="color:#fb7185">—</span></div>
-        <canvas id="rp-naive" width="1000" height="245"></canvas>
+        <canvas id="rp-naive" width="1000" height="245" style="width:990px;height:242px"></canvas>
       </div>
-      <div class="rp-row a" style="--d:.35s">
-        <div class="hd"><b>Ours: world-locked at the robot's measured pose</b><span class="err" id="err-ours" style="color:var(--pose)">0° off</span></div>
-        <canvas id="rp-ours" width="1000" height="245"></canvas>
+      <div class="rp-row a" style="--d:.4s">
+        <div class="hd"><b>Ours: pinned where the robot looked</b><span class="err" id="err-ours" style="color:var(--pose)">0° off</span></div>
+        <canvas id="rp-ours" width="1000" height="245" style="width:990px;height:242px"></canvas>
       </div>
-      <div class="a" style="--d:.5s;display:flex;gap:16px;align-items:center;font:500 15px var(--mono);color:var(--muted)">
-        <span>move the mouse over a view to turn your head</span>
-        <span class="toggle" id="scan-toggle"><button class="on" data-v="1">room scan on</button><button data-v="0">off</button></span>
+      <div class="a" style="--d:.55s;display:flex;gap:16px;align-items:center;font:500 15px var(--mono);color:var(--muted)">
+        <span>room scan fills the edges</span>
+        <span class="toggle" id="scan-toggle"><button class="on" data-v="1">scan on</button><button data-v="0">off</button></span>
       </div>
     </div>
-    <ul>
-      <li class="a" style="--d:.3s"><b>Placed where the robot looked</b> when the frame was taken.</li>
-      <li class="a" style="--d:.45s"><b>Calibrated lens</b> → straight lines stay straight.</li>
-      <li class="a" style="--d:.6s"><b>Room scan</b> fills the edges instead of black.</li>
-    </ul>
   </div>
-  <aside class="notes">Kevin, ~40 s. Top: video glued to your head — when you turn, the old frame shows the old direction and the room swims. Bottom: our approach — each frame is pinned in the room where the robot was looking. Your view moves over a still room, the window catches up, and the room scan fills the gap. (Mouse over a view to steer it.)</aside>
+  <aside class="notes">~55 s (Kevin). Our core problem: every head turn goes to the robot and the picture comes back late. We measure it with a QR code that shows the time and is filmed by Reachy: 233 ms, very steady. Pollen reports about 100 ms, but with the Wireless version and hardware H.264 — we run the Lite on a laptop with software VP8 at 1080p. Our answer: top, the naive way — video glued to your head, the room swims. Bottom, ours — each frame is pinned where the robot was looking when it was taken; your view moves over a still room and the room scan fills the edges.</aside>
 </section>
 
-<!-- ======================================================= 6 STATUS -->
-<section class="slide" id="s-status" data-t="20">
-  <div class="kicker a">Where we are</div>
-  <h2 class="a" style="--d:.1s">Running end to end</h2>
-  <div class="wps">
-    <div class="wp a" style="--d:.15s;--c:var(--pose)"><div class="id">WP1</div><h3>Teleoperation</h3><div class="lead">all</div><ul>
-      <li><span class="st ok">✓</span>head + body follow you</li><li><span class="st ok">✓</span>two-way audio</li><li><span class="st ok">✓</span>latency measured</li></ul></div>
-    <div class="wp a" style="--d:.25s;--c:var(--video)"><div class="id">WP2</div><h3>Reprojection</h3><div class="lead">Kevin</div><ul>
-      <li><span class="st ok">✓</span>world-locked video</li><li><span class="st ok">✓</span>calibrated lens</li><li><span class="st wip">◐</span>room scan + depth</li></ul></div>
-    <div class="wp a" style="--d:.35s;--c:var(--hot)"><div class="id">WP3</div><h3>Speaker & gestures</h3><div class="lead">Simon</div><ul>
-      <li><span class="st ok">✓</span>looks at the speaker</li><li><span class="st ok">✓</span>"I want to speak", laugh</li><li><span class="st open">○</span>gestures from face tracking</li></ul></div>
-    <div class="wp a" style="--d:.45s;--c:var(--lang)"><div class="id">WP4</div><h3>Language</h3><div class="lead">Dominic</div><ul>
-      <li><span class="st ok">✓</span>translated bubbles</li><li><span class="st ok">✓</span>Reachy speaks for you</li><li><span class="st ok">✓</span>meeting notes</li></ul></div>
-    <div class="wp a" style="--d:.55s;--c:var(--depth)"><div class="id">WP5</div><h3>Evaluation</h3><div class="lead">all</div><ul>
-      <li><span class="st wip">◐</span>latency in the headset</li><li><span class="st open">○</span>user study</li><li><span class="st open">○</span>live demo</li></ul></div>
+<!-- ======================================================= 3 BLOCKERS -->
+<section class="slide" id="p3" data-t="35">
+  <div class="kicker a">Problems & blockers</div>
+  <h2 class="a" style="--d:.1s">What slows us down</h2>
+  <div class="blk">
+    <div class="card a" style="--d:.2s;--c:#fb7185"><div class="ic">🐢</div><div><h3>Video costs half the frame rate</h3><p>Copying each 1080p frame in Chrome: 72 → 34 fps in the headset.</p><p class="fix">→ upload straight to the GPU (validating); Unity prototype</p></div></div>
+    <div class="card a" style="--d:.3s;--c:var(--warn)"><div class="ic">⏱️</div><div><h3>Video delay 2× Pollen's</h3><p>233 ms vs ~100 ms: software VP8 at 1080p on the laptop CPU.</p><p class="fix">→ test 720p and H.264 hardware encoding</p></div></div>
+    <div class="card a" style="--d:.4s;--c:var(--depth)"><div class="ic">💻</div><div><h3>The robot laptop matters</h3><p>On an older Intel Mac the current daemon does not run, and our measurements there were invalid.</p><p class="fix">→ Apple-silicon laptop only</p></div></div>
+    <div class="card a" style="--d:.5s;--c:var(--video)"><div class="ic">📶</div><div><h3>Network</h3><p>Headset and robot laptop must share one Wi-Fi, or the connection never starts.</p><p class="fix">→ same network for tests and the demo</p></div></div>
   </div>
-  <div class="legend a" style="--d:.7s"><span><b class="st ok">✓</b> works</span><span><b class="st wip">◐</b> in testing</span><span><b class="st open">○</b> open</span></div>
-  <aside class="notes">Simon, ~25 s. Everything runs end to end: teleoperation, reprojection, speaker following, translated bubbles. In testing: room scan with depth and the latency in the headset. Open: the user study and the demo.</aside>
+  <aside class="notes">~35 s (Dominic). Four things slow us down. In Chrome, copying every 1080p frame halved the headset frame rate — we now upload frames directly to the GPU and will try Unity. Our video delay is twice Pollen's because of software VP8 at 1080p — we will test 720p and hardware H.264. The robot laptop matters: on an older Intel Mac the current daemon does not run and our measurements there were invalid, so only Apple-silicon laptops. And headset and robot laptop must be on the same Wi-Fi, otherwise the connection never starts.</aside>
 </section>
 
-<!-- ======================================================= 7 OPEN-TELEVISION -->
-<section class="slide" id="s-otv" data-t="20">
-  <div class="kicker a">Inspiration</div>
-  <h2 class="a" style="--d:.1s">Open-TeleVision <span class="muted" style="font-size:28px;font-weight:500">Cheng et al., CoRL 2024</span></h2>
-  <div class="otv" style="grid-template-columns:680px 1fr;align-items:center;min-height:600px">
-    <svg class="loop a" viewBox="0 0 560 250" style="--d:.2s">
-      <rect x="10" y="40" width="150" height="170" rx="18" fill="rgba(255,255,255,.05)" stroke="rgba(255,255,255,.16)"/>
-      <text x="85" y="78" text-anchor="middle" fill="#fff" font-family="Space Grotesk" font-weight="600" font-size="19">Operator</text>
-      <text x="85" y="104" text-anchor="middle" fill="#8d97ad" font-size="14">Vision Pro · WebXR</text>
-      <text x="85" y="150" text-anchor="middle" font-size="40">🥽</text>
-      <rect x="400" y="40" width="150" height="170" rx="18" fill="rgba(255,255,255,.05)" stroke="rgba(255,255,255,.16)"/>
-      <text x="475" y="78" text-anchor="middle" fill="#fff" font-family="Space Grotesk" font-weight="600" font-size="19">Humanoid</text>
-      <text x="475" y="104" text-anchor="middle" fill="#8d97ad" font-size="14">neck + stereo camera</text>
-      <text x="475" y="150" text-anchor="middle" font-size="40">🤖</text>
-      <path d="M165 95 C 260 60, 300 60, 395 95" stroke="#4ade80" stroke-width="3" fill="none" stroke-dasharray="7 7"><animate attributeName="stroke-dashoffset" from="0" to="-28" dur=".6s" repeatCount="indefinite"/></path>
-      <path d="M395 160 C 300 195, 260 195, 165 160" stroke="#38bdf8" stroke-width="3" fill="none" stroke-dasharray="7 7"><animate attributeName="stroke-dashoffset" from="0" to="-28" dur=".6s" repeatCount="indefinite"/></path>
-      <text x="280" y="58" text-anchor="middle" fill="#4ade80" font-family="JetBrains Mono" font-size="13">head + hand poses</text>
-      <text x="280" y="214" text-anchor="middle" fill="#38bdf8" font-family="JetBrains Mono" font-size="13">2 × 480×640 video</text>
-      <circle cx="280" cy="128" r="30" fill="rgba(167,139,250,.16)" stroke="#a78bfa"/><text x="280" y="134" text-anchor="middle" fill="#ddd6fe" font-family="JetBrains Mono" font-weight="700" font-size="16">60 Hz</text>
-    </svg>
-    <div class="take" style="margin-top:0">
-      <div class="a" style="--d:.35s"><span class="n">1</span><span><b>Same core idea:</b> a camera head that follows yours.</span></div>
-      <div class="a" style="--d:.5s"><span class="n">2</span><span><b>Small video, fast loop:</b> 480×640 at 60 Hz. We send 1080p → test 720p.</span></div>
-      <div class="a" style="--d:.65s"><span class="n">3</span><span><b>Their user study</b> (stereo vs mono) → ours: reprojection on vs off.</span></div>
-    </div>
-  </div>
-  <aside class="notes">Simon, ~20 s. Open-TeleVision does what we do for robot manipulation: the camera head follows the operator. Two things we take: they stream small images at a fast 60 Hz loop — we send 1080p, so we will test 720p. And their user study compares stereo and mono; ours compares reprojection on and off.</aside>
-</section>
-
-<!-- ======================================================= 8 NEXT STEPS -->
-<section class="slide" id="s-next" data-t="35">
-  <div class="kicker a">Next steps</div>
-  <h2 class="a" style="--d:.1s">Measure, test with people, then go native</h2>
+<!-- ======================================================= 4 NEXT STEPS + TIMELINE -->
+<section class="slide" id="p4" data-parts="s-next" data-t="40">
+  <div class="kicker a">Next steps & timeline</div>
+  <h2 class="a" style="--d:.1s">Six weeks to the live demo</h2>
   <div class="next3">
     <div class="card a" style="--d:.2s">
       <h3><span style="color:var(--video)">①</span> Latency study</h3>
@@ -501,44 +330,29 @@
         <div><span>H.264 hardware</span><span class="track"><i class="q" data-w="48"></i></span><span>?</span></div>
         <div><span>in the headset</span><span class="track"><i class="q" data-w="88"></i></span><span>?</span></div>
       </div>
-      <div class="why" style="--c:var(--video)"><div>Glass to glass in the headset, over Wi-Fi.</div><div>Head vs picture error, reprojection on vs off.</div></div>
+      <div class="why" style="--c:var(--video)"><div>Picture vs head error, reprojection on vs off.</div></div>
     </div>
     <div class="card a" style="--d:.35s">
-      <h3><span style="color:var(--lang)">②</span> User study</h3>
-      <div class="people" id="people"></div>
-      <div class="why" style="--c:var(--lang)"><div>8–10 people, each tries both versions.</div><div>Follow a talk, find the speaker. Measure time, sickness, presence.</div></div>
+      <h3><span style="color:var(--pose)">②</span> Unity prototype</h3>
+      <div class="port" id="port"><div class="lane" style="left:0"><span>WEB · JS</span></div><div class="lane" style="right:0"><span>UNITY · C#</span></div></div>
+      <div class="why" style="--c:var(--pose)"><div>Faster video, face + eye tracking. Switch only if the numbers say so.</div></div>
     </div>
     <div class="card a" style="--d:.5s">
-      <h3><span style="color:var(--pose)">③</span> Unity prototype</h3>
-      <div class="port" id="port"><div class="lane" style="left:0"><span>WEB · JS</span></div><div class="lane" style="right:0"><span>UNITY · C#</span></div></div>
-      <div class="why" style="--c:var(--pose)"><div>Faster video: in Chrome, frame copies halved our fps.</div><div>Face + eye tracking for laugh and gaze.</div></div>
+      <h3><span style="color:var(--lang)">③</span> User study</h3>
+      <div class="people" id="people"></div>
+      <div class="why" style="--c:var(--lang)"><div>8–10 people, reprojection on vs off: time, sickness, presence.</div></div>
     </div>
   </div>
-  <div class="timeline a" style="--d:.5s">
+  <div class="dates a" style="--d:.6s">
     <div class="bar"></div><div class="fill"></div>
-    <div class="ms" style="left:6%;--c:var(--video)"><i></i><span>latency<br>study</span></div>
-    <div class="ms" style="left:36%;--c:var(--pose)"><i></i><span>Unity<br>prototype</span></div>
-    <div class="ms" style="left:65%;--c:var(--lang)"><i></i><span>user<br>study</span></div>
-    <div class="ms" style="left:94%;--c:var(--hot)"><i></i><span>live demo<br>meeting</span></div>
+    <div class="dm" style="left:0%;--c:#fff"><i></i><b>Nov 2</b><span>midterm</span></div>
+    <div class="dm" style="left:17%;--c:var(--video)"><i></i><b>Nov 3–15</b><span>latency study</span></div>
+    <div class="dm" style="left:39%;--c:var(--pose)"><i></i><b>Nov 16–29</b><span>Unity prototype<br>go / no-go</span></div>
+    <div class="dm" style="left:61%;--c:var(--lang)"><i></i><b>Nov 30–Dec 11</b><span>user study,<br>demo rehearsal</span></div>
+    <div class="dm" style="left:81%;--c:var(--hot)"><i></i><b>Dec 14</b><span>final + live demo</span></div>
+    <div class="dm" style="left:100%;--c:var(--depth)"><i></i><b>Jan 11</b><span>report</span></div>
   </div>
-  <aside class="notes">Simon, ~35 s. First we measure: latency in the headset over Wi-Fi, 720p instead of 1080p, hardware H.264 encoding, and how far the picture is off your head direction with and without reprojection. Then a user study: 8 to 10 people, each tries both, we measure time, sickness and presence. In parallel a Unity prototype: Chrome's frame copies halved our frame rate, and Unity gives us face and eye tracking. The logic ports one to one; we switch only if the numbers say so. Then the live demo.</aside>
-</section>
-
-<!-- ======================================================= 9 END -->
-<section class="slide" id="s-end" data-t="5">
-  <div class="halo"></div><div class="orbit"></div>
-  <div class="robot3d" id="robot-slot-2"><div class="r3d-msg">loading 3D model…</div><svg class="r3d-fallback" viewBox="150 120 200 190" style="display:none"><rect x="222" y="236" width="56" height="58" rx="14" fill="#e8edf5"/><ellipse cx="250" cy="206" rx="46" ry="36" fill="#f4f6fa"/><rect x="216" y="192" width="68" height="26" rx="13" fill="#1f2937"/><circle cx="236" cy="205" r="8" fill="#38bdf8"/><circle cx="264" cy="205" r="6" fill="#64748b"/><path d="M232 172 q-10 -30 -24 -40" stroke="#94a3b8" stroke-width="4" fill="none" stroke-linecap="round"/><path d="M268 172 q10 -30 24 -40" stroke="#94a3b8" stroke-width="4" fill="none" stroke-linecap="round"/></svg></div>
-  <div class="left">
-    <div class="kicker a">Thank you</div>
-    <h1 class="a" style="--d:.1s">Questions<span class="grad">?</span></h1>
-    <p class="a" style="--d:.3s;font-size:24px;margin-top:30px">Try it: <span class="mono" style="color:#7dd3fc">stevenjobins.github.io/reachy-mini-meetings</span></p>
-    <div class="team a" style="--d:.45s;display:flex;gap:12px;margin-top:30px">
-      <span class="chip"><span class="dot" style="background:var(--lang)"></span>Dominic Ill</span>
-      <span class="chip"><span class="dot" style="background:var(--video)"></span>Kevin Stöckli</span>
-      <span class="chip"><span class="dot" style="background:var(--pose)"></span>Simon Thut</span>
-    </div>
-  </div>
-  <aside class="notes">Thank you — questions. If there is time: live demo in the headset.</aside>
+  <aside class="notes">~40 s (Simon). Six weeks to the live demo on December 14. Until mid-November we measure latency: in the headset over Wi-Fi, 720p, hardware H.264, and the picture-vs-head error with reprojection on and off. Until the end of November a Unity prototype — we switch only if it is clearly faster. Then the user study with 8–10 people, reprojection on vs off, and rehearsing the demo. Final presentation and live demo December 14, report January 11.</aside>
 </section>
 
 </div></div>
@@ -564,23 +378,24 @@ addEventListener("resize", fit); fit();
 function go(i) {
   i = Math.max(0, Math.min(slides.length - 1, i));
   const prev = slides[cur];
-  if (i !== cur) leave[prev.id]?.();
+  const parts = (x) => (x.dataset.parts ? x.dataset.parts.split(" ") : [x.id]);
+  if (i !== cur) parts(prev).forEach((id) => leave[id]?.());
   slides.forEach((s, k) => { s.classList.toggle("past", k < i); if (k !== i) s.classList.remove("active"); });
   const s = slides[i];
   s.classList.remove("active"); void s.offsetWidth; s.classList.add("active");   // replays the entrance animations
   cur = i;
-  enter[s.id]?.();
+  parts(s).forEach((id) => enter[id]?.());
   $("#progress").style.width = `${(i + 1) / slides.length * 100}%`;
   history.replaceState(null, "", `#${i + 1}`);
   const budget = slides.slice(0, i + 1).reduce((a, x) => a + Number(x.dataset.t || 0), 0);
   $("#notes-slide").textContent = `slide ${i + 1}/${slides.length} · ~${s.dataset.t}s · cumulative target ${Math.floor(budget / 60)}:${String(budget % 60).padStart(2, "0")}`;
   $("#notes-text").textContent = s.querySelector("aside.notes")?.textContent.trim() ?? "";
-  if (!started && i > 0) started = performance.now();
+  if (!started) started = performance.now();
 }
 setInterval(() => {
-  if (!started) { $("#notes-time").textContent = "timer starts on slide 2"; return; }
+  if (!started) return;
   const t = Math.round((performance.now() - started) / 1000);
-  $("#notes-time").textContent = `elapsed ${Math.floor(t / 60)}:${String(t % 60).padStart(2, "0")} / 5:00`;
+  $("#notes-time").textContent = `elapsed ${Math.floor(t / 60)}:${String(t % 60).padStart(2, "0")} / 3:00 (T restarts)`;
 }, 500);
 
 addEventListener("keydown", (e) => {
@@ -666,7 +481,7 @@ const robotReady = initRobot().catch((e) => {   // show why, and a drawn robot i
   console.warn("3D model:", e);
   document.querySelectorAll(".robot3d").forEach((el) => {
     el.querySelector(".r3d-msg").textContent = `3D model not available (${e?.message ?? e})`;
-    el.querySelector(".r3d-fallback").style.display = "";
+    const fb = el.querySelector(".r3d-fallback"); if (fb) fb.style.display = "";
   });
 });
 enter["s-title"] = () => robotReady.then(() => robot?.show($("#robot-slot-1")));
@@ -818,6 +633,18 @@ leave["s-end"] = () => robot?.hide();
     chips.forEach((c, i) => timers.push(setTimeout(() => { c.style.transition = "left .9s cubic-bezier(.2,.8,.2,1)"; c.style.left = "calc(56% + 10px)"; }, 900 + i * 400)));
   };
   leave["s-next"] = () => { timers.forEach(clearTimeout); timers.forEach(clearInterval); timers = []; };
+}
+
+/* ---------------- demo video (optional): drop demo.mp4 next to this page ---------------- */
+{
+  const v = $("#demo");
+  fetch("demo.mp4", { method: "HEAD" }).then((r) => {
+    if (!r.ok) return;
+    v.src = "demo.mp4"; v.style.display = "block"; $("#vr").style.visibility = "hidden";
+    $("#vr-cap").textContent = "demo video"; $("#vr-keys").style.display = "none";
+  }).catch(() => {});
+  enter["demo"] = () => { if (v.src) { v.currentTime = 0; v.play().catch(() => {}); } };
+  leave["demo"] = () => v.pause();
 }
 
 /* ---------------- VR view: simulated headset view with the app's real dock (icons.js) ---------------- */
