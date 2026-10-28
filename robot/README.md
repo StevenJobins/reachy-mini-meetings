@@ -72,7 +72,7 @@ src/reachy_meetings_robot/
 └── bridge/
     ├── protocol.py      JSON messages (keep in sync with xr-client / backend)
     └── server.py        WebSocket server
-scripts/                 check_connection, demo_gestures, mock_headset
+scripts/                 check_connection, demo_gestures, mock_headset, fake_camera (video stand-in)
 tests/                   pure-logic tests
 ```
 
@@ -94,6 +94,16 @@ tests/                   pure-logic tests
 ## Sharper video: `scripts/patch_daemon_video.py`
 
 The daemon gives the camera (1080p60) to webrtcsink without settings: start 2 Mbit/s, max 8, and below 2 Mbit/s webrtcsink scales the picture down to 720p/360p, which looked washed out in the headset. There is no daemon option, so the script patches `media_server.py` of the installed desktop app (backup `media_server.py.orig`): bitrate 3–15 Mbit/s (start 6). `--fps 30` adds a `videorate` to 30 fps in the WebRTC branch, but **don't use it**: with it, every headset session hung "stuck mid-negotiation" (daemon log: `signaling_state have-local-offer`, ICE `new`) about a minute after connecting, 4 times in 6 minutes, none with the bitrate-only patch. Why it was tried: with full 1080p60 arriving, VR dropped to ~19 fps (debug panel: video rx 60 fps, tex 19 fps, send 19 Hz); the page now limits the texture uploads to 30/s instead (`videosource.js`). The script always starts from the backup, so running it again with other options replaces the old patch. `--h264` also forces H264 (Apple hardware encoder `vtenc_h264_hw` is available; VP8 runs in software at its fastest/lowest setting). `--revert` restores the original. Restart the daemon afterwards (quit and reopen Reachy Mini Control); run it again after an app update. Check the result in the VR debug panel (incoming resolution, fps, bitrate, codec).
+
+## Fake camera for headset tests: `scripts/fake_camera.py`
+
+Stand-in for the daemon's video when no robot is at hand: a 1080p60 test pattern through `webrtcsink` with the same signalling (`ws://<laptop>:8443`, producer `reachymini`, VP8), so the Unity app (`xr-client/unity`) connects to it exactly as to the daemon. Each frame carries the Mac's clock as a black/white strip along the top edge, and `ws://<laptop>:8444` answers with the same clock, so the headset measures the video latency itself (`VideoLatency.cs`). Run it with the Reachy Mini Control app's Python, which has GStreamer:
+
+```bash
+"$HOME/Library/Application Support/com.pollen-robotics.reachy-mini/.venv/bin/python" robot/scripts/fake_camera.py
+```
+
+H264 does not work from a Mac: `webrtcsink`'s codec discovery fails with Apple's `vtenc_h264` (`not-negotiated`, every profile tried, GStreamer 1.28.8, 2026-10-28). The daemon uses the same `webrtcsink`, so `patch_daemon_video.py --h264` most likely hits the same error; check the daemon log before relying on it.
 
 ## Camera calibration with the real camera: `scripts/calibrate_camera_apriltag.py`
 

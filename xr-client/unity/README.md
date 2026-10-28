@@ -5,7 +5,7 @@ Native headset app (Unity), step 7 of [docs/xr-client-strategy.md](../../docs/xr
 | Phase | What | Status |
 |---|---|---|
 | 0 | Project skeleton: URP, OpenXR + Android XR, empty scene with a placeholder video window and an fps readout, builds to an APK | done (2026-10-28: runs on the Galaxy XR, OpenXR session focused, Vulkan on the Adreno 740, steady 72 fps / 13.9 ms without video) |
-| 1 | Video spike: robot camera via `com.unity.webrtc` (daemon signalling on the LAN), fps + latency against the web app (34 fps, 233 ms) | |
+| 1 | Video spike: robot camera via `com.unity.webrtc` (daemon signalling on the LAN), fps + latency against the web app (34 fps, 233 ms) | works with the fake camera (2026-10-28): 1080p60 VP8 in, **VR stays at 72 fps**, latency median 46 ms without a camera in the loop ([latency.md](../../docs/measurements/latency.md)). Open: the same with the real robot |
 | 2 | Head-pose loop: port `pose.js`, send to the robot bridge, measured pose from the daemon | |
 | 3 | World-locked reprojection: port `camera.js` (video sphere, lens model) | |
 | 4 | Feature parity (only after a go): captions, notes, room audio, depth, HF sign-in + Pollen central, UI | |
@@ -19,7 +19,7 @@ Open `xr-client/unity` in Unity Hub (Add → project from disk). The project is 
 
 | Script | Does |
 |---|---|
-| `ProjectSetup.AddPackages` | Adds the packages (URP, Input System, XR Management, OpenXR, Android XR, XR Interaction Toolkit). The Package Manager picks the versions verified for this editor. |
+| `ProjectSetup.AddPackages` | Adds the packages (URP, Input System, XR Management, OpenXR, Android XR, XR Interaction Toolkit, WebRTC). The Package Manager picks the versions verified for this editor. |
 | `ProjectConfigure.Run` | URP asset (HDR and post processing off, as Android XR requires); Android player settings (IL2CPP, ARM64, API 32+, Vulkan, Game Activity, Input System); OpenXR loader with Android XR support and the hand, Khronos-simple and Touch controller profiles; `Assets/Scenes/Main.unity`. |
 | `ProjectBuild.Android` | Development APK → `Builds/ReachyMeetings.apk` |
 
@@ -51,10 +51,24 @@ ADB=/Applications/Unity/Hub/Editor/6000.6.7f1/PlaybackEngines/AndroidPlayer/SDK/
 $ADB install -r xr-client/unity/Builds/ReachyMeetings.apk
 ```
 
-The app appears in the launcher as *Reachy Meetings*. You should see a dark-blue room, a floor, a checkerboard window 2 m ahead at eye height, and the frame rate below it.
+The app appears in the launcher as *Reachy Meetings*. You should see a dark-blue room, a floor, a window 2 m ahead at eye height (checkerboard until video arrives), and the frame rate and video status below it.
+
+## Robot video (Phase 1)
+
+The app connects straight to the daemon's WebRTC signalling on the robot laptop (`ws://<laptop-ip>:8443`, GStreamer `webrtcsink`, the same as `../web/index.html`), not through HF sign-in and Pollen central. Headset and laptop must be on the same Wi-Fi. Tell the app the address once; it is remembered on the headset:
+
+```bash
+$ADB shell am start -n ch.ethz.reachymeetings/com.unity3d.player.UnityPlayerGameActivity -e signalling ws://<laptop-ip>:8443
+```
+
+- **Real robot:** the daemon (Reachy Mini Control) must be running with media on. Its signalling server listens on all interfaces, also with the default `--localhost-only`.
+- **Without the robot:** `robot/scripts/fake_camera.py` (see robot/README.md) sends a 1080p60 test pattern with the same signalling and codec, plus a time strip: the app then also shows the video latency.
+
+Status lines below the frame rate: connection state; incoming video (size, fps, bitrate, codec, decoder); jitter buffer delay, decode time per frame, dropped frames; latency (fake camera only: median, p10–p90, clock sync accuracy; every 300 frames also in `adb logcat -s Unity` as `[latency]`).
 
 ## Scene
 
 - `XR Origin` (floor tracking) → `Camera Offset` → `Main Camera`, with a Tracked Pose Driver on the headset pose.
-- `Video Window`: 16:9 quad, 1.6 × 0.9 m at 2 m. Phase 1 puts the WebRTC texture here.
+- `Video Window`: 16:9 quad, 1.6 × 0.9 m at 2 m, shows the WebRTC texture.
+- `Robot Video`: `Assets/Scripts/Robot/RobotVideo.cs` (peer connection, stats), `GstSignalling.cs` (webrtcsink signalling protocol, no Unity rendering), `VideoLatency.cs` (time strip readback + clock sync).
 - `Fps Label` (`Assets/Scripts/FpsLabel.cs`): fps and ms per frame, averaged over 0.5 s. Drawn with `Assets/Shaders/WorldText.shader`: the built-in text shader does not render both eyes with single-pass instanced stereo, and URP Unlit draws the alpha-only font atlas black.

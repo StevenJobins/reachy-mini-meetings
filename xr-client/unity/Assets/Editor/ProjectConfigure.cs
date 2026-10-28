@@ -163,7 +163,15 @@ public static class ProjectConfigure
         // Frame-rate readout below the window: the Phase 1 go/no-go is measured against this
         var label = new GameObject("Fps Label");
         label.transform.position = new Vector3(0, 0.95f, 2f);
-        label.AddComponent<FpsLabel>().textMaterial = SaveMaterial("WorldText", Shader.Find("Reachy/WorldText"), Color.white);
+        var hud = label.AddComponent<FpsLabel>();
+        hud.textMaterial = SaveMaterial("WorldText", Shader.Find("Reachy/WorldText"), Color.white);
+
+        // Robot camera -> video window (Phase 1)
+        var video = new GameObject("Robot Video").AddComponent<RobotVideo>();
+        video.window = window.GetComponent<Renderer>();
+        video.hud = hud;
+        video.latency = video.gameObject.AddComponent<VideoLatency>();
+        video.latency.video = video;
 
         EditorSceneManager.SaveScene(scene, ScenePath);
         EditorBuildSettings.scenes = new[] { new EditorBuildSettingsScene(ScenePath, true) };

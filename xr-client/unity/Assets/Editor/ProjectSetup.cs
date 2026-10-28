@@ -17,6 +17,7 @@ public static class ProjectSetup
         "com.unity.xr.openxr",
         "com.unity.xr.androidxr-openxr",    // Galaxy XR
         "com.unity.xr.interaction.toolkit",
+        "com.unity.webrtc",                 // Phase 1: robot video
     };
 
     static AddAndRemoveRequest request;

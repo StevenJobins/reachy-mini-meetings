@@ -8,6 +8,8 @@ public class FpsLabel : MonoBehaviour
     const float Interval = 0.5f;
 
     public Material textMaterial;
+    /// <summary>More lines below the frame rate (e.g. RobotVideo status), smaller.</summary>
+    public string extra = "";
 
     TextMesh text;
     Material material;
@@ -26,7 +28,9 @@ public class FpsLabel : MonoBehaviour
         text.font = font;
         text.fontSize = 64;
         text.characterSize = 0.01f;
-        text.anchor = TextAnchor.MiddleCenter;
+        text.anchor = TextAnchor.UpperCenter;
+        text.alignment = TextAlignment.Center;
+        text.richText = true;
         text.color = Color.white;
         text.text = "…";
         GetComponent<MeshRenderer>().sharedMaterial = material;
@@ -45,6 +49,7 @@ public class FpsLabel : MonoBehaviour
         elapsed += Time.unscaledDeltaTime;
         if (elapsed < Interval) return;
         text.text = $"{frames / elapsed:0} fps   {1000f * elapsed / frames:0.0} ms";
+        if (!string.IsNullOrEmpty(extra)) text.text += $"\n<size=40>{extra}</size>";
         frames = 0;
         elapsed = 0;
     }
