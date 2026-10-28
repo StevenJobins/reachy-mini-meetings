@@ -44,3 +44,5 @@ node_modules/
 *.mov
 *.bag
 
+*.slnx
+.utmp/
