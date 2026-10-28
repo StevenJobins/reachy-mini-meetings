@@ -4,9 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Reachy Mini Meetings · Midterm</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@500;700&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet">
+<link href="vendor/fonts.css" rel="stylesheet">   <!-- local copies (fonts, three.js): the deck runs without internet -->
 <style>
   :root {
     --bg: #070b16; --bg2: #0d1426; --panel: rgba(255,255,255,.045); --panel2: rgba(255,255,255,.075);
@@ -229,13 +227,65 @@
   /* ---------- slide 9: thanks ---------- */
   #s-end .left { position: absolute; left: 90px; top: 230px; width: 820px; }
   #s-end h1 { font-size: 120px; }
+
+  /* ---------- measured results (progress slide) ---------- */
+  .vr-tag { position: absolute; left: 16px; top: 14px; font: 600 12px/1 var(--mono); letter-spacing: .1em; text-transform: uppercase; color: rgba(255,255,255,.75); background: rgba(7,11,22,.6); border: 1px solid var(--line); border-radius: 999px; padding: 7px 11px; }
+  .kpis { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-top: 18px; }
+  .kpis .card { padding: 14px 20px 14px; border-radius: 16px; border-left: 3px solid var(--c); }
+  .kpis b { display: flex; align-items: baseline; gap: 10px; font: 700 40px/1 var(--head); letter-spacing: -.02em; color: var(--c); }
+  .kpis b small { font-size: 18px; color: var(--muted); margin-left: -6px; }
+  .kpis b em { margin-left: auto; }
+  .kpis span { display: block; margin-top: 8px; font-size: 16px; line-height: 1.3; color: #dbe2f0; white-space: nowrap; }
+  .kpis em { font: 500 13px var(--mono); font-style: normal; color: var(--muted); letter-spacing: 0; }
+
+  /* ---------- blockers: two big, two small ---------- */
+  .blk2 { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; }
+  .blk2 .card { border-top: 4px solid var(--c); padding: 34px 36px; min-height: 440px; display: flex; flex-direction: column; }
+  .blk2 .tag { font: 700 14px var(--mono); letter-spacing: .12em; color: var(--c); margin-bottom: 14px; }
+  .blk2 h3 { font-size: 32px; margin-bottom: 22px; }
+  .blk2 .big { font: 700 96px/1 var(--head); letter-spacing: -.03em; margin-bottom: 22px; }
+  .blk2 .big small { font-size: 30px; color: var(--muted); margin-left: 6px; }
+  .blk2 .big .vs { font-size: 38px; color: var(--muted); margin: 0 12px; }
+  .blk2 p { margin: 0 0 10px; font-size: 21px; }
+  .blk2 .fix { margin-top: auto; padding-top: 16px; border-top: 1px solid var(--line); color: #fff; font-weight: 600; }
+  .blk2 .fix span { color: var(--c); }
+  .ops { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; margin-top: 24px; }
+  .ops .card { display: grid; grid-template-columns: 52px 1fr; gap: 14px; align-items: center; padding: 20px 26px; }
+  .ops .ic { font-size: 34px; }
+  .ops h3 { font-size: 22px; margin: 0 0 4px; }
+  .ops p { margin: 0; font-size: 17px; color: var(--muted); }
+
+  /* ---------- timeline: "we are here" ---------- */
+  .dm.now i { background: #fff; box-shadow: 0 0 0 0 rgba(255,255,255,.5); animation: here 1.8s ease-out infinite; }
+  @keyframes here { to { box-shadow: 0 0 0 16px rgba(255,255,255,0); } }
+  .dm.now b::after { content: " · today"; color: var(--muted); font-weight: 500; }
+
+  #notes-next { margin-top: 10px; font: 500 13px var(--mono); color: var(--muted); }
+
+  /* ---------- presenter view (?presenter): slide on top, notes below ---------- */
+  html.presenter #deck { top: 25vh; }
+  html.presenter #nav-presenter { display: none; }
+  html.presenter #notes { display: block; left: 16px; right: 16px; top: calc(50vh + 8px); bottom: 16px; width: auto; transform: none; overflow: auto; font-size: 25px; line-height: 1.5; }
+  html.presenter #notes .meta { font-size: 17px; }
+  html.presenter #notes-next { font-size: 17px; }
+
+  /* ---------- print / PDF: all slides one per page (?print) ---------- */
+  @page { size: 1600px 900px; margin: 0; }
+  html.print, html.print body { overflow: visible; height: auto; }
+  html.print #stage { position: static; }
+  html.print #deck { position: static; transform: none !important; width: 1600px; height: auto; }
+  html.print .slide { position: relative; width: 1600px; height: 900px; opacity: 1; visibility: visible; transform: none; transition: none; break-after: page; }
+  html.print .a { opacity: 1; animation: none !important; }
+  html.print .dates .fill { width: 100%; animation: none; }
+  html.print .grad { background: none; color: #a5b4fc; }   /* clipped gradient text prints as a solid box */
+  html.print #nav, html.print #progress, html.print #notes { display: none; }
 </style>
 </head>
 <body>
 <div id="stage"><div id="deck">
 
 <!-- ======================================================= 1 PROGRESS -->
-<section class="slide" id="p1" data-parts="s-title s-vr demo" data-t="50">
+<section class="slide" id="p1" data-parts="s-title s-vr demo" data-t="45">
   <div class="kicker a">Reachy Mini Meetings · Midterm · Dominic Ill · Kevin Stöckli · Simon Thut</div>
   <h2 class="a" style="--d:.1s">Progress: <span class="grad">a meeting through a robot</span>, end to end</h2>
   <div style="display:grid;grid-template-columns:400px 1fr;gap:30px;align-items:start">
@@ -253,29 +303,36 @@
       <div style="position:relative;width:990px;height:418px">
         <canvas id="vr" width="2840" height="1200" style="width:990px;height:418px"></canvas>
         <video id="demo" muted loop playsinline style="display:none;position:absolute;inset:0;width:990px;height:418px;object-fit:cover;border-radius:22px;border:1px solid var(--line);background:#000"></video>
+        <span class="vr-tag" id="vr-cap">headset view · simulated</span>
       </div>
       <div class="vr-keys" id="vr-keys">
         <span class="chip"><span class="dot" style="background:var(--video)"></span>live video, pinned in the room</span>
-        <span class="chip"><span class="dot" style="background:#fff"></span>translated bubble above the speaker</span>
-        <span class="chip"><span class="dot" style="background:var(--lang)"></span>dock: mic, talk, laugh, translate, notes</span>
+        <span class="chip"><span class="dot" style="background:#fff"></span>translated bubble</span>
+        <span class="chip"><span class="dot" style="background:var(--lang)"></span>dock: talk, laugh, translate, notes</span>
       </div>
-      <div class="muted mono" id="vr-cap" style="font-size:13px;margin-top:10px">headset view, simulated with the app's own dock drawing code</div>
+      <div class="kpis">
+        <div class="card a" style="--d:.8s;--c:var(--lang)"><b>2.1<small>s</small><em>was 7.1 s</em></b><span>you speak → Reachy says it, translated</span></div>
+        <div class="card a" style="--d:.9s;--c:var(--pose)"><b>20<small>/s</small><em>headset alone: ~3/s</em></b><span>faces tracked on the robot laptop</span></div>
+        <div class="card a" style="--d:1s;--c:var(--video)"><b>2.3<small>px</small><em>24 views</em></b><span>lens calibration error, real camera</span></div>
+      </div>
     </div>
   </div>
-  <aside class="notes">~50 s (Simon). We join a real meeting through Reachy Mini from a Galaxy XR headset — a web app, one link. What works today: the robot head and body follow you, two-way audio; the video is pinned in the room with a calibrated lens; Reachy turns to whoever speaks; bubbles show the translation above the speaker, and Reachy can speak for you. In testing: a room scan with depth. On the right: what you see in the headset, with the dock — mic, talk, laugh, translate, notes.</aside>
+  <aside class="notes">~45 s. Hi, I'm Kevin, presenting Reachy Mini Meetings with Dominic and Simon. The idea: you join a meeting from a VR headset, and a Reachy Mini on the table is your body in the room. It's a web app, one link on the Galaxy XR. [point at the checklist] What works today: Reachy's head and body follow yours, with audio both ways. The video is pinned in the room with our calibrated lens. Reachy turns to whoever speaks, bubbles show what people say, translated, and Reachy speaks your words in their language. [point at the numbers] That takes about two seconds now instead of seven, and faces are tracked twenty times a second. Room scan with depth is in testing.</aside>
 </section>
 
 <!-- ======================================================= 2 LATENCY -->
-<section class="slide" id="p2" data-parts="s-lat s-rp" data-t="55">
+<section class="slide" id="p2" data-parts="s-lat s-rp" data-t="50">
   <div class="kicker a">Core problem · latency</div>
   <h2 class="a" style="--d:.1s">233 ms late — <span class="grad">so we pin the picture in the room</span></h2>
   <div style="display:grid;grid-template-columns:400px 1fr;gap:30px">
     <div style="display:grid;gap:18px;align-content:start">
       <div class="card a" style="--d:.2s">
-        <div class="muted mono" style="font-size:14px;letter-spacing:.08em">VIDEO DELAY, MEASURED</div>
+        <div class="muted mono" style="font-size:14px;letter-spacing:.08em">VIDEO DELAY · DESKTOP BASELINE</div>
         <div class="kpi"><span id="kpi-lat">0</span><small>ms</small></div>
         <p style="margin:8px 0 0;font-size:19px">median, very steady</p>
-        <p class="muted" style="margin:12px 0 0;font-size:15px;line-height:1.4">Pollen reports ~100 ms: Reachy Mini Wireless, H.264, hardware decode, 5 GHz Wi-Fi.<br>Ours: Lite on a Mac, VP8 in software, 1080p.</p>
+        <p class="muted mono" style="margin:4px 0 0;font-size:14px">p10–p90: 217–234 ms · 300 frames</p>
+        <p style="margin:10px 0 0;font-size:17px;color:var(--video);font-weight:600">→ in the headset over Wi-Fi: measuring next</p>
+        <p class="muted" style="margin:12px 0 0;font-size:15px;line-height:1.4">Pollen reports ~100 ms: Reachy Mini Wireless, hardware H.264, 5 GHz Wi-Fi.<br>Ours: Lite on a Mac, VP8 in software, 1080p.</p>
       </div>
       <div class="card a" style="--d:.35s">
         <div class="muted mono" style="font-size:14px;letter-spacing:.08em">HOW WE MEASURE · QR LOOP</div>
@@ -301,20 +358,34 @@
       </div>
     </div>
   </div>
-  <aside class="notes">~55 s (Kevin). Our core problem: every head turn goes to the robot and the picture comes back late. We measure it with a QR code that shows the time and is filmed by Reachy: 233 ms, very steady. Pollen reports about 100 ms, but with the Wireless version and hardware H.264 — we run the Lite on a laptop with software VP8 at 1080p. Our answer: top, the naive way — video glued to your head, the room swims. Bottom, ours — each frame is pinned where the robot was looking when it was taken; your view moves over a still room and the room scan fills the edges.</aside>
+  <aside class="notes">~50 s. Our core problem is latency. Every head turn goes to the robot, and the picture comes back late. [point at the QR] We measure it with a QR code that shows the time: Reachy films it, we read it back. 233 milliseconds, very steady. That's a desktop baseline; the headset number over Wi-Fi is next. Pollen reports about 100, but with hardware encoding on the Wireless version. Our answer is reprojection. [point at the top animation] The naive way: the video is glued to your head, so the room swims. [bottom animation] Ours: each frame is pinned where the robot was looking when it was taken. Your own head turns are instant, only the window edge lags, and the room scan fills the gap.</aside>
 </section>
 
 <!-- ======================================================= 3 BLOCKERS -->
 <section class="slide" id="p3" data-t="35">
   <div class="kicker a">Problems & blockers</div>
-  <h2 class="a" style="--d:.1s">What slows us down</h2>
-  <div class="blk">
-    <div class="card a" style="--d:.2s;--c:#fb7185"><div class="ic">🐢</div><div><h3>Video costs half the frame rate</h3><p>Copying each 1080p frame in Chrome: 72 → 34 fps in the headset.</p><p class="fix">→ upload straight to the GPU (validating); Unity prototype</p></div></div>
-    <div class="card a" style="--d:.3s;--c:var(--warn)"><div class="ic">⏱️</div><div><h3>Video delay 2× Pollen's</h3><p>233 ms vs ~100 ms: software VP8 at 1080p on the laptop CPU.</p><p class="fix">→ test 720p and H.264 hardware encoding</p></div></div>
-    <div class="card a" style="--d:.4s;--c:var(--depth)"><div class="ic">💻</div><div><h3>The robot laptop matters</h3><p>On an older Intel Mac the current daemon does not run, and our measurements there were invalid.</p><p class="fix">→ Apple-silicon laptop only</p></div></div>
-    <div class="card a" style="--d:.5s;--c:var(--video)"><div class="ic">📶</div><div><h3>Network</h3><p>Headset and robot laptop must share one Wi-Fi, or the connection never starts.</p><p class="fix">→ same network for tests and the demo</p></div></div>
+  <h2 class="a" style="--d:.1s">Two blockers, <span class="grad">two lessons learned</span></h2>
+  <div class="blk2">
+    <div class="card a" style="--d:.2s;--c:#fb7185">
+      <div class="tag">BLOCKER 1 · FRAME RATE</div>
+      <h3>Video costs half the VR frame rate</h3>
+      <div class="big">72<span class="vs">→</span>34<small>fps</small></div>
+      <p>Chrome copies every 1080p frame before VR can draw it.</p>
+      <p class="fix"><span>→</span> frames straight to the GPU (built, testing) · <span>plan B:</span> Unity</p>
+    </div>
+    <div class="card a" style="--d:.35s;--c:var(--warn)">
+      <div class="tag">BLOCKER 2 · DELAY</div>
+      <h3>Our video is 2× later than Pollen's</h3>
+      <div class="big">233<span class="vs">vs</span>~100<small>ms</small></div>
+      <p>VP8 encoded in software, 1080p, on the laptop CPU.</p>
+      <p class="fix"><span>→</span> test 720p and the Mac's hardware H.264 encoder</p>
+    </div>
   </div>
-  <aside class="notes">~35 s (Dominic). Four things slow us down. In Chrome, copying every 1080p frame halved the headset frame rate — we now upload frames directly to the GPU and will try Unity. Our video delay is twice Pollen's because of software VP8 at 1080p — we will test 720p and hardware H.264. The robot laptop matters: on an older Intel Mac the current daemon does not run and our measurements there were invalid, so only Apple-silicon laptops. And headset and robot laptop must be on the same Wi-Fi, otherwise the connection never starts.</aside>
+  <div class="ops">
+    <div class="card a" style="--d:.5s"><div class="ic">💻</div><div><h3>Robot laptop: Apple silicon only</h3><p>An Intel Mac was too slow: its 908 ms headset run was invalid.</p></div></div>
+    <div class="card a" style="--d:.6s"><div class="ic">📶</div><div><h3>One Wi-Fi for headset and laptop</h3><p>Otherwise the video connection never starts.</p></div></div>
+  </div>
+  <aside class="notes">~35 s. Two real blockers. [left card] First, the browser: copying every 1080p frame into VR halves the frame rate, from 72 to 34, and a low frame rate makes people sick. We now upload frames straight to the GPU; if that's not enough, plan B is Unity. [right card] Second, our delay is twice Pollen's because the video is encoded in software, so we'll test 720p and the Mac's hardware H.264. [bottom] And two lessons: the robot laptop must be Apple silicon, and headset and laptop must share one Wi-Fi.</aside>
 </section>
 
 <!-- ======================================================= 4 NEXT STEPS + TIMELINE -->
@@ -345,21 +416,21 @@
   </div>
   <div class="dates a" style="--d:.6s">
     <div class="bar"></div><div class="fill"></div>
-    <div class="dm" style="left:0%;--c:#fff"><i></i><b>Nov 2</b><span>midterm</span></div>
+    <div class="dm now" style="left:0%;--c:#fff"><i></i><b>Nov 2</b><span>midterm</span></div>
     <div class="dm" style="left:17%;--c:var(--video)"><i></i><b>Nov 3–15</b><span>latency study</span></div>
     <div class="dm" style="left:39%;--c:var(--pose)"><i></i><b>Nov 16–29</b><span>Unity prototype<br>go / no-go</span></div>
     <div class="dm" style="left:61%;--c:var(--lang)"><i></i><b>Nov 30–Dec 11</b><span>user study,<br>demo rehearsal</span></div>
     <div class="dm" style="left:81%;--c:var(--hot)"><i></i><b>Dec 14</b><span>final + live demo</span></div>
     <div class="dm" style="left:100%;--c:var(--depth)"><i></i><b>Jan 11</b><span>report</span></div>
   </div>
-  <aside class="notes">~40 s (Simon). Six weeks to the live demo on December 14. Until mid-November we measure latency: in the headset over Wi-Fi, 720p, hardware H.264, and the picture-vs-head error with reprojection on and off. Until the end of November a Unity prototype — we switch only if it is clearly faster. Then the user study with 8–10 people, reprojection on vs off, and rehearsing the demo. Final presentation and live demo December 14, report January 11.</aside>
+  <aside class="notes">~40 s. Six weeks to the live demo. Until mid-November, the latency study: in the headset, at 720p, with hardware H.264, and how far the picture lags your head with reprojection on versus off. Then, until the end of November, a Unity prototype; we switch only if it's clearly faster. Then a user study with 8 to 10 people, reprojection on versus off: task time, motion sickness, presence. Final demo December 14, report January 11. Thank you, happy to take questions. ‖ Q&A — Why web, not native? No install, one link, live in a minute; Pollen's JS SDK already does sign-in and video; we go native only if the numbers say so. · Is 233 ms in the headset? No, desktop baseline; the headset run is the first study step (an earlier one on an overloaded Intel Mac was invalid). · Does reprojection help yet? It runs; the benefit is what the on/off study measures. · What is depth for? The scanned room becomes 3D, so small head movements look right, not just turns. · What runs on the laptop? Robot video, Whisper, DeepL, face tracking, depth: hence Apple silicon.</aside>
 </section>
 
 </div></div>
 
 <div id="progress"></div>
-<div id="nav"><button id="nav-prev">←</button><button id="nav-notes">notes (N)</button><button id="nav-full">full (F)</button><button id="nav-next">→</button></div>
-<div id="notes"><div class="meta"><span id="notes-slide"></span><span id="notes-time"></span></div><div id="notes-text"></div></div>
+<div id="nav"><button id="nav-prev">←</button><button id="nav-presenter">presenter (P)</button><button id="nav-notes">notes (N)</button><button id="nav-full">full (F)</button><button id="nav-next">→</button></div>
+<div id="notes"><div class="meta"><span id="notes-slide"></span><span id="notes-time"></span></div><div id="notes-text"></div><div id="notes-next"></div></div>
 
 <script type="module">
 import { drawDockButton, drawMicButton } from "../icons.js";   // the app's own dock drawing (VR view slide)
@@ -369,13 +440,19 @@ const deck = $("#deck");
 let cur = 0, started = null;
 const enter = {}, leave = {};
 
+// presenter view: ?presenter shows the slide small on top and the notes below; P opens it in its own window.
+// Both windows follow each other over a BroadcastChannel, so the arrow keys work in either one.
+const presenter = new URLSearchParams(location.search).has("presenter");
+if (presenter) document.documentElement.classList.add("presenter");
+const sync = "BroadcastChannel" in window ? new BroadcastChannel("midterm-deck") : null;
+
 function fit() {
-  const s = Math.min(innerWidth / 1600, innerHeight / 900);
+  const s = Math.min(innerWidth / 1600, (presenter ? innerHeight * 0.5 - 16 : innerHeight) / 900);
   deck.style.transform = `translate(-50%, -50%) scale(${s})`;
 }
 addEventListener("resize", fit); fit();
 
-function go(i) {
+function go(i, remote = false) {
   i = Math.max(0, Math.min(slides.length - 1, i));
   const prev = slides[cur];
   const parts = (x) => (x.dataset.parts ? x.dataset.parts.split(" ") : [x.id]);
@@ -390,8 +467,12 @@ function go(i) {
   const budget = slides.slice(0, i + 1).reduce((a, x) => a + Number(x.dataset.t || 0), 0);
   $("#notes-slide").textContent = `slide ${i + 1}/${slides.length} · ~${s.dataset.t}s · cumulative target ${Math.floor(budget / 60)}:${String(budget % 60).padStart(2, "0")}`;
   $("#notes-text").textContent = s.querySelector("aside.notes")?.textContent.trim() ?? "";
+  $("#notes-next").textContent = slides[i + 1] ? `next → ${slides[i + 1].querySelector("h2").textContent}` : "last slide";
   if (!started) started = performance.now();
+  if (!remote) sync?.postMessage({ i });
 }
+if (sync) sync.onmessage = (e) => { if (e.data.i !== cur) go(e.data.i, true); };
+function openPresenter() { window.open(`${location.pathname}?presenter#${cur + 1}`, "midterm-presenter", "width=1200,height=850"); }
 setInterval(() => {
   if (!started) return;
   const t = Math.round((performance.now() - started) / 1000);
@@ -406,12 +487,14 @@ addEventListener("keydown", (e) => {
   else if (e.key === "n" || e.key === "N") $("#notes").classList.toggle("show");
   else if (e.key === "f" || e.key === "F") toggleFull();
   else if (e.key === "t" || e.key === "T") started = performance.now();
+  else if ((e.key === "p" || e.key === "P") && !presenter) openPresenter();
 });
 function toggleFull() { document.fullscreenElement ? document.exitFullscreen() : document.documentElement.requestFullscreen().catch(() => {}); }
 $("#nav-prev").onclick = () => go(cur - 1);
 $("#nav-next").onclick = () => go(cur + 1);
 $("#nav-notes").onclick = () => $("#notes").classList.toggle("show");
 $("#nav-full").onclick = toggleFull;
+$("#nav-presenter").onclick = openPresenter;
 let tx = null;
 addEventListener("touchstart", (e) => { tx = e.touches[0].clientX; }, { passive: true });
 addEventListener("touchend", (e) => { if (tx == null) return; const dx = e.changedTouches[0].clientX - tx; if (Math.abs(dx) > 50) go(cur + (dx < 0 ? 1 : -1)); tx = null; });
@@ -419,7 +502,7 @@ addEventListener("touchend", (e) => { if (tx == null) return; const dx = e.chang
 /* ---------------- 3D Reachy Mini (slides 1 and 9) ---------------- */
 let robot = null;
 async function initRobot() {
-  const THREE = await import("https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js");
+  const THREE = await import("./vendor/three.module.js");   // three@0.160.0
   const [meta, bin] = await Promise.all([fetch("reachy.json").then((r) => { if (!r.ok) throw new Error(`reachy.json ${r.status}`); return r.json(); }), fetch("reachy.bin").then((r) => { if (!r.ok) throw new Error(`reachy.bin ${r.status}`); return r.arrayBuffer(); })]);
   const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
   if (!renderer.getContext()) throw new Error("no WebGL");
@@ -641,7 +724,7 @@ leave["s-end"] = () => robot?.hide();
   fetch("demo.mp4", { method: "HEAD" }).then((r) => {
     if (!r.ok) return;
     v.src = "demo.mp4"; v.style.display = "block"; $("#vr").style.visibility = "hidden";
-    $("#vr-cap").textContent = "demo video"; $("#vr-keys").style.display = "none";
+    $("#vr-cap").textContent = "demo video · real headset"; $("#vr-keys").style.display = "none";
   }).catch(() => {});
   enter["demo"] = () => { if (v.src) { v.currentTime = 0; v.play().catch(() => {}); } };
   leave["demo"] = () => v.pause();
@@ -746,7 +829,11 @@ leave["s-end"] = () => robot?.hide();
   leave["s-vr"] = () => cancelAnimationFrame(raf);
 }
 
-go(Math.max(0, (parseInt(location.hash.slice(1)) || 1) - 1));
+if (new URLSearchParams(location.search).has("print")) {   // ?print: every slide on its own page, animations at their end state (PDF export)
+  document.documentElement.classList.add("print");
+  slides.forEach((s) => (s.dataset.parts ? s.dataset.parts.split(" ") : [s.id]).forEach((id) => enter[id]?.()));
+  setTimeout(() => ($("#kpi-lat").textContent = "233"), 2500);   // after the count-up, in case it did not finish
+} else go(Math.max(0, (parseInt(location.hash.slice(1)) || 1) - 1));
 </script>
 </body>
 </html>

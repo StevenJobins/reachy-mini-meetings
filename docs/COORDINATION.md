@@ -34,6 +34,7 @@ better (lower RMS over more views), replace it and note the numbers here.
 
 ## Status (newest first, one line each: date, who, what, branch)
 
+- 2026-10-28 Kevin/Claude: midterm slides (Simon's deck) for Kevin presenting alone: speaker notes rewritten for one speaker (170 s), measured results on slide 1, 233 ms labelled as desktop baseline, blockers slide as 2 blockers + 2 lessons, "today" on the timeline. Fonts and three.js copied to `midterm/vendor/` (runs offline via a local server), `?print` mode and `midterm-slides.pdf` for the submission, presenter window (P, `?presenter`, synced over a BroadcastChannel) with cues and Q&A answers in the notes. Main.
 - 2026-10-24 Simon/Claude: midterm slides, public at `xr-client/pages/midterm/index.html` (one HTML file; 3D model from `presentation/midterm/export_reachy_model.py`). Main.
 - 2026-10-16 Simon/Claude: room scan showed one photo 12 times since the direct VideoFrame upload (be9e67f): `captureFrame` read `source.canvas`, which is no longer redrawn. Now `videosource.currentImage()` (the current VideoFrame in track mode). Kevin: keep this in mind if the canvas path changes again. Main.
 - 2026-10-16 Simon/Claude: `captions.js` (your area): Simon's Mac tunnel key added to `TRUSTED_KEYS` (backend now also runs there, for the headset latency test). Main.
