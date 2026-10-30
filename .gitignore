@@ -46,3 +46,4 @@ node_modules/
 
 *.slnx
 .utmp/
+!xr-client/pages/midterm/demo.mp4

@@ -34,6 +34,7 @@ better (lower RMS over more views), replace it and note the numbers here.
 
 ## Status (newest first, one line each: date, who, what, branch)
 
+- 2026-10-30 Kevin/Claude: midterm slides (Simon's deck) replaced by a simple 4-slide version for the move to Unity (`xr-client/unity`): title with 3D robot, demo video, what we did and solved, timeline. Note for Dominic and Simon: the web app is now only a reference, and speaker following (Dominic's area) is out of the Unity app for now, see `xr-client/unity/README.md`.
 - 2026-10-28 Kevin/Claude: midterm slides (Simon's deck) for Kevin presenting alone: speaker notes rewritten for one speaker (170 s), measured results on slide 1, 233 ms labelled as desktop baseline, blockers slide as 2 blockers + 2 lessons, "today" on the timeline. Fonts and three.js copied to `midterm/vendor/` (runs offline via a local server), `?print` mode and `midterm-slides.pdf` for the submission, presenter window (P, `?presenter`, synced over a BroadcastChannel) with cues and Q&A answers in the notes. Main.
 - 2026-10-24 Simon/Claude: midterm slides, public at `xr-client/pages/midterm/index.html` (one HTML file; 3D model from `presentation/midterm/export_reachy_model.py`). Main.
 - 2026-10-16 Simon/Claude: room scan showed one photo 12 times since the direct VideoFrame upload (be9e67f): `captureFrame` read `source.canvas`, which is no longer redrawn. Now `videosource.currentImage()` (the current VideoFrame in track mode). Kevin: keep this in mind if the canvas path changes again. Main.

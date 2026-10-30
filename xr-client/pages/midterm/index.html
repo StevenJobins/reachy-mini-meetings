@@ -269,6 +269,48 @@
   html.presenter #notes .meta { font-size: 17px; }
   html.presenter #notes-next { font-size: 17px; }
 
+  /* ---------- simple slides ---------- */
+  #notes-text { white-space: pre-line; }
+  .slide { display: flex; flex-direction: column; justify-content: center; }
+  .title-left { position: absolute; left: 110px; top: 300px; width: 760px; }
+  .title-left h1 { font-size: 112px; }
+  .title-left .sub { font-size: 36px; margin: 30px 0 0; color: var(--text); }
+  .title-left .who { font: 500 20px var(--mono); color: var(--muted); margin: 26px 0 0; }
+  #p1 .robot3d { right: 40px; top: 40px; }
+  .steps { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; margin-top: 22px; }
+  .step { display: grid; grid-template-columns: 52px 1fr; gap: 16px; align-items: center; padding: 18px 22px; border-radius: 18px; border: 1px solid var(--line); background: var(--panel); opacity: .55; transition: opacity .4s, border-color .4s, background .4s; }
+  .step.on { opacity: 1; border-color: var(--c); background: var(--panel2); }
+  .step b { display: grid; place-items: center; width: 50px; height: 50px; border-radius: 50%; font: 700 24px var(--head); color: var(--bg); background: var(--c); }
+  .step h3 { font-size: 24px; margin: 0 0 3px; }
+  .step p { margin: 0; font-size: 18px; line-height: 1.3; color: var(--muted); }
+  .sofar { display: grid; grid-template-columns: 450px 1fr; gap: 26px; margin-top: 8px; }
+  .sofar > .card { padding: 34px 36px; }
+  .sofar > .card h3 { font-size: 28px; margin-bottom: 26px; }
+  .done { list-style: none; margin: 0; padding: 0; display: grid; gap: 23px; }
+  .done li { display: grid; grid-template-columns: 38px 1fr; align-items: center; font-size: 25px; line-height: 1.2; color: var(--text); }
+  .done li::before { content: "✓"; display: grid; place-items: center; width: 26px; height: 26px; border-radius: 50%; font: 700 15px var(--mono); color: var(--bg); background: var(--pose); }
+  .tiles { display: grid; grid-template-columns: 1fr 1fr; gap: 22px; }
+  .tile { border-top: 4px solid var(--c); padding: 26px 30px; }
+  .tile b { display: block; font: 700 66px/1.05 var(--head); letter-spacing: -.02em; color: var(--c); margin-bottom: 12px; white-space: nowrap; }
+  .tile b i { font-style: normal; font-size: 40px; color: var(--muted); }
+  .tile b small { font-size: 26px; color: var(--muted); margin-left: 8px; letter-spacing: 0; }
+  .tile h3 { font-size: 25px; margin: 0 0 6px; }
+  .tile p { margin: 0; font-size: 19px; line-height: 1.35; color: var(--muted); }
+  .tl { position: relative; display: grid; grid-template-columns: repeat(6, 1fr); gap: 16px; margin-top: 40px; }
+  .tl .line { position: absolute; left: 0; right: 0; top: 10px; height: 4px; border-radius: 4px; background: rgba(255,255,255,.08); overflow: hidden; }
+  .tl .line span { display: block; height: 100%; width: 0; background: linear-gradient(90deg, #fff, var(--pose), var(--video), var(--lang), var(--hot), var(--depth)); }
+  .slide.active .tl .line span { animation: grow 2.2s ease .4s forwards; }
+  .tlc { position: relative; display: flex; flex-direction: column; align-items: center; }
+  .tlc > i { width: 24px; height: 24px; border-radius: 50%; background: var(--bg); border: 5px solid var(--c); margin-bottom: 26px; z-index: 1; }
+  .tlc.now > i { background: #fff; animation: here 1.8s ease-out infinite; }
+  .tlc .card { width: 100%; height: 250px; padding: 22px 20px; border-top: 4px solid var(--c); }
+  .tlc b { display: block; font: 700 19px var(--mono); color: var(--c); margin-bottom: 14px; white-space: nowrap; }
+  .tlc h3 { font-size: 27px; line-height: 1.15; margin: 0 0 12px; }
+  .tlc p { margin: 0; font-size: 19px; line-height: 1.35; color: var(--muted); }
+  .extras { margin: 26px 0 0; text-align: center; font-size: 22px; color: var(--muted); }
+  html.print .step { opacity: 1; }
+  html.print .tl .line span { width: 100%; animation: none; }
+
   /* ---------- print / PDF: all slides one per page (?print) ---------- */
   @page { size: 1600px 900px; margin: 0; }
   html.print, html.print body { overflow: visible; height: auto; }
@@ -284,146 +326,99 @@
 <body>
 <div id="stage"><div id="deck">
 
-<!-- ======================================================= 1 PROGRESS -->
-<section class="slide" id="p1" data-parts="s-title s-vr demo" data-t="45">
-  <div class="kicker a">Reachy Mini Meetings · Midterm · Dominic Ill · Kevin Stöckli · Simon Thut</div>
-  <h2 class="a" style="--d:.1s">Progress: <span class="grad">a meeting through a robot</span>, end to end</h2>
-  <div style="display:grid;grid-template-columns:400px 1fr;gap:30px;align-items:start">
-    <div>
-      <div class="robot3d" id="robot-slot-1" style="position:relative;right:auto;top:auto;width:360px;height:410px;margin:-30px 0 -20px 10px"><div class="r3d-msg">loading 3D model…</div></div>
-      <ul class="prog">
-        <li class="a" style="--d:.3s"><span class="st ok">✓</span>Head + body follow you, two-way audio</li>
-        <li class="a" style="--d:.4s"><span class="st ok">✓</span>Video pinned in the room, calibrated lens</li>
-        <li class="a" style="--d:.5s"><span class="st ok">✓</span>Looks at the speaker; talk + laugh</li>
-        <li class="a" style="--d:.6s"><span class="st ok">✓</span>Translated bubbles; Reachy speaks for you</li>
-        <li class="a" style="--d:.7s"><span class="st wip">◐</span>Room scan with depth (testing)</li>
+<!-- ======================================================= 1 TITLE -->
+<section class="slide" id="p1" data-parts="s-title" data-t="25">
+  <div class="title-left">
+    <h1 class="a">Reachy Mini<br><span class="grad">Meetings</span></h1>
+    <p class="a sub" style="--d:.2s">Join a meeting through a robot</p>
+    <p class="a who" style="--d:.35s">Dominic Ill · Kevin Stöckli · Simon Thut</p>
+  </div>
+  <div class="robot3d" id="robot-slot-1"><div class="r3d-msg">loading 3D model…</div></div>
+  <aside class="notes">• Reachy Mini Meetings: Dominic, Simon, Kevin
+• Goal: join a meeting without being in the room
+• VR headset + robot on the table
+• See through its camera, hear the room, head moves with yours</aside>
+</section>
+
+<!-- ======================================================= 2 DEMO -->
+<section class="slide" id="p2" data-parts="demo" data-t="30">
+  <h2 class="a">Demo: <span class="grad">on the real robot</span></h2>
+  <div class="a fade" style="--d:.1s;position:relative;width:1420px;height:511px;margin-top:6px">
+    <video id="demo" muted loop playsinline poster="demo.jpg" style="position:absolute;inset:0;width:1420px;height:511px;object-fit:cover;border-radius:22px;border:1px solid var(--line);background:#000"></video>
+    <span class="vr-tag">In the room</span>
+    <span class="vr-tag" style="left:925px">In the headset</span>
+  </div>
+  <div class="steps">
+    <div class="step" data-from="0" data-to="6.3" style="--c:var(--video)"><b>1</b><div><h3>Reachy scans the room</h3><p>It looks around and saves what it sees.</p></div></div>
+    <div class="step" data-from="6.3" data-to="12" style="--c:var(--pose)"><b>2</b><div><h3>Reachy follows the head</h3><p>The room stays in place when the user looks around.</p></div></div>
+    <div class="step" data-from="12" data-to="99" style="--c:var(--lang)"><b>3</b><div><h3>Speech appears</h3><p>Spoken words show up in a bubble above the head.</p></div></div>
+  </div>
+  <aside class="notes">• Real robot, nothing simulated
+• Left: room. Right: headset
+• 1. Scans the room
+• 2. Follows the head, room stays in place
+• 3. Speech appears in a bubble</aside>
+</section>
+
+<!-- ======================================================= 3 DONE -->
+<section class="slide" id="p3" data-t="90">
+  <h2 class="a">What we did <span class="grad">and what we solved</span></h2>
+  <div class="sofar">
+    <div class="card a" style="--d:.15s">
+      <h3 style="color:var(--video)">Now running in Unity</h3>
+      <ul class="done">
+        <li>Live video in the headset</li>
+        <li>Reachy follows your head</li>
+        <li>Video stays fixed in the room</li>
+        <li>Two-way audio</li>
+        <li>Speech bubbles</li>
+        <li>Panorama of the room</li>
       </ul>
     </div>
-    <div class="a fade" style="--d:.2s">
-      <div style="position:relative;width:990px;height:418px">
-        <canvas id="vr" width="2840" height="1200" style="width:990px;height:418px"></canvas>
-        <video id="demo" muted loop playsinline style="display:none;position:absolute;inset:0;width:990px;height:418px;object-fit:cover;border-radius:22px;border:1px solid var(--line);background:#000"></video>
-        <span class="vr-tag" id="vr-cap">headset view · simulated</span>
-      </div>
-      <div class="vr-keys" id="vr-keys">
-        <span class="chip"><span class="dot" style="background:var(--video)"></span>live video, pinned in the room</span>
-        <span class="chip"><span class="dot" style="background:#fff"></span>translated bubble</span>
-        <span class="chip"><span class="dot" style="background:var(--lang)"></span>dock: talk, laugh, translate, notes</span>
-      </div>
-      <div class="kpis">
-        <div class="card a" style="--d:.8s;--c:var(--lang)"><b>2.1<small>s</small><em>was 7.1 s</em></b><span>you speak → Reachy says it, translated</span></div>
-        <div class="card a" style="--d:.9s;--c:var(--pose)"><b>20<small>/s</small><em>headset alone: ~3/s</em></b><span>faces tracked on the robot laptop</span></div>
-        <div class="card a" style="--d:1s;--c:var(--video)"><b>2.3<small>px</small><em>24 views</em></b><span>lens calibration error, real camera</span></div>
-      </div>
+    <div class="tiles">
+      <div class="card tile a" style="--d:.25s;--c:var(--pose)"><b>34 <i>→</i> 72<small>fps</small></b><h3>Frame rate</h3><p>Chrome halved it with video. Unity keeps 72.</p></div>
+      <div class="card tile a" style="--d:.35s;--c:var(--video)"><b>141<small>ms</small></b><h3>Video delay</h3><p>In the headset over Wi-Fi, real camera.</p></div>
+      <div class="card tile a" style="--d:.45s;--c:var(--lang)"><b>5×<small>less</small></b><h3>Video shake</h3><p>It caused motion sickness. Now it feels much better.</p></div>
+      <div class="card tile a" style="--d:.55s;--c:var(--hot)"><b>±3°</b><h3>Head play</h3><p>Small moves don't reach the robot. The app now handles it.</p></div>
     </div>
   </div>
-  <aside class="notes">~45 s. Hi, I'm Kevin, presenting Reachy Mini Meetings with Dominic and Simon. The idea: you join a meeting from a VR headset, and a Reachy Mini on the table is your body in the room. It's a web app, one link on the Galaxy XR. [point at the checklist] What works today: Reachy's head and body follow yours, with audio both ways. The video is pinned in the room with our calibrated lens. Reachy turns to whoever speaks, bubbles show what people say, translated, and Reachy speaks your words in their language. [point at the numbers] That takes about two seconds now instead of seven, and faces are tracked twenty times a second. Room scan with depth is in testing.</aside>
+  <aside class="notes">• Moved from web to Unity
+• Frame rate: 34 → 72 fps. Chrome copied every frame
+• Delay: 141 ms. Measured with a flashing screen
+• Was 302 ms: video waited for unused audio. Removed it
+• Reprojection: frame shown where robot looked. Head turns feel instant
+• Panorama fills the edges
+• Shake: head pose arrives unevenly. Now use commanded pose, 5× less shake
+• Head play: 3° command barely moves it. Found with photos, app accounts for it
+• Open: speaker following turned too far. Removed until we know why</aside>
 </section>
 
-<!-- ======================================================= 2 LATENCY -->
-<section class="slide" id="p2" data-parts="s-lat s-rp" data-t="50">
-  <div class="kicker a">Core problem · latency</div>
-  <h2 class="a" style="--d:.1s">233 ms late — <span class="grad">so we pin the picture in the room</span></h2>
-  <div style="display:grid;grid-template-columns:400px 1fr;gap:30px">
-    <div style="display:grid;gap:18px;align-content:start">
-      <div class="card a" style="--d:.2s">
-        <div class="muted mono" style="font-size:14px;letter-spacing:.08em">VIDEO DELAY · DESKTOP BASELINE</div>
-        <div class="kpi"><span id="kpi-lat">0</span><small>ms</small></div>
-        <p style="margin:8px 0 0;font-size:19px">median, very steady</p>
-        <p class="muted mono" style="margin:4px 0 0;font-size:14px">p10–p90: 217–234 ms · 300 frames</p>
-        <p style="margin:10px 0 0;font-size:17px;color:var(--video);font-weight:600">→ in the headset over Wi-Fi: measuring next</p>
-        <p class="muted" style="margin:12px 0 0;font-size:15px;line-height:1.4">Pollen reports ~100 ms: Reachy Mini Wireless, hardware H.264, 5 GHz Wi-Fi.<br>Ours: Lite on a Mac, VP8 in software, 1080p.</p>
-      </div>
-      <div class="card a" style="--d:.35s">
-        <div class="muted mono" style="font-size:14px;letter-spacing:.08em">HOW WE MEASURE · QR LOOP</div>
-        <div class="qr-demo">
-          <div><div class="qr" id="qr"></div></div><div class="arrow"></div>
-          <div class="cam"><span></span></div><div class="arrow"></div>
-          <div class="mono" style="font-size:15px;line-height:1.6">Δt</div>
-        </div>
-      </div>
-    </div>
-    <div>
-      <div class="rp-row a" style="--d:.25s">
-        <div class="hd"><b>Naive: video glued to your head</b><span class="err" id="err-naive" style="color:#fb7185">—</span></div>
-        <canvas id="rp-naive" width="1000" height="245" style="width:990px;height:242px"></canvas>
-      </div>
-      <div class="rp-row a" style="--d:.4s">
-        <div class="hd"><b>Ours: pinned where the robot looked</b><span class="err" id="err-ours" style="color:var(--pose)">0° off</span></div>
-        <canvas id="rp-ours" width="1000" height="245" style="width:990px;height:242px"></canvas>
-      </div>
-      <div class="a" style="--d:.55s;display:flex;gap:16px;align-items:center;font:500 15px var(--mono);color:var(--muted)">
-        <span>room scan fills the edges</span>
-        <span class="toggle" id="scan-toggle"><button class="on" data-v="1">scan on</button><button data-v="0">off</button></span>
-      </div>
-    </div>
+<!-- ======================================================= 4 TIMELINE -->
+<section class="slide" id="p4" data-t="35">
+  <h2 class="a">Six weeks <span class="grad">to the live demo</span></h2>
+  <div class="tl">
+    <div class="line"><span></span></div>
+    <div class="tlc a now" style="--d:.15s;--c:#fff"><i></i><div class="card"><b>Nov 2</b><h3>Midterm</h3><p>We are here</p></div></div>
+    <div class="tlc a" style="--d:.25s;--c:var(--pose)"><i></i><div class="card"><b>Nov 3–15</b><h3>Move to Unity</h3><p>Translation, speaker following, nods and “I want to speak”</p></div></div>
+    <div class="tlc a" style="--d:.35s;--c:var(--video)"><i></i><div class="card"><b>Nov 16–29</b><h3>Measure</h3><p>Latency, speaker attribution, language</p></div></div>
+    <div class="tlc a" style="--d:.45s;--c:var(--lang)"><i></i><div class="card"><b>Nov 30–Dec 11</b><h3>User study</h3><p>8–10 people: presence, sickness, comprehension</p></div></div>
+    <div class="tlc a" style="--d:.55s;--c:var(--hot)"><i></i><div class="card"><b>Dec 14</b><h3>Final demo</h3><p>Live meeting in English and German</p></div></div>
+    <div class="tlc a" style="--d:.65s;--c:var(--depth)"><i></i><div class="card"><b>Jan 11</b><h3>Report</h3><p>Results and write-up</p></div></div>
   </div>
-  <aside class="notes">~50 s. Our core problem is latency. Every head turn goes to the robot, and the picture comes back late. [point at the QR] We measure it with a QR code that shows the time: Reachy films it, we read it back. 233 milliseconds, very steady. That's a desktop baseline; the headset number over Wi-Fi is next. Pollen reports about 100, but with hardware encoding on the Wireless version. Our answer is reprojection. [point at the top animation] The naive way: the video is glued to your head, so the room swims. [bottom animation] Ours: each frame is pinned where the robot was looking when it was taken. Your own head turns are instant, only the window edge lags, and the room scan fills the gap.</aside>
-</section>
+  <p class="a extras" style="--d:.8s">If time allows: depth, translated robot voice, notes panel</p>
+  <aside class="notes">• Six weeks to the live demo
+• Move to Unity: translation, speaker following, nods, “I want to speak”
+• Measure: latency, speaker attribution, language
+• User study: 8–10 people
+• If time: depth, robot voice, notes panel
+• Final demo Dec 14, report Jan 11
+• Thank you. Any questions?
 
-<!-- ======================================================= 3 BLOCKERS -->
-<section class="slide" id="p3" data-t="35">
-  <div class="kicker a">Problems & blockers</div>
-  <h2 class="a" style="--d:.1s">Two blockers, <span class="grad">two lessons learned</span></h2>
-  <div class="blk2">
-    <div class="card a" style="--d:.2s;--c:#fb7185">
-      <div class="tag">BLOCKER 1 · FRAME RATE</div>
-      <h3>Video costs half the VR frame rate</h3>
-      <div class="big">72<span class="vs">→</span>34<small>fps</small></div>
-      <p>Chrome copies every 1080p frame before VR can draw it.</p>
-      <p class="fix"><span>→</span> frames straight to the GPU (built, testing) · <span>plan B:</span> Unity</p>
-    </div>
-    <div class="card a" style="--d:.35s;--c:var(--warn)">
-      <div class="tag">BLOCKER 2 · DELAY</div>
-      <h3>Our video is 2× later than Pollen's</h3>
-      <div class="big">233<span class="vs">vs</span>~100<small>ms</small></div>
-      <p>VP8 encoded in software, 1080p, on the laptop CPU.</p>
-      <p class="fix"><span>→</span> test 720p and the Mac's hardware H.264 encoder</p>
-    </div>
-  </div>
-  <div class="ops">
-    <div class="card a" style="--d:.5s"><div class="ic">💻</div><div><h3>Robot laptop: Apple silicon only</h3><p>An Intel Mac was too slow: its 908 ms headset run was invalid.</p></div></div>
-    <div class="card a" style="--d:.6s"><div class="ic">📶</div><div><h3>One Wi-Fi for headset and laptop</h3><p>Otherwise the video connection never starts.</p></div></div>
-  </div>
-  <aside class="notes">~35 s. Two real blockers. [left card] First, the browser: copying every 1080p frame into VR halves the frame rate, from 72 to 34, and a low frame rate makes people sick. We now upload frames straight to the GPU; if that's not enough, plan B is Unity. [right card] Second, our delay is twice Pollen's because the video is encoded in software, so we'll test 720p and the Mac's hardware H.264. [bottom] And two lessons: the robot laptop must be Apple silicon, and headset and laptop must share one Wi-Fi.</aside>
-</section>
-
-<!-- ======================================================= 4 NEXT STEPS + TIMELINE -->
-<section class="slide" id="p4" data-parts="s-next" data-t="40">
-  <div class="kicker a">Next steps & timeline</div>
-  <h2 class="a" style="--d:.1s">Six weeks to the live demo</h2>
-  <div class="next3">
-    <div class="card a" style="--d:.2s">
-      <h3><span style="color:var(--video)">①</span> Latency study</h3>
-      <div class="bars" id="bars">
-        <div><span>1080p VP8 · today</span><span class="track"><i data-w="78"></i></span><span>233 ms</span></div>
-        <div><span>720p</span><span class="track"><i class="q" data-w="60"></i></span><span>?</span></div>
-        <div><span>H.264 hardware</span><span class="track"><i class="q" data-w="48"></i></span><span>?</span></div>
-        <div><span>in the headset</span><span class="track"><i class="q" data-w="88"></i></span><span>?</span></div>
-      </div>
-      <div class="why" style="--c:var(--video)"><div>Picture vs head error, reprojection on vs off.</div></div>
-    </div>
-    <div class="card a" style="--d:.35s">
-      <h3><span style="color:var(--pose)">②</span> Unity prototype</h3>
-      <div class="port" id="port"><div class="lane" style="left:0"><span>WEB · JS</span></div><div class="lane" style="right:0"><span>UNITY · C#</span></div></div>
-      <div class="why" style="--c:var(--pose)"><div>Faster video, face + eye tracking. Switch only if the numbers say so.</div></div>
-    </div>
-    <div class="card a" style="--d:.5s">
-      <h3><span style="color:var(--lang)">③</span> User study</h3>
-      <div class="people" id="people"></div>
-      <div class="why" style="--c:var(--lang)"><div>8–10 people, reprojection on vs off: time, sickness, presence.</div></div>
-    </div>
-  </div>
-  <div class="dates a" style="--d:.6s">
-    <div class="bar"></div><div class="fill"></div>
-    <div class="dm now" style="left:0%;--c:#fff"><i></i><b>Nov 2</b><span>midterm</span></div>
-    <div class="dm" style="left:17%;--c:var(--video)"><i></i><b>Nov 3–15</b><span>latency study</span></div>
-    <div class="dm" style="left:39%;--c:var(--pose)"><i></i><b>Nov 16–29</b><span>Unity prototype<br>go / no-go</span></div>
-    <div class="dm" style="left:61%;--c:var(--lang)"><i></i><b>Nov 30–Dec 11</b><span>user study,<br>demo rehearsal</span></div>
-    <div class="dm" style="left:81%;--c:var(--hot)"><i></i><b>Dec 14</b><span>final + live demo</span></div>
-    <div class="dm" style="left:100%;--c:var(--depth)"><i></i><b>Jan 11</b><span>report</span></div>
-  </div>
-  <aside class="notes">~40 s. Six weeks to the live demo. Until mid-November, the latency study: in the headset, at 720p, with hardware H.264, and how far the picture lags your head with reprojection on versus off. Then, until the end of November, a Unity prototype; we switch only if it's clearly faster. Then a user study with 8 to 10 people, reprojection on versus off: task time, motion sickness, presence. Final demo December 14, report January 11. Thank you, happy to take questions. ‖ Q&A — Why web, not native? No install, one link, live in a minute; Pollen's JS SDK already does sign-in and video; we go native only if the numbers say so. · Is 233 ms in the headset? No, desktop baseline; the headset run is the first study step (an earlier one on an overloaded Intel Mac was invalid). · Does reprojection help yet? It runs; the benefit is what the on/off study measures. · What is depth for? The scanned room becomes 3D, so small head movements look right, not just turns. · What runs on the laptop? Robot video, Whisper, DeepL, face tracking, depth: hence Apple silicon.</aside>
+If asked:
+• Why not web? 34 fps with video
+• 141 vs 233 ms? Measured differently
+• No H.264? Fails on the Mac
+• Comfortable? Better, but one tester so far</aside>
 </section>
 
 </div></div>
@@ -432,8 +427,8 @@
 <div id="nav"><button id="nav-prev">←</button><button id="nav-presenter">presenter (P)</button><button id="nav-notes">notes (N)</button><button id="nav-full">full (F)</button><button id="nav-next">→</button></div>
 <div id="notes"><div class="meta"><span id="notes-slide"></span><span id="notes-time"></span></div><div id="notes-text"></div><div id="notes-next"></div></div>
 
+<script src="vendor/deck-data.js"></script>
 <script type="module">
-import { drawDockButton, drawMicButton } from "../icons.js";   // the app's own dock drawing (VR view slide)
 const $ = (s, r = document) => r.querySelector(s);
 const slides = [...document.querySelectorAll(".slide")];
 const deck = $("#deck");
@@ -499,11 +494,11 @@ let tx = null;
 addEventListener("touchstart", (e) => { tx = e.touches[0].clientX; }, { passive: true });
 addEventListener("touchend", (e) => { if (tx == null) return; const dx = e.changedTouches[0].clientX - tx; if (Math.abs(dx) > 50) go(cur + (dx < 0 ? 1 : -1)); tx = null; });
 
-/* ---------------- 3D Reachy Mini (slides 1 and 9) ---------------- */
+/* ---------------- 3D Reachy Mini (slide 1) ---------------- */
 let robot = null;
 async function initRobot() {
-  const THREE = await import("./vendor/three.module.js");   // three@0.160.0
-  const [meta, bin] = await Promise.all([fetch("reachy.json").then((r) => { if (!r.ok) throw new Error(`reachy.json ${r.status}`); return r.json(); }), fetch("reachy.bin").then((r) => { if (!r.ok) throw new Error(`reachy.bin ${r.status}`); return r.arrayBuffer(); })]);
+  const THREE = await import(`data:text/javascript;base64,${window.DECK_THREE}`);   // three@0.160.0, vendor/deck-data.js
+  const meta = window.DECK_META, bin = Uint8Array.from(atob(window.DECK_BIN), (c) => c.charCodeAt(0)).buffer;
   const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
   if (!renderer.getContext()) throw new Error("no WebGL");
   renderer.setPixelRatio(Math.min(2, devicePixelRatio));
@@ -569,270 +564,22 @@ const robotReady = initRobot().catch((e) => {   // show why, and a drawn robot i
 });
 enter["s-title"] = () => robotReady.then(() => robot?.show($("#robot-slot-1")));
 leave["s-title"] = () => robot?.hide();
-enter["s-end"] = () => robotReady.then(() => robot?.show($("#robot-slot-2")));
-leave["s-end"] = () => robot?.hide();
 
-/* ---------------- slide 2: remote head looks around, robot follows ---------------- */
-{
-  let raf = 0;
-  const loop = (ms) => {
-    const t = ms / 1000, yaw = 14 * Math.sin(t * 0.9) + 6 * Math.sin(t * 2.1);
-    $("#remote-head").style.transform = `rotate(${yaw * 0.5}deg) translateX(${yaw * 0.9}px)`;
-    const lag = 14 * Math.sin((t - 0.35) * 0.9) + 6 * Math.sin((t - 0.35) * 2.1);
-    $("#mini-robot").style.transform = `rotate(${lag * 0.6}deg)`;
-    raf = requestAnimationFrame(loop);
-  };
-  enter["s-idea"] = () => { cancelAnimationFrame(raf); raf = requestAnimationFrame(loop); };
-  leave["s-idea"] = () => cancelAnimationFrame(raf);
-}
-
-/* ---------------- slide 4: latency pipeline + QR ---------------- */
-{
-  const stages = [...document.querySelectorAll("#pipe .stage")];
-  const qr = $("#qr");
-  for (let i = 0; i < 121; i++) qr.append(document.createElement("i"));
-  const finder = (r, c) => { const f = (r0, c0) => r >= r0 && r < r0 + 3 && c >= c0 && c < c0 + 3; return f(0, 0) || f(0, 8) || f(8, 0); };
-  let timers = [], raf = 0;
-  const redrawQr = () => [...qr.children].forEach((el, k) => { const r = Math.floor(k / 11), c = k % 11; el.className = finder(r, c) || Math.random() > 0.5 ? "" : "w"; });
-  enter["s-lat"] = () => {
-    timers.forEach(clearInterval); timers = [];
-    let k = 0;
-    timers.push(setInterval(() => { stages.forEach((s, i) => s.classList.toggle("lit", i === k % (stages.length + 2))); k++; }, 330));
-    timers.push(setInterval(redrawQr, 160));
-    const t0 = performance.now() + 700;
-    cancelAnimationFrame(raf);
-    const count = (ms) => { const p = Math.min(1, Math.max(0, (ms - t0) / 1400)); $("#kpi-lat").textContent = Math.round(233 * (1 - Math.pow(1 - p, 3))); if (p < 1) raf = requestAnimationFrame(count); };
-    raf = requestAnimationFrame(count);
-  };
-  leave["s-lat"] = () => { timers.forEach(clearInterval); timers = []; cancelAnimationFrame(raf); };
-}
-
-/* ---------------- slide 5: reprojection simulation ---------------- */
-{
-  const PX = 10;                       // pixels per degree, in the panorama and the 100° view (1000 px)
-  const W = 360 * PX, H = 245, FOV = 100, WIN = 76;   // window ≈ the camera's horizontal field of view
-  const pano = document.createElement("canvas"); pano.width = W; pano.height = H;
-  const grey = document.createElement("canvas"); grey.width = W; grey.height = H;
-  { // a stylised meeting room around 360°: azimuth a (deg, -180..180) -> x = (a + 180) * PX
-    const c = pano.getContext("2d");
-    const wall = c.createLinearGradient(0, 0, 0, H); wall.addColorStop(0, "#334155"); wall.addColorStop(0.62, "#1e293b"); wall.addColorStop(0.62, "#3f2d22"); wall.addColorStop(1, "#24170f");
-    c.fillStyle = wall; c.fillRect(0, 0, W, H);
-    const X = (a) => (a + 180) * PX;
-    for (let a = -180; a < 180; a += 30) { c.fillStyle = "rgba(255,255,255,.04)"; c.fillRect(X(a), 0, 3, H * 0.62); }
-    c.fillStyle = "#e2e8f0"; c.fillRect(X(-128), 34, 300, 70); c.fillStyle = "#94a3b8"; c.font = "bold 22px Inter"; c.fillText("WP2 · latency", X(-124), 64); c.fillText("y = f(t − τ)", X(-124), 92);
-    const sky = c.createLinearGradient(0, 30, 0, 110); sky.addColorStop(0, "#7dd3fc"); sky.addColorStop(1, "#bae6fd");
-    c.fillStyle = sky; c.fillRect(X(100), 26, 340, 92); c.fillStyle = "#0f172a"; c.fillRect(X(100) + 168, 26, 6, 92);
-    c.fillStyle = "#166534"; c.beginPath(); c.ellipse(X(150), 100, 26, 40, 0, 0, 7); c.fill(); c.fillStyle = "#78350f"; c.fillRect(X(150) - 12, 130, 24, 30);
-    const people = [[-62, "#f472b6", "#fde68a"], [-24, "#38bdf8", "#7c2d12"], [22, "#a78bfa", "#111827"], [62, "#4ade80", "#b45309"]];
-    for (const [a, shirt, hair] of people) {
-      const x = X(a);
-      c.fillStyle = shirt; c.beginPath(); c.roundRect(x - 34, 130, 68, 78, 24); c.fill();
-      c.fillStyle = "#f5d0b5"; c.beginPath(); c.arc(x, 108, 23, 0, 7); c.fill();
-      c.fillStyle = hair; c.beginPath(); c.arc(x, 100, 24, Math.PI, 0); c.fill();
-    }
-    c.fillStyle = "#57534e"; c.fillRect(0, 172, W, 16);
-    c.fillStyle = "#ff9f2e"; c.beginPath(); c.roundRect(X(22) - 70, 20, 140, 34, 12); c.fill(); c.fillStyle = "#1b1206"; c.font = "bold 17px Inter"; c.textAlign = "center"; c.fillText("„Hallo zäme“", X(22), 43);
-    const g = grey.getContext("2d"); g.filter = "grayscale(1) brightness(.55) contrast(.9)"; g.drawImage(pano, 0, 0);
-  }
-  const cvN = $("#rp-naive"), cvO = $("#rp-ours"), cn = cvN.getContext("2d"), co = cvO.getContext("2d");
-  let scanOn = true, mouseYaw = null, mouseAt = 0, raf = 0, last = 0;
-  document.querySelectorAll("#scan-toggle button").forEach((b) => b.onclick = () => {
-    scanOn = b.dataset.v === "1"; document.querySelectorAll("#scan-toggle button").forEach((x) => x.classList.toggle("on", x === b)); });
-  for (const cv of [cvN, cvO]) cv.addEventListener("mousemove", (e) => {
-    const r = cv.getBoundingClientRect(); mouseYaw = ((e.clientX - r.left) / r.width - 0.5) * 140; mouseAt = performance.now(); });
-  // simulation state: you (headset yaw), robot head yaw (rate-limited, follows with a command delay), frames carry the yaw at capture
-  const script = [-55, 10, 58, -20, 35, -65, 0, 45];
-  let you = 0, robotYaw = 0, target = 0, si = 0, nextAt = 0;
-  const hist = [];                      // [time, robot yaw] for the video delay
-  const LAT = 0.233, CMD = 0.06, RATE = 90;  // s, s, deg/s
-  const crop = (ctx, src, viewL, a0, a1) => {   // draw panorama azimuths a0..a1 into the view whose left edge is viewL
-    const wrap = (a) => ((a + 180) % 360 + 360) % 360 - 180;
-    for (let a = a0; a < a1;) {
-      const aw = wrap(a), seg = Math.min(a1 - a, 180 - aw);
-      ctx.drawImage(src, (aw + 180) * PX, 0, seg * PX, H, (a - viewL) * PX, 0, seg * PX, H);
-      a += seg;
-    }
-  };
-  const gauge = (ctx, yYou, yFrame) => {
-    const x = 940, y = H - 50, r = 34;
-    ctx.save(); ctx.translate(x, y);
-    ctx.fillStyle = "rgba(7,11,22,.75)"; ctx.beginPath(); ctx.arc(0, 0, r + 8, 0, 7); ctx.fill();
-    ctx.strokeStyle = "rgba(255,255,255,.2)"; ctx.beginPath(); ctx.arc(0, 0, r, 0, 7); ctx.stroke();
-    const ray = (deg, col, w) => { const a = (deg - 90) * Math.PI / 180; ctx.strokeStyle = col; ctx.lineWidth = w; ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(Math.cos(a) * r, Math.sin(a) * r); ctx.stroke(); };
-    ray(yFrame, "#38bdf8", 4); ray(yYou, "#ffffff", 2.5);
-    ctx.restore();
-  };
-  function frame(ms) {
-    const t = ms / 1000, dt = last ? Math.min(0.05, t - last) : 0.016; last = t;
-    if (mouseYaw != null && ms - mouseAt < 2500) target = mouseYaw;
-    else if (t > nextAt) { target = script[si++ % script.length]; nextAt = t + 1.9; }
-    you += (target - you) * Math.min(1, dt * 7);                       // your head: quick
-    hist.push([t, you]); while (hist.length && hist[0][0] < t - 2) hist.shift();
-    const at = (tt) => { let v = hist[0]?.[1] ?? 0; for (const [ts, y] of hist) { if (ts > tt) break; v = y; } return v; };
-    const cmd = at(t - CMD);                                            // the robot gets your pose a bit later
-    robotYaw += Math.max(-RATE * dt, Math.min(RATE * dt, cmd - robotYaw));
-    (frame.rh ??= []).push([t, robotYaw]); while (frame.rh[0][0] < t - 2) frame.rh.shift();
-    let fy = frame.rh[0][1]; for (const [ts, y] of frame.rh) { if (ts > t - LAT) break; fy = y; }   // yaw when the shown frame was captured
-    const viewL = you - FOV / 2;
-    // naive: window centred in the view, showing what the robot saw
-    cn.fillStyle = "#000"; cn.fillRect(0, 0, 1000, H);
-    cn.save(); cn.beginPath(); cn.rect((FOV - WIN) / 2 * PX, 0, WIN * PX, H); cn.clip();
-    crop(cn, pano, fy - FOV / 2, fy - WIN / 2, fy + WIN / 2); cn.restore();
-    cn.strokeStyle = "rgba(255,255,255,.7)"; cn.lineWidth = 3; cn.strokeRect((FOV - WIN) / 2 * PX + 1.5, 1.5, WIN * PX - 3, H - 3);
-    gauge(cn, you - you, fy - you);
-    // ours: room scan (or black), the live window at the frame's yaw
-    co.fillStyle = "#000"; co.fillRect(0, 0, 1000, H);
-    if (scanOn) crop(co, grey, viewL, viewL, viewL + FOV);
-    const w0 = Math.max(viewL, fy - WIN / 2), w1 = Math.min(viewL + FOV, fy + WIN / 2);
-    if (w1 > w0) {
-      co.save(); co.beginPath(); co.rect((w0 - viewL) * PX, 0, (w1 - w0) * PX, H); co.clip(); crop(co, pano, viewL, w0, w1); co.restore();
-      co.strokeStyle = "#38bdf8"; co.lineWidth = 3; co.strokeRect((fy - WIN / 2 - viewL) * PX + 1.5, 1.5, WIN * PX - 3, H - 3);
-    }
-    gauge(co, 0, fy - you);
-    const off = Math.abs(you - fy);
-    $("#err-naive").textContent = `${off.toFixed(0)}° off — the room swims`;
-    $("#err-ours").textContent = `0° off — window catches up ${off > 2 ? `(${off.toFixed(0)}° behind)` : ""}`;
-    raf = requestAnimationFrame(frame);
-  }
-  enter["s-rp"] = () => { cancelAnimationFrame(raf); last = 0; raf = requestAnimationFrame(frame); };
-  leave["s-rp"] = () => cancelAnimationFrame(raf);
-}
-
-/* ---------------- next steps: bars, study participants, port ---------------- */
-{
-  const bars = [...document.querySelectorAll("#bars i")];
-  const people = $("#people"); for (let i = 0; i < 10; i++) { const d = document.createElement("i"); d.textContent = `P${i + 1}`; people.append(d); }
-  const port = $("#port");
-  const mods = ["pose.js", "camera.js", "speaker.js", "gestures.js"];
-  const chips = mods.map((n, i) => { const d = document.createElement("div"); d.className = "mod"; d.textContent = n; d.style.top = `${34 + i * 34}px`; port.append(d); return d; });
-  let timers = [];
-  enter["s-next"] = () => {
-    timers.forEach(clearTimeout); timers.forEach(clearInterval); timers = [];
-    bars.forEach((b) => (b.style.width = "0"));
-    timers.push(setTimeout(() => bars.forEach((b) => (b.style.width = `${b.dataset.w}%`)), 500));
-    const ps = [...people.children]; ps.forEach((p) => (p.className = ""));
-    let k = 0; timers.push(setInterval(() => { ps.forEach((p, i) => (p.className = i <= k % 12 ? ((i + Math.floor(k / 12)) % 2 ? "a" : "b") : "")); k++; }, 260));
-    chips.forEach((c) => { c.style.transition = "none"; c.style.left = "10px"; });
-    chips.forEach((c, i) => timers.push(setTimeout(() => { c.style.transition = "left .9s cubic-bezier(.2,.8,.2,1)"; c.style.left = "calc(56% + 10px)"; }, 900 + i * 400)));
-  };
-  leave["s-next"] = () => { timers.forEach(clearTimeout); timers.forEach(clearInterval); timers = []; };
-}
-
-/* ---------------- demo video (optional): drop demo.mp4 next to this page ---------------- */
+/* ---------------- demo video ---------------- */
 {
   const v = $("#demo");
-  fetch("demo.mp4", { method: "HEAD" }).then((r) => {
-    if (!r.ok) return;
-    v.src = "demo.mp4"; v.style.display = "block"; $("#vr").style.visibility = "hidden";
-    $("#vr-cap").textContent = "demo video · real headset"; $("#vr-keys").style.display = "none";
-  }).catch(() => {});
+  v.src = "demo.mp4";
+  // the step under the video lights up while it happens
+  const steps = [...document.querySelectorAll(".step")];
+  v.addEventListener("timeupdate", () => steps.forEach((s) =>
+    s.classList.toggle("on", v.currentTime >= Number(s.dataset.from) && v.currentTime < Number(s.dataset.to))));
   enter["demo"] = () => { if (v.src) { v.currentTime = 0; v.play().catch(() => {}); } };
   leave["demo"] = () => v.pause();
-}
-
-/* ---------------- VR view: simulated headset view with the app's real dock (icons.js) ---------------- */
-{
-  const cv = $("#vr"), cx = cv.getContext("2d"), W = 1420, H = 600, PXD = 14.2;   // px per degree; the view shows 100°
-  cx.scale(2, 2);
-  const RW = 200 * PXD;   // the room covers -100°..+100°
-  const room = document.createElement("canvas"); room.width = RW; room.height = H;
-  const grey = document.createElement("canvas"); grey.width = RW; grey.height = H;
-  const X = (az) => (az + 100) * PXD;
-  { const c = room.getContext("2d");
-    const wall = c.createLinearGradient(0, 0, 0, H); wall.addColorStop(0, "#3b4a5e"); wall.addColorStop(.66, "#243041"); wall.addColorStop(.66, "#4a3527"); wall.addColorStop(1, "#2a1d14");
-    c.fillStyle = wall; c.fillRect(0, 0, RW, H);
-    for (let az = -100; az < 100; az += 25) { c.fillStyle = "rgba(255,255,255,.035)"; c.fillRect(X(az), 0, 4, H * .66); }
-    c.fillStyle = "#e5e7eb"; c.fillRect(X(-78), 70, 420, 190); c.fillStyle = "#64748b"; c.font = "600 30px Inter"; c.fillText("Agenda", X(-74), 116);
-    c.fillStyle = "#94a3b8"; c.font = "24px Inter"; ["1  Budget", "2  Demo", "3  Next steps"].forEach((t, i) => c.fillText(t, X(-74), 160 + i * 34));
-    const sky = c.createLinearGradient(0, 60, 0, 280); sky.addColorStop(0, "#7dd3fc"); sky.addColorStop(1, "#e0f2fe");
-    c.fillStyle = sky; c.fillRect(X(58), 60, 460, 220); c.fillStyle = "#1f2937"; c.fillRect(X(58) + 226, 60, 8, 220);
-    c.fillStyle = "#166534"; c.beginPath(); c.ellipse(X(84), 300, 40, 66, 0, 0, 7); c.fill(); c.fillStyle = "#78350f"; c.fillRect(X(84) - 22, 350, 44, 50);
-    c.fillStyle = "#6b5545"; c.fillRect(0, 430, RW, 26);
-    for (const [az, shirt, hair] of [[-34, "#f472b6", "#fde68a"], [-10, "#38bdf8", "#7c2d12"], [14, "#a78bfa", "#111827"], [38, "#4ade80", "#b45309"]]) {
-      const x = X(az);
-      c.fillStyle = shirt; c.beginPath(); c.roundRect(x - 62, 330, 124, 130, 44); c.fill();
-      c.fillStyle = "#f2c7a5"; c.beginPath(); c.arc(x, 290, 42, 0, 7); c.fill();
-      c.fillStyle = hair; c.beginPath(); c.arc(x, 276, 44, Math.PI, 0); c.fill();
-    }
-    const g = grey.getContext("2d"); g.filter = "grayscale(1) brightness(.5)"; g.drawImage(room, 0, 0);
-  }
-  // dock buttons, drawn once with the app's code (256 x 320 like scene.js)
-  const btn = (draw) => { const c = document.createElement("canvas"); c.width = 256; c.height = 320; draw(c.getContext("2d"), 256, 320); return c; };
-  const main = [["hand", "Talk"], ["laugh", "Laugh"], ["languages", "Translate"], ["message-square", "Both"], ["notebook-pen", "Notes", true], ["volume-2", "Sound", true], ["ellipsis", "More"]];
-  const more = [["audio-lines", "Viktor"], ["bot", "Reachy: auto"], ["message-circle", "Bubbles: en"], ["globe", "World-locked"], ["scan-line", "Scan room"], ["house", "Room on", true], ["rotate-ccw", "Recenter"], ["x", "Exit VR"]];
-  const mk = ([icon, text, active], hover = false) => btn((c, w, h) => drawDockButton(c, w, h, { icon, text, active: !!active, hover }));
-  const mainImg = main.map((b) => [mk(b), mk(b, true)]), moreImg = more.map((b) => [mk(b), mk(b, true)]);
-  const lessImg = [mk(["x", "Less"]), mk(["x", "Less"], true)];
-  const micImg = btn((c, w, h) => drawMicButton(c, w, h, false, false, "Mic on"));
-  const BW = 74, BH = 92, MW = 96, MH = 120, STEP = 90, DY = 452;
-  const layout = (open) => {   // like layoutDock() in scene.js: mic in the middle, the rest left / right, "More" row below
-    const pos = []; const left = main.slice(0, 3), right = main.slice(3), gap = (MW + BW) / 2 + 16;
-    left.forEach((_, i) => pos.push({ k: "m", i, x: W / 2 - gap - (left.length - 1 - i) * STEP, y: DY }));
-    right.forEach((_, i) => pos.push({ k: "m", i: 3 + i, x: W / 2 + gap + i * STEP, y: DY }));
-    if (open) more.forEach((_, i) => pos.push({ k: "x", i, x: W / 2 + (i - (more.length - 1) / 2) * STEP, y: DY + 104 }));
-    return pos;
-  };
-  // pointer script: [time s, target {k, i} or null, action]
-  const script = [[0, null], [1.2, { k: "m", i: 0 }], [2.0, { k: "m", i: 0 }, "click"], [3.6, { k: "m", i: 2 }], [4.6, { k: "m", i: 6 }], [5.3, { k: "m", i: 6 }, "open"],
-    [6.6, { k: "x", i: 3 }], [8.0, { k: "x", i: 5 }], [9.4, { k: "m", i: 6 }], [10.1, { k: "m", i: 6 }, "close"], [11.4, null]];
-  const LOOP = 12.5;
-  const lines = { de: "Hallo zäme, wämmer aafange?", en: "Hello everyone, shall we start?" };
-  let raf = 0, t0 = 0;
-  const frame = (ms) => {
-    const t = (ms - t0) / 1000, lt = t % LOOP;
-    const yaw = 7 * Math.sin(t * 0.35);                  // your head, slowly looking around
-    const viewL = yaw - 50;
-    cx.drawImage(grey, X(viewL), 0, 100 * PXD, H, 0, 0, W, H);   // room scan
-    // live video window, world-locked at the robot's direction (a little behind your head)
-    const robot = 7 * Math.sin((t - 0.4) * 0.35), w0 = robot - 36, w1 = robot + 36;
-    const x0 = (w0 - viewL) * PXD, x1 = (w1 - viewL) * PXD, y0 = 34, y1 = 470;
-    cx.save(); cx.beginPath(); cx.roundRect(x0, y0, x1 - x0, y1 - y0, 18); cx.clip();
-    cx.drawImage(room, X(w0), y0, 72 * PXD, y1 - y0, x0, y0, x1 - x0, y1 - y0); cx.restore();
-    cx.strokeStyle = "rgba(255,255,255,.22)"; cx.lineWidth = 3; cx.beginPath(); cx.roundRect(x0, y0, x1 - x0, y1 - y0, 18); cx.stroke();
-    // speech bubble above the person at +14° (partial → final → translation)
-    const words = lines.de.split(" "), nW = Math.min(words.length, Math.floor(lt / 0.45) + 1), final = lt > 2.6, tr = lt > 3.3;
-    const main_ = tr ? lines.en : words.slice(0, nW).join(" "), sub_ = tr ? `de: ${lines.de}` : "";
-    const hx = (14 - viewL) * PXD + (robot - yaw) * 0;   // world-locked like the video
-    cx.font = `${final ? "600" : "italic 500"} 26px Inter`; const mw = cx.measureText(main_).width;
-    cx.font = "16px Inter"; const sw = sub_ ? cx.measureText(sub_).width : 0;
-    const bw = Math.max(mw, sw) + 60, bh = sub_ ? 84 : 58, by = 164 - bh;
-    cx.fillStyle = final ? "rgba(255,255,255,.95)" : "rgba(255,255,255,.78)";
-    cx.beginPath(); cx.roundRect(hx - bw / 2, by, bw, bh, 18); cx.moveTo(hx - 13, by + bh - 1); cx.lineTo(hx, by + bh + 16); cx.lineTo(hx + 13, by + bh - 1); cx.fill();
-    cx.fillStyle = "#a78bfa"; cx.beginPath(); cx.roundRect(hx - bw / 2 + 8, by + 10, 6, bh - 20, 3); cx.fill();
-    cx.textBaseline = "top"; cx.font = `${final ? "600" : "italic 500"} 26px Inter`; cx.fillStyle = final ? "#111" : "#444"; cx.fillText(main_, hx - bw / 2 + 26, by + 14);
-    if (sub_) { cx.font = "16px Inter"; cx.fillStyle = "#666"; cx.fillText(sub_, hx - bw / 2 + 26, by + 52); }
-    // pointer state from the script
-    let cur = script[0]; for (const st of script) if (st[0] <= lt) cur = st;
-    const open = lt >= 5.3 && lt < 10.1;
-    const pos = layout(open);
-    const tgt = cur[1] && pos.find((p) => p.k === cur[1].k && p.i === cur[1].i);
-    // dock
-    cx.globalAlpha = 0.97;
-    pos.forEach((p) => {
-      const hov = tgt === p;
-      const img = p.k === "x" ? moreImg[p.i] : p.i === 6 && open ? lessImg : mainImg[p.i];
-      cx.drawImage(img[hov ? 1 : 0], p.x - BW / 2, p.y - BH / 2, BW, BH);
-    });
-    cx.drawImage(micImg, W / 2 - MW / 2, DY - MH / 2 - 6, MW, MH);
-    cx.globalAlpha = 1;
-    // pointer ray from the right hand
-    if (tgt) {
-      const hx2 = W * 0.86, hy2 = H + 20, px = tgt.x, py = tgt.y - 6;
-      const g = cx.createLinearGradient(hx2, hy2, px, py); g.addColorStop(0, "rgba(255,255,255,0)"); g.addColorStop(1, "rgba(255,255,255,.85)");
-      cx.strokeStyle = g; cx.lineWidth = 3; cx.beginPath(); cx.moveTo(hx2, hy2); cx.lineTo(px, py); cx.stroke();
-      cx.fillStyle = "#fff"; cx.beginPath(); cx.arc(px, py, 6, 0, 7); cx.fill();
-      if (cur[2] && lt - cur[0] < 0.4) { cx.strokeStyle = "rgba(255,171,61,.9)"; cx.lineWidth = 3; cx.beginPath(); cx.arc(px, py, 10 + (lt - cur[0]) * 60, 0, 7); cx.stroke(); }
-    }
-    raf = requestAnimationFrame(frame);
-  };
-  enter["s-vr"] = () => { cancelAnimationFrame(raf); t0 = performance.now(); raf = requestAnimationFrame(frame); };
-  leave["s-vr"] = () => cancelAnimationFrame(raf);
 }
 
 if (new URLSearchParams(location.search).has("print")) {   // ?print: every slide on its own page, animations at their end state (PDF export)
   document.documentElement.classList.add("print");
   slides.forEach((s) => (s.dataset.parts ? s.dataset.parts.split(" ") : [s.id]).forEach((id) => enter[id]?.()));
-  setTimeout(() => ($("#kpi-lat").textContent = "233"), 2500);   // after the count-up, in case it did not finish
 } else go(Math.max(0, (parseInt(location.hash.slice(1)) || 1) - 1));
 </script>
 </body>

@@ -162,7 +162,7 @@ The video starts at a low bitrate and takes about 10 s to reach full quality, so
 
 Removed on 2026-10-30, to come back to later. The last version is in git at `83ae89a` (`SpeakerFollow.cs`, tests, `TrackerGolden.txt`); the turn view and vignette were never committed. Before trying again:
 
-- **It ran away on the real robot.** With speech from one spot, the mic-based target kept climbing to −150°, the head reached −180° and the body −115°, and the yaw reading wrapped to +150°. Likely cause, not verified: the mic direction is added to the head yaw, which is wrong if it does not turn with the head. Check that first: head at 0°, ±30°, a sound from one spot, read `/api/state/doa`. `backend/.../doa.py` has the same open question.
+- **It ran away on the real robot.** With speech from one spot, the mic-based target kept climbing to −150°, the head reached −180° and the body −115°, and the yaw reading wrapped to +150°. Cause not found. The proposal says the mic array sits in the head and gives azimuth over only 180°, with no front/back, so head yaw + mic direction may be right and the problem may be front/back confusion or the body yaw. Check first: head at 0°, ±30°, a sound from one spot, read `/api/state/doa`. `backend/.../doa.py` has the same open question.
 - **Mic direction is noisy in a large hall.** It wandered from +29° to −26° for a voice in one spot.
 - **Needed:** a small limit (about ±60°), a stop if the target keeps climbing, and a first test with nobody in the headset.
 - **Comfort is open.** A picture panning by itself feels bad; the idea was to keep the picture fixed in the room during a turn and let the window move, then glide back. Never seen working.
