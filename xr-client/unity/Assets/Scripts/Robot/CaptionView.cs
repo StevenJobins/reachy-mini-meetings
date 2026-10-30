@@ -19,11 +19,12 @@ public class CaptionView : MonoBehaviour
         public int id;
         public bool final;
         public string text, lang, translation;
-        public double doa_deg, t_end;
+        public double doa_deg, t_start, t_end;
         [NonSerialized] public double? Doa;
     }
     [Serializable] class PersonMsg { public double cx, cy, top, w, h, mouth; }
     [Serializable] class FacesMsg { public PersonMsg[] people; public double t; }
+    [Serializable] class VadMsg { public bool speaking; }
 
     const float ShowS = 8f, PartialS = 5f;   // a final / partial bubble stays this long after its last update
     const int MaxBubbles = 3;
@@ -58,7 +59,7 @@ public class CaptionView : MonoBehaviour
     Font font;
     Material text;
     (double cx, double top) lastAnchor = (0.5, 0.02);
-    double clockOffsetS;
+    double clockOffsetS, hostToLocalS;   // backend wall clock -> headset wall clock / DaemonClient.NowS()
 
     public FaceSpeakers Speakers { get; private set; }
     public string Status { get; private set; } = "";
@@ -66,6 +67,7 @@ public class CaptionView : MonoBehaviour
     void Awake()
     {
         Speakers = new FaceSpeakers(cam);
+        control.Follow = new SpeakerFollow(Speakers, cam);
         font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
         text = new Material(textMaterial);
         UpdateAtlas(font);
@@ -105,16 +107,24 @@ public class CaptionView : MonoBehaviour
         switch (JsonUtility.FromJson<TypeMsg>(json).type)
         {
             case "hello":
-                clockOffsetS = WallS() - JsonUtility.FromJson<HelloMsg>(json).t;
+                double hostT = JsonUtility.FromJson<HelloMsg>(json).t;
+                clockOffsetS = WallS() - hostT;
+                hostToLocalS = DaemonClient.NowS() - hostT;
                 break;
             case "faces":
                 var msg = JsonUtility.FromJson<FacesMsg>(json);
                 var s = control.Daemon?.Latest;
-                Speakers.FocusPid = FocusPid;
+                var follow = control.Follow;
+                double t = msg.t + hostToLocalS;   // stamped at capture
+                Speakers.FocusPid = follow.FocusPid;
                 Speakers.Update(msg.people.Select(p => new Face
                 {
                     Cx = p.cx, Cy = p.cy, Top = p.top, W = p.w, H = p.h, Mouth = p.mouth > 0 ? p.mouth : (double?)null,
-                }), msg.t, s?.head_pose != null ? s.Head.Yaw : (double?)null);
+                }), t, s?.head_pose != null ? follow.Tracker.HeadYawAt(t, s.Head.Yaw) : (double?)null);
+                follow.FrameFocus();
+                break;
+            case "vad":
+                control.Follow.OnVad(JsonUtility.FromJson<VadMsg>(json).speaking, DaemonClient.NowS());
                 break;
             case "caption":
                 var c = JsonUtility.FromJson<CaptionMsg>(json);
@@ -123,9 +133,6 @@ public class CaptionView : MonoBehaviour
                 break;
         }
     }
-
-    /// <summary>The person Reachy follows, set by speaker following.</summary>
-    public int? FocusPid { get; set; }
 
     void OnCaption(CaptionMsg msg)
     {
@@ -142,6 +149,9 @@ public class CaptionView : MonoBehaviour
         foreach (var id in bubbles.Keys.Where(id => id < msg.id && bubbles[id].Pid == b.Pid).ToList()) Remove(id);
         foreach (var id in bubbles.Keys.OrderByDescending(id => id).Skip(MaxBubbles).ToList()) Remove(id);
         Redraw(b);
+        var track = b.TrackId != null ? Speakers.Get(b.TrackId.Value) : null;
+        control.Follow.OnCaption(msg.final && !string.IsNullOrEmpty(msg.translation), WallS() - clockOffsetS - msg.t_end,
+            msg.t_end - msg.t_start, track, DaemonClient.NowS());
         Debug.Log($"[captions] {(msg.final ? "final" : "partial")} #{msg.id} {b.Label} {msg.lang}: {msg.text}");
     }
 

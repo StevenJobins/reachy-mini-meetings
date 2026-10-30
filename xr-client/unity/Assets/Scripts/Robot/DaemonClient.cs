@@ -18,12 +18,15 @@ using Debug = UnityEngine.Debug;
 public class DaemonClient : IDisposable
 {
     [Serializable] public class Rpy { public double roll, pitch, yaw; }
+    [Serializable] public class Doa { public double angle; public bool speech_detected; }
     [Serializable]
     public class State
     {
         public string control_mode;
         public Rpy head_pose;
         public double body_yaw;
+        public Doa doa;                           // mic direction, may be absent
+        [NonSerialized] public bool hasDoa;
         public string timestamp;                  // when the daemon read it, ISO 8601 UTC
         [NonSerialized] public double arrivedS;   // NowS() when it arrived
         [NonSerialized] public double senderS;    // timestamp in seconds, 0 if the daemon sent none
@@ -110,7 +113,7 @@ public class DaemonClient : IDisposable
 
     async Task StateLoop()
     {
-        var uri = new Uri($"ws://{host}:8000/api/state/ws/full?frequency=60&with_head_pose=true&with_body_yaw=true&with_antenna_positions=false");
+        var uri = new Uri($"ws://{host}:8000/api/state/ws/full?frequency=60&with_head_pose=true&with_body_yaw=true&with_antenna_positions=false&with_doa=true");
         var buffer = new byte[16 * 1024];
         while (!cts.IsCancellationRequested)
         {
@@ -125,7 +128,9 @@ public class DaemonClient : IDisposable
                     if (r.MessageType == WebSocketMessageType.Close) break;
                     text.Append(Encoding.UTF8.GetString(buffer, 0, r.Count));
                     if (!r.EndOfMessage) continue;
-                    var s = JsonUtility.FromJson<State>(text.ToString());
+                    var json = text.ToString();
+                    var s = JsonUtility.FromJson<State>(json);
+                    s.hasDoa = s.doa != null && !json.Contains("\"doa\":null");
                     s.arrivedS = NowS();
                     if (DateTime.TryParse(s.timestamp, CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind, out var stamp))
                         s.senderS = stamp.ToUniversalTime().Ticks / (double)TimeSpan.TicksPerSecond;

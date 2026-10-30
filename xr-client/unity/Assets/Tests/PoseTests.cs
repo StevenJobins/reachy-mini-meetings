@@ -149,7 +149,7 @@ public class PoseTests
     [Test]
     public void PoseBlendIsTheDelayedCommandPlusTheOffset()
     {
-        const double lag = 0.24, offset = 3;
+        const double lag = 0.13, offset = 3;
         double Cmd(double t) => 30 * Math.Sin(t * 1.5);
         var commanded = new PoseHistory();
         var b = new PoseBlend(lag);
@@ -234,5 +234,86 @@ public class PoseTests
             var pick = s.Pick(doa);
             Assert.That(pick == null ? "null" : pick.Id.ToString(), Is.EqualTo(p[6]), line);
         }
+    }
+
+    [Test]
+    public void SpeakerTrackerMatchesSpeakerJs()
+    {
+        double D(string v) => double.Parse(v, CultureInfo.InvariantCulture);
+        var s = new SpeakerTracker();
+        foreach (var line in File.ReadAllLines("Assets/Tests/TrackerGolden.txt").Where(l => l.StartsWith("step ")))
+        {
+            var p = line.Split(' ');
+            s.PushHeadYaw(D(p[1]), D(p[2]));
+            if (p[3] != "null") s.PushDoa(D(p[1]), D(p[3]));
+            Assert.That(s.Step(0.05), Is.EqualTo(D(p[5])).Within(1e-8), line);
+            Assert.That(s.Target, Is.EqualTo(D(p[4])).Within(1e-8), line);
+        }
+    }
+
+    static (SpeakerFollow f, FaceSpeakers s) Follower()
+    {
+        var cam = CameraModel.Calibrated();
+        var s = new FaceSpeakers(cam);
+        var f = new SpeakerFollow(s, cam) { Active = true };
+        f.PushHead(0, 0, 0);
+        return (f, s);
+    }
+
+    [Test]
+    public void SpeakerFollowIgnoresMicDirectionsWithoutConfirmedSpeech()
+    {
+        var (f, _) = Follower();
+        for (double t = 0; t < 2; t += 0.05) f.PushDoa(t, (90 - 60) * Math.PI / 180, t);   // 60° left, nobody confirmed
+        Assert.That(f.Tracker.Target, Is.EqualTo(0));
+        f.OnVad(true, 2.0);
+        for (double t = 2; t < 3; t += 0.05) f.PushDoa(t, (90 - 60) * Math.PI / 180, t);
+        Assert.That(f.Tracker.Target, Is.EqualTo(60).Within(0.5));
+    }
+
+    [Test]
+    public void SpeakerFollowFramesTheSpeakingFace()
+    {
+        var (f, s) = Follower();
+        var face = new Face { Cx = 0.25, Cy = 0.6, Top = 0.5, W = 0.1, H = 0.2, Mouth = 0.1 };
+        s.Update(new[] { face }, 1.0, 0);
+        f.OnVad(true, 1.0);
+        Assert.That(f.FocusPid, Is.EqualTo(1));
+        Assert.That(f.Tracker.Target, Is.GreaterThan(15), "face is left of the centre: turn left");
+        Assert.That(f.TargetPitch, Is.GreaterThan(0), "face is below the framing point: look down");
+    }
+
+    [Test]
+    public void SpeakerFollowDoesNothingWhileNotActive()
+    {
+        var (f, s) = Follower();
+        f.Active = false;
+        s.Update(new[] { new Face { Cx = 0.25, Cy = 0.6, Top = 0.5, W = 0.1, H = 0.2, Mouth = 0.1 } }, 1.0, 0);
+        f.OnVad(true, 1.0);
+        Assert.That(f.FocusPid, Is.Null);
+        Assert.That(f.Tracker.Target, Is.EqualTo(0));
+    }
+
+    [Test]
+    public void SpeakerFollowStopsSearchingUpAndComesBack()
+    {
+        var (f, _) = Follower();
+        for (double t = 10; t < 20; t += 0.25) f.OnVad(true, t);   // a voice, no face anywhere
+        Assert.That(f.TargetPitch, Is.EqualTo(-25).Within(1e-9), "stops at the search limit, not at the ceiling");
+        for (double t = 20; t < 30; t += 0.02) f.Step(0.02, t);
+        Assert.That(Math.Abs(f.TargetPitch), Is.LessThan(1.1), "back to level after the voice stopped");
+        Assert.That(Math.Abs(f.BasePitch), Is.LessThan(1.5));
+    }
+
+    [Test]
+    public void BacklashSwallowsSmallMovesAndFollowsBigOnes()
+    {
+        var b = new Backlash(3);
+        b.Step(0);
+        Assert.That(b.Step(2.9), Is.EqualTo(0), "inside the gap");
+        Assert.That(b.Step(-2.9), Is.EqualTo(0), "still inside");
+        Assert.That(b.Step(10), Is.EqualTo(7).Within(Tol), "pushed along, 3° behind");
+        Assert.That(b.Step(8), Is.EqualTo(7).Within(Tol), "reversal: stays until the far side of the gap");
+        Assert.That(b.Step(3), Is.EqualTo(6).Within(Tol));
     }
 }

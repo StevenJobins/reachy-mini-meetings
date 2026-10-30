@@ -78,6 +78,13 @@ public class CameraModel
         return -Math.Atan2(x, z) * 180 / Math.PI;
     }
 
+    /// <summary>Vertical angle of an image point, degrees, + = up.</summary>
+    public double UpDeg(double u, double v)
+    {
+        if (!Unproject(u, v, out var x, out var y, out var z) && !Unproject(u, 0.5, out x, out y, out z)) return 0;
+        return Math.Atan2(-y, Math.Sqrt(x * x + z * z)) * 180 / Math.PI;
+    }
+
     /// <summary>Image column of a direction on the horizon, yaw + = left.</summary>
     public double UForYaw(double yawDeg)
     {

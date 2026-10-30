@@ -62,27 +62,63 @@ public class PoseClock
 }
 
 /// <summary>
-/// Where the robot head is, for placing the video. The measured pose comes in stair-steps and Wi-Fi bursts (daemon
-/// bench test 2026-10-30: 0.29° jitter on a 0.37° step per frame), which shakes the window, while a real head cannot
-/// move like that. So: the path we commanded, which is smooth and known here, delayed by how long the robot takes to
-/// follow it, plus a slow correction towards the measured pose for offsets (a complementary filter).
+/// The head has mechanical play. Measured 2026-10-30 from photos and the pose: a ±3° yaw command moves it 0.2°, ±6° moves
+/// it 1.6°, and it stops ~3° short from either side. So small head movements of the user do not reach the robot at all,
+/// and a window that followed the command would slide with the head while the picture stands still. This is that play:
+/// the output only moves once the input pushes it from one end of the gap.
+/// </summary>
+public class Backlash
+{
+    readonly double width;
+    bool started;
+    double position;
+
+    public Backlash(double width) { this.width = width; }
+
+    public double Step(double input)
+    {
+        if (!started) { started = true; position = input; }
+        else if (input > position + width) position = input - width;
+        else if (input < position - width) position = input + width;
+        return position;
+    }
+}
+
+/// <summary>Where the head should be for a command, without the lag: the play on each axis.</summary>
+public class HeadModel
+{
+    const double YawPlay = 3, PitchPlay = 2, RollPlay = 1.5;   // degrees, half the gap, fitted to the recording
+
+    readonly Backlash roll = new Backlash(RollPlay), pitch = new Backlash(PitchPlay), yaw = new Backlash(YawPlay);
+
+    public RobotAngles Step(RobotAngles command) =>
+        new RobotAngles(roll.Step(command.Roll), pitch.Step(command.Pitch), yaw.Step(command.Yaw));
+}
+
+/// <summary>
+/// Where the robot head is, for placing the video. The measured pose is accurate (it matches the image motion to ~3 %)
+/// but comes in stair-steps and Wi-Fi bursts (bench test 2026-10-30: 0.29° jitter on a 0.37° step per frame), which shakes
+/// the window, while a real head cannot move like that. So: the modelled path, smooth and known here (the command through
+/// HeadModel), delayed by how long the robot takes, plus a correction towards the measured pose (a complementary filter).
 /// </summary>
 public class PoseBlend
 {
-    const double TauS = 0.5;
+    const double TauS = 0.25;
 
     readonly double lagS;
     bool started;
-    double lastT, roll, pitch, yaw;   // measured − delayed command, degrees
+    double lastT, roll, pitch, yaw;   // measured − delayed model, degrees
 
     public PoseBlend(double lagS) { this.lagS = lagS; }
+
+    public double LagS => lagS;
 
     public void Reset() => started = false;
 
     /// <summary>Call with every measured pose (at its time on the local clock) while the robot follows.</summary>
-    public void AddMeasured(double t, RobotAngles m, PoseHistory commanded)
+    public void AddMeasured(double t, RobotAngles m, PoseHistory modelled)
     {
-        if (!commanded.TryAt(t - lagS, out var c)) return;
+        if (!modelled.TryAt(t - lagS, out var c)) return;
         double k = started ? 1 - Math.Exp(-Math.Max(0, t - lastT) / TauS) : 1;
         started = true;
         lastT = t;
@@ -91,10 +127,10 @@ public class PoseBlend
         yaw += k * (m.Yaw - c.Yaw - yaw);
     }
 
-    public bool TryAt(double t, PoseHistory commanded, out RobotAngles a)
+    public bool TryAt(double t, PoseHistory modelled, out RobotAngles a)
     {
         a = default;
-        if (!started || !commanded.TryAt(t - lagS, out var c)) return false;
+        if (!started || !modelled.TryAt(t - lagS, out var c)) return false;
         a = new RobotAngles(c.Roll + roll, c.Pitch + pitch, c.Yaw + yaw);
         return true;
     }

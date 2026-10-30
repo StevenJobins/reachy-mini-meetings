@@ -1,5 +1,6 @@
-// Reachy follows the user's head. It never moves by itself: nothing is sent until the user pinches (or pulls the
-// trigger). Pinch = wake if needed, take this as "straight ahead", follow. Pinch again = recenter.
+// Reachy follows the user's head. Starts by itself once the app has the robot: wake if needed, take the current head
+// direction as "straight ahead", follow. Hands: hold the right pinch (or trigger) to talk, like a walkie-talkie, so the
+// mic can never stay on by accident; left pinch recenters.
 
 using System.Collections;
 using System.Globalization;
@@ -11,7 +12,8 @@ public class RobotControl : MonoBehaviour
 {
     enum Mode { Idle, Waking, Following }
 
-    const float PressLevel = 0.8f;
+    const float PressLevel = 0.8f, ReleaseLevel = 0.5f;
+    const float MicHoldS = 0.15f;      // a tracking dropout for a few frames must not cut a word
     const double SleepPitchDeg = 18;   // measured pitch above this = still in the sleep pose (see robot.js wake())
     const float MoveTimeoutS = 8f;
     // adb ... -e sweep 1: bench test without a person: slow yaw sweep, see VideoWindow's recording
@@ -21,40 +23,60 @@ public class RobotControl : MonoBehaviour
     public Transform head;
 
     readonly Recenter recenter = new Recenter();
-    InputAction press;
+    InputAction talk, recenterPress;
     DaemonClient daemon;
     HeadMirror mirror = new HeadMirror();
+    readonly HeadModel headModel = new HeadModel();
     HeadTarget lastSent;
     Mode mode = Mode.Idle;
-    bool pressed;
+    bool talking, recenterDown, started;
+    float talkReleasedAt = float.NegativeInfinity;
     int sent, sentAtMark;
     float markAt;
     float sendHz;
     string note = "";
+    double lastBaseYaw, lastBasePitch, loggedYaw, loggedPitch;
     bool sweep;
     float sweepAt = -1f;
 
     public string Summary { get; private set; } = "";
     public bool IsFollowing => mode == Mode.Following;
+    public bool MicOn { get; private set; }
     public bool Sweeping => sweep && sweepAt >= 0;
     public Recenter Frame => recenter;
     public Quat HeadRotation => HeadNow();
     public DaemonClient Daemon => daemon;
     /// <summary>What we commanded, for comparing with the measured pose (VideoWindow).</summary>
     public PoseHistory Commanded { get; } = new PoseHistory();
+    /// <summary>The command through the head's mechanical play: where the head should end up, for the video window.</summary>
+    public PoseHistory Modelled { get; } = new PoseHistory();
+    /// <summary>Speaker following; set by CaptionView, which owns the faces.</summary>
+    public SpeakerFollow Follow { get; set; }
+    /// <summary>The base yaw and pitch that went into each command (Yaw, Pitch), for the video window.</summary>
+    public PoseHistory BaseHistory { get; } = new PoseHistory();
+    /// <summary>How fast the base turns right now, °/s: the picture moves without the user's own head motion.</summary>
+    public double BaseRate { get; private set; }
 
     void Awake()
     {
-        press = new InputAction("Press", InputActionType.Value, expectedControlType: "Axis");
-        press.AddBinding("<HandInteraction>/pinchValue");
-        press.AddBinding("<XRController>/trigger");
-        press.Enable();
+        talk = Press("Talk", "RightHand");
+        recenterPress = Press("Recenter", "LeftHand");
         sweep = RobotVideo.ReadIntentExtra("sweep") == "1";
+    }
+
+    static InputAction Press(string name, string hand)
+    {
+        var action = new InputAction(name, InputActionType.Value, expectedControlType: "Axis");
+        action.AddBinding($"<HandInteraction>{{{hand}}}/pinchValue");
+        action.AddBinding($"<XRController>{{{hand}}}/trigger");
+        action.Enable();
+        return action;
     }
 
     void OnDestroy()
     {
-        press.Dispose();
+        talk.Dispose();
+        recenterPress.Dispose();
         daemon?.Dispose();
     }
 
@@ -78,29 +100,76 @@ public class RobotControl : MonoBehaviour
             mirror = new HeadMirror();
             mode = Mode.Following;
         }
+        if (!sweep && !started && Application.isFocused && daemon.TargetConnected && daemon.Latest?.head_pose != null
+            && video.VideoTexture != null)
+        {
+            started = true;
+            StartCoroutine(Wake());
+        }
         if (Sweeping && Time.unscaledTime - sweepAt >= SweepS) { sweep = false; sweepAt = -1f; mode = Mode.Idle; }
         if (mode == Mode.Following && (Application.isFocused || Sweeping))
         {
             var raw = Sweeping
                 ? new RobotAngles(0, 0, SweepYawDeg * Mathf.Sin(2 * Mathf.PI * (Time.unscaledTime - sweepAt) / SweepPeriodS))
                 : PoseMath.HeadsetToRobot(recenter.ToRelative(HeadNow()));
+            double baseYaw = 0, basePitch = 0;
+            if (Follow != null && !Sweeping)
+            {
+                double dt = Time.unscaledDeltaTime;
+                baseYaw = Follow.Step(dt, DaemonClient.NowS());
+                basePitch = Follow.BasePitch;
+                if (dt > 0)
+                {
+                    double dy = baseYaw - lastBaseYaw, dp = basePitch - lastBasePitch;
+                    BaseRate = System.Math.Sqrt(dy * dy + dp * dp) / dt;
+                }
+                lastBaseYaw = baseYaw;
+                lastBasePitch = basePitch;
+                raw.Yaw += baseYaw;       // the user's head rotation on top of the speaker direction ...
+                raw.Pitch += basePitch;   // ... and on top of the framing pitch
+                LogFollow();
+            }
             lastSent = mirror.Step(raw, Time.unscaledDeltaTime);
             daemon.SendTarget(lastSent);
-            Commanded.Add(DaemonClient.NowS(), new RobotAngles(lastSent.Roll, lastSent.Pitch, lastSent.Yaw));
+            double nowS = DaemonClient.NowS();
+            var commanded = new RobotAngles(lastSent.Roll, lastSent.Pitch, lastSent.Yaw);
+            Commanded.Add(nowS, commanded);
+            Modelled.Add(nowS, headModel.Step(commanded));
+            BaseHistory.Add(nowS, new RobotAngles(0, basePitch, baseYaw));
             sent++;
         }
         UpdateSummary();
     }
 
+    /// <summary>Who moved the target, when it jumps more than 4°.</summary>
+    void LogFollow()
+    {
+        if (System.Math.Abs(Follow.Tracker.Target - loggedYaw) <= 4 && System.Math.Abs(Follow.TargetPitch - loggedPitch) <= 4) return;
+        loggedYaw = Follow.Tracker.Target;
+        loggedPitch = Follow.TargetPitch;
+        Debug.Log($"[follow] yaw {loggedYaw:0} pitch {loggedPitch:0} by {Follow.Source}");
+    }
+
     void HandlePress()
     {
-        bool now = press.ReadValue<float>() > PressLevel;
-        if (!now && pressed)
+        float level = talk.ReadValue<float>();
+        if (level > PressLevel) talking = true;
+        else if (level < ReleaseLevel) talking = false;
+        if (talking) talkReleasedAt = Time.unscaledTime;
+        bool mic = talking || Time.unscaledTime - talkReleasedAt < MicHoldS;
+        if (mic != MicOn)
         {
-            if (mode == Mode.Idle) StartCoroutine(Wake());
-            else if (mode == Mode.Following) { recenter.Set(HeadNow()); note = "recentered"; Debug.Log("[control] recentered"); }
+            MicOn = mic;
+            Debug.Log($"[control] mic {(mic ? "on" : "off")}");
         }
-        pressed = now;
+
+        bool down = recenterPress.ReadValue<float>() > PressLevel;
+        if (down && !recenterDown && mode == Mode.Following)
+        {
+            recenter.Set(HeadNow());
+            Debug.Log("[control] recentered");
+        }
+        recenterDown = down;
     }
 
     IEnumerator Post(string path)
@@ -139,6 +208,7 @@ public class RobotControl : MonoBehaviour
         }
         mirror = new HeadMirror();   // start from neutral, where the wake-up motion ends
         recenter.Set(HeadNow());
+        if (Follow != null) { Follow.Reset(); Follow.Active = true; }
         note = "";
         mode = Mode.Following;
     }
@@ -160,8 +230,8 @@ public class RobotControl : MonoBehaviour
         var link = daemon.TargetConnected ? daemon.LastError ?? "" : $"  no daemon link {daemon.LastError}";
         Summary = mode switch
         {
-            Mode.Idle => $"pinch to start{link}",
-            Mode.Following => $"following {sendHz:0} Hz  yaw {lastSent.Yaw:0} pitch {lastSent.Pitch:0} {note}{link}",
+            Mode.Idle => $"waiting for the robot{link}",
+            Mode.Following => $"following {sendHz:0} Hz  yaw {lastSent.Yaw:0} pitch {lastSent.Pitch:0}{link}",
             _ => $"{note}{link}",
         };
     }

@@ -12,15 +12,17 @@ public class VideoWindow : MonoBehaviour
 {
     const float Radius = 3f;
     const int GridX = 48, GridY = 27;
-    // Command -> robot head, from the sweep test (2026-10-30). Override: adb ... -e lagms 255
-    const double RobotLagDefaultMs = 255;
+    // Command -> robot head on top of its play, from the recording (2026-10-30). Override: adb ... -e lagms 130
+    const double RobotLagDefaultMs = 130;
     const float BlendS = 0.3f;         // switching between world-locked and in front
     const float GlideAwayDeg = 30f, GlideAfterS = 0.5f, GlideS = 0.25f;
 
     public RobotControl control;
     public RobotVideo video;
     public Transform head;
+    public Renderer vignette;
 
+    float vignetteLevel;
     readonly PoseHistory measured = new PoseHistory();
     readonly FollowGuard guard = new FollowGuard();
     readonly PoseClock clock = new PoseClock();
@@ -116,7 +118,9 @@ public class VideoWindow : MonoBehaviour
         {
             double poseT = s.senderS > 0 ? clock.ToLocal(s.senderS, s.arrivedS) : s.arrivedS;
             measured.Add(poseT, s.Head);
-            if (control.IsFollowing) blend.AddMeasured(poseT, s.Head, control.Commanded);
+            control.Follow?.PushHead(poseT, s.Head.Yaw, s.Head.Pitch);
+            if (s.hasDoa) control.Follow?.PushDoa(poseT, s.doa.angle, DaemonClient.NowS());
+            if (control.IsFollowing) blend.AddMeasured(poseT, s.Head, control.Modelled);
             if (control.Sweeping && !recordDone)
                 poses.AppendLine(string.Format(System.Globalization.CultureInfo.InvariantCulture,
                     "{0:F4},{1:F4},{2:F3}", s.arrivedS, poseT, s.Head.Yaw));
@@ -133,7 +137,7 @@ public class VideoWindow : MonoBehaviour
             Debug.Log($"[view] {(follow ? "world-locked at the robot pose" : "robot not following, window in front")}");
         }
 
-        if (control.Sweeping && !recordDone && blend.TryAt(now - delay, control.Commanded, out var shown))
+        if (control.Sweeping && !recordDone && blend.TryAt(now - delay, control.Modelled, out var shown))
         {
             measured.TryAt(now - delay, out var raw);
             record.AppendLine(string.Format(System.Globalization.CultureInfo.InvariantCulture,
@@ -142,14 +146,29 @@ public class VideoWindow : MonoBehaviour
         }
 
         Quaternion target;
-        if (locked && blend.TryAt(now - delay, control.Commanded, out var a))
-            target = ToUnity(control.Frame.ToWorld(PoseMath.RobotToHeadset(a.Roll, a.Pitch, a.Yaw)));
+        if (locked && blend.TryAt(now - delay, control.Modelled, out var a))
+        {
+            // The room turns with the base (speaker direction + framing pitch), as it was when this frame was captured:
+            // the window stays in front of the user while Reachy turns to a speaker, and looking ahead = at the speaker.
+            control.BaseHistory.TryAt(now - delay - blend.LagS, out var b);
+            var room = control.Frame.ToWorld(PoseMath.RobotToHeadset(0, b.Pitch, b.Yaw).Inverse);
+            target = ToUnity(room * PoseMath.RobotToHeadset(a.Roll, a.Pitch, a.Yaw));
+        }
         else
             target = Front();
 
         float t = (Time.unscaledTime - blendAt) / BlendS;
         transform.localRotation = t < 1 ? Quaternion.Slerp(blendFrom, target, Mathf.SmoothStep(0, 1, t)) : target;
         transform.localPosition = head.localPosition;   // centred on the eye
+        // The picture turns without the user's own head motion: darken the edge of the view, the standard measure
+        // against VR sickness. 0 below 6 °/s, full at 45 °/s.
+        if (vignette != null)
+        {
+            float strength = Mathf.Clamp01(((float)control.BaseRate - 6) / 39);
+            vignetteLevel = Mathf.MoveTowards(vignetteLevel, strength, Time.unscaledDeltaTime / 0.15f);
+            vignette.enabled = vignetteLevel > 0.01f;
+            vignette.material.SetFloat("_Strength", vignetteLevel);
+        }
         Summary = $"view {(locked ? "world-locked" : "in front")}  delay {delay * 1000:0} ms";
     }
 }

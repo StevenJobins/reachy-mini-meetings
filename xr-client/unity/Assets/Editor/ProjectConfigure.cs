@@ -197,6 +197,18 @@ public static class ProjectConfigure
         video.view.video = video;
         video.view.head = camGo.transform;
 
+        // Head-locked dark edge while Reachy turns on its own (VideoWindow)
+        var vignette = GameObject.CreatePrimitive(PrimitiveType.Quad);
+        vignette.name = "Vignette";
+        Object.DestroyImmediate(vignette.GetComponent<Collider>());
+        vignette.transform.SetParent(camGo.transform, false);
+        vignette.transform.localPosition = new Vector3(0, 0, 0.3f);
+        vignette.transform.localScale = new Vector3(1.6f, 1.6f, 1);
+        var vignetteRenderer = vignette.GetComponent<Renderer>();
+        vignetteRenderer.sharedMaterial = SaveMaterial("Vignette", Shader.Find("Reachy/Vignette"), Color.black);
+        vignetteRenderer.enabled = false;
+        video.view.vignette = vignetteRenderer;
+
         EditorSceneManager.SaveScene(scene, ScenePath);
         EditorBuildSettings.scenes = new[] { new EditorBuildSettingsScene(ScenePath, true) };
     }

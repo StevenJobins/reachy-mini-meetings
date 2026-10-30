@@ -1,6 +1,6 @@
 // Your voice -> Reachy's speaker, over the same WebRTC connection as the video. The audio transceiver is send-only:
 // receiving the robot's audio would hold the video back (see RobotVideo.Answer), and the room sound comes another way.
-// Live only while Reachy follows, so opening the app never streams the room around the user.
+// Push to talk: on only while the user holds the right pinch (RobotControl), so it can never stay on by accident.
 
 using System.Collections;
 using Unity.WebRTC;
@@ -54,9 +54,9 @@ public class MicSender : MonoBehaviour
     void Update()
     {
         if (track == null) return;
-        bool on = control.IsFollowing;
+        bool on = control.MicOn;
         if (track.Enabled != on) track.Enabled = on;
-        Status = sender == null ? "mic: no connection" : on ? $"mic on {Kbps:0} kbps" : "mic off until you pinch";
+        Status = sender == null ? "mic: no connection" : on ? $"mic on {Kbps:0} kbps" : "mic off, hold right pinch to talk";
     }
 
     void OnDestroy()
