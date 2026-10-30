@@ -36,6 +36,9 @@ public class FpsLabel : MonoBehaviour
         GetComponent<MeshRenderer>().sharedMaterial = material;
     }
 
+    /// <summary>Off for filming: adb ... -e hud off (or on), remembered on the headset.</summary>
+    public void SetVisible(bool visible) => GetComponent<MeshRenderer>().enabled = visible;
+
     void OnDestroy() => Font.textureRebuilt -= UpdateAtlas;
 
     void UpdateAtlas(Font f)

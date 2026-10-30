@@ -52,6 +52,9 @@ public class RobotVideo : MonoBehaviour
     void Start()
     {
         keepAudio = ReadIntentExtra("audio") == "on";
+        var showHud = ReadIntentExtra("hud");
+        if (!string.IsNullOrEmpty(showHud)) { PlayerPrefs.SetString("hud", showHud); PlayerPrefs.Save(); }
+        if (hud != null) hud.SetVisible(PlayerPrefs.GetString("hud", "on") != "off");
         if (double.TryParse(ReadIntentExtra("capturems"), System.Globalization.NumberStyles.Float,
                 System.Globalization.CultureInfo.InvariantCulture, out var ms)) captureS = ms / 1000;
         url = ReadIntentExtra(UrlKey);

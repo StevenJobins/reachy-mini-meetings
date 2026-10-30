@@ -142,6 +142,22 @@ Saved video frames around the live window (`RoomPanorama.cs`, `RoomScan.cs`, `Ro
 
 It is rebuilt each time the app opens, and it is flat: no depth yet. People who moved stay as an old image until Reachy looks there again.
 
+## Filming
+
+Status text off, remembered on the headset (`on` brings it back):
+
+```bash
+$ADB shell am start -n ch.ethz.reachymeetings/com.unity3d.player.UnityPlayerGameActivity -e hud off
+```
+
+Record the headset view from the Mac, up to 3 minutes. Square is the format that shows one eye's full view (a wide frame crops it; the encoder's limit is 2176 in height); about 36 fps:
+
+```bash
+$ADB shell screenrecord --time-limit 60 --size 2176x2176 --bit-rate 60000000 /sdcard/Download/take.mp4
+```
+
+The video starts at a low bitrate and takes about 10 s to reach full quality, so the first scan stops look blocky.
+
 ## Speaker following: postponed
 
 Removed on 2026-10-30, to come back to later. The last version is in git at `83ae89a` (`SpeakerFollow.cs`, tests, `TrackerGolden.txt`); the turn view and vignette were never committed. Before trying again:
