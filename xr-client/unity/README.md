@@ -8,7 +8,7 @@ The headset app. Since 2026-10-30 this is the way forward ([docs/xr-client-strat
 | 1 | Video spike: robot camera via `com.unity.webrtc` (daemon signalling on the LAN), fps + latency against the web app (34 fps, 233 ms) | done (2026-10-30, real robot): **VR 72 fps**, video 60 fps, latency **median 141 ms** with the flash test, over Wi-Fi ([latency.md](../../docs/measurements/latency.md)). The web app's 233 ms came from the QR method on one Mac, so the two numbers are not a strict comparison |
 | 2 | Head-pose loop: port `pose.js`, targets and measured pose directly from the daemon | done (2026-10-30, real robot): Reachy follows the head, targets sent at 72 Hz. Follow lag not measured yet |
 | 3 | World-locked reprojection: port `camera.js` (video sphere, lens model) | done (2026-10-30, real robot): tried in the headset, comfortable after the pose fix below |
-| 4 | Feature parity: captions, notes, room audio, depth, HF sign-in + Pollen central, UI | |
+| 4 | Feature parity, in this order: audio, captions, speaker following, panorama with a short scan, notes, sign-in, depth | audio working (2026-10-30), still to be tried in a separate room |
 
 ## Setup
 
@@ -98,6 +98,25 @@ The time the window looks back is the jitter buffer + decode from the WebRTC sta
 **Bench test:** `-e sweep 1` on the `am start` line turns Reachy's head ±30° for 24 s by itself and records `sweep.csv` and `sweep.poses.csv` in the app's files folder. The headset must be worn, or it sleeps: close your eyes. Tuning without a rebuild: `-e lagms`, `-e capturems`.
 
 **Headset sleep:** the app closes itself after ~2 s asleep (`AppLifecycle.cs`), because a paused app could not be reached again after waking. Open it again from the launcher: the address is remembered, and Reachy waits for a pinch.
+
+## Audio (Phase 4)
+
+- **Your voice to Reachy:** the headset mic goes over WebRTC to the robot's speaker (`MicSender.cs`), only while Reachy follows you. The audio transceiver is send-only, so the video delay stays low (see *Audio is declined by default*). The first start asks for microphone access in the headset.
+- **Room sound:** Reachy's mic array reaches the laptop over USB, and the backend streams it to the app (`BackendClient.cs`, `RoomSound.cs`, `RoomAudio.cs`: jitter buffer and speech filter, port of `roomaudio.js`).
+
+Start the backend in **Terminal.app** the first time, so macOS can ask for microphone and camera access:
+
+```bash
+backend/scripts/start_for_headset.sh
+```
+
+It listens on the Wi-Fi with a secret (`~/.config/reachy-meetings/lan_secret`), so others on the network cannot listen in. Tell the app once, with the headset on:
+
+```bash
+$ADB shell am start -n ch.ethz.reachymeetings/com.unity3d.player.UnityPlayerGameActivity -e secret $(cat ~/.config/reachy-meetings/lan_secret)
+```
+
+**If the room sound is silent:** check `curl localhost:8000/api/audio/config/parameter/AUDIO_MGR_MIC_GAIN`. If it fails (`status 68`, `exceeds 100 times`), the robot's mic chip is stuck and sends digital silence: put Reachy to sleep and power-cycle it. Seen once on 2026-10-30, cause unknown.
 
 ## Scene
 

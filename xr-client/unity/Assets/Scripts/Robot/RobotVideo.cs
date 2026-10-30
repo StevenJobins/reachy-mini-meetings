@@ -22,6 +22,8 @@ public class RobotVideo : MonoBehaviour
     public VideoLatency latency;
     public FlashLatency flash;
     public RobotControl control;
+    public MicSender mic;
+    public RoomSound room;
     public VideoWindow view;
 
     public string SignallingUrl => url;
@@ -42,6 +44,7 @@ public class RobotVideo : MonoBehaviour
     int statsLogged;
 
     // previous GetStats() sample, for rates
+    double lastMicT, lastMicBytes;
     double lastStatsT, lastBytes, lastJbDelay, lastJbCount, lastDecodeS, lastDecoded;
 
     void Start()
@@ -100,7 +103,7 @@ public class RobotVideo : MonoBehaviour
             retryAt = 0;
             Connect();
         }
-        if (hud != null) hud.extra = $"{state}\n{stats}\n{latency?.Summary}{flash?.Summary}\n{control?.Summary}\n{view?.Summary}";
+        if (hud != null) hud.extra = $"{state}\n{stats}\n{latency?.Summary}{flash?.Summary}\n{control?.Summary}  {mic?.Status}\n{view?.Summary}  {room?.Status}";
     }
 
     void Handle(GstSignalling.Message m)
@@ -172,7 +175,7 @@ public class RobotVideo : MonoBehaviour
         // Nothing plays the robot's WebRTC audio here, and libwebrtc holds video back to stay in sync with it
         if (!keepAudio)
             foreach (var t in pc.GetTransceivers())
-                if (t.Receiver.Track?.Kind == TrackKind.Audio) t.Direction = RTCRtpTransceiverDirection.Inactive;
+                if (t.Receiver.Track?.Kind == TrackKind.Audio) mic.Attach(t);
         var create = pc.CreateAnswer();
         yield return create;
         if (create.IsError) { state = $"createAnswer: {create.Error.message}"; yield break; }
@@ -196,6 +199,12 @@ public class RobotVideo : MonoBehaviour
             if (op.IsError) continue;
             foreach (var s in op.Value.Stats.Values)
             {
+                if (s is RTCOutboundRTPStreamStats o && o.kind == "audio")
+                {
+                    double at = o.Timestamp / 1e6;
+                    if (at > lastMicT && lastMicT > 0) mic.Kbps = (o.bytesSent - lastMicBytes) * 8 / (at - lastMicT) / 1000;
+                    lastMicT = at; lastMicBytes = o.bytesSent;
+                }
                 if (!(s is RTCInboundRTPStreamStats v) || v.kind != "video") continue;
                 var codec = op.Value.Stats.TryGetValue(v.codecId ?? "", out var c) ? ((RTCCodecStats)c).mimeType : "?";
                 double t = v.Timestamp / 1e6, dt = t - lastStatsT;

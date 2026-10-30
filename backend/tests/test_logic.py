@@ -1,10 +1,12 @@
 """Pure-logic tests: no mic, no Whisper model, no network.   pytest -q"""
 
+import asyncio
+import json
 from itertools import pairwise
 
 import numpy as np
 
-from reachy_meetings_backend.captions import NoiseGate
+from reachy_meetings_backend.captions import CaptionServer, NoiseGate
 from reachy_meetings_backend.doa import DoaTracker, circular_mean_deg, doa_to_head_deg
 from reachy_meetings_backend.segmenter import SAMPLE_RATE, Segmenter, SegmenterCfg
 from reachy_meetings_backend.stt import plausible
@@ -313,3 +315,31 @@ def test_read_aiff_plain_and_aifc():
         x, sr = read_aiff(data)
         assert sr == 22050
         assert np.allclose(x * 32768, [0, 1000, -1000, 32767])
+
+
+class FakeClient:
+    def __init__(self, ip, first_message):
+        self.remote_address = (ip, 1234)
+        self.first_message = first_message
+        self.closed = False
+
+    async def recv(self):
+        return self.first_message
+
+    async def close(self, code, reason):
+        self.closed = True
+
+
+def test_lan_secret_keeps_other_machines_out():
+    server = CaptionServer("0.0.0.0", 0, "en", lan_secret="s3cret")
+    allowed = lambda ws: asyncio.run(server._lan_authorized(ws))
+    assert allowed(FakeClient("192.168.1.2", json.dumps({"type": "auth", "secret": "s3cret"})))
+    wrong = FakeClient("192.168.1.2", json.dumps({"type": "auth", "secret": "nope"}))
+    assert not allowed(wrong) and wrong.closed
+    assert not allowed(FakeClient("192.168.1.2", "not json"))
+    assert not allowed(FakeClient("192.168.1.2", json.dumps({"type": "lang"})))
+    assert allowed(FakeClient("127.0.0.1", ""))   # this machine, nothing to send
+
+
+def test_no_lan_secret_changes_nothing_for_local_use():
+    assert asyncio.run(CaptionServer("127.0.0.1", 0, "en")._lan_authorized(FakeClient("127.0.0.1", "")))

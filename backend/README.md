@@ -67,6 +67,8 @@ Make a test file: `say -v Anna -o t.aiff "Guten Morgen zusammen." && afconvert -
 
 Headset over USB: `adb reverse tcp:8766 tcp:8766`
 
+Unity app on the same Wi-Fi: `scripts/start_for_headset.sh` (`--host 0.0.0.0 --lan-secret`, see xr-client/unity/README.md). A network host without a secret is refused, because anyone on the Wi-Fi could listen to the room.
+
 ### Wireless headset (`--tunnel`)
 
 The page is served from GitHub Pages over https, so the headset can only reach this server over `wss` with a valid certificate; `ws://localhost` only works on the Mac itself or over USB. `reachy-captions --tunnel` opens a Cloudflare quick tunnel (`brew install cloudflared`, no account) and posts its address (random, new on every start) to the ntfy.sh topic `reachy-meetings-xr-captions`; the page looks it up there (`tunnel.py`, `captions.js`). Nothing to enter on the headset.

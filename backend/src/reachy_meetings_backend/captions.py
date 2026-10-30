@@ -24,6 +24,7 @@ Protocol (server -> headset, one JSON per message; keep in sync with xr-client):
            Between utterances it is turned down by --pause-db (noise gate driven by the neural VAD).
 
 Client -> server: {"type": "auth", "hf_token": str} first (checked through the tunnel only);
+{"type": "auth", "secret": str} first from another machine when the server runs with --lan-secret;
 {"type": "voice", "gender": "male" | "female"} picks Reachy's voice (voice.py GENDER_VOICES, per language);
 {"type": "lang", "meeting": "auto" | "de" | "en" | ..., "target": "en" | ...} (both optional, ISO 639-1):
 the language Reachy speaks for the remote user ("auto" = --meeting-lang, else the one most spoken in the
@@ -52,6 +53,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import base64
+import hmac
 import itertools
 import json
 import logging
@@ -155,8 +157,10 @@ class Worker:
 
 
 class CaptionServer:
-    def __init__(self, host: str, port: int, target: str, allow_hf: set[str] | None = None) -> None:
+    def __init__(self, host: str, port: int, target: str, allow_hf: set[str] | None = None,
+                 lan_secret: str = "") -> None:
         self.host, self.port, self.target = host, port, target
+        self.lan_secret = lan_secret   # clients on other machines must send it first (the Unity app on the Wi-Fi)
         # Clients through the tunnel (Cloudflare adds a cf-ray header) must first send
         # {"type": "auth", "hf_token": ...} of one of these accounts. Local / LAN clients need nothing.
         self.allow_hf = {u.lower() for u in allow_hf or ()}
@@ -175,9 +179,23 @@ class CaptionServer:
             log.info("Captions on ws://%s:%d", self.host, self.port)
             await asyncio.Future()
 
+    async def _lan_authorized(self, ws) -> bool:
+        if not self.lan_secret or ws.remote_address[0] in ("127.0.0.1", "::1"):
+            return True
+        try:
+            msg = json.loads(await asyncio.wait_for(ws.recv(), 10))
+            secret = msg.get("secret") if msg.get("type") == "auth" else None
+        except (asyncio.TimeoutError, ValueError, AttributeError, websockets.ConnectionClosed):
+            secret = None
+        if isinstance(secret, str) and hmac.compare_digest(secret, self.lan_secret):
+            return True
+        log.warning("LAN client %s rejected: wrong secret", ws.remote_address[0])
+        await ws.close(4001, "wrong secret")
+        return False
+
     async def _authorized(self, ws) -> bool:
         if "cf-ray" not in ws.request.headers:
-            return True
+            return await self._lan_authorized(ws)
         try:
             msg = json.loads(await asyncio.wait_for(ws.recv(), 10))
             token = msg.get("hf_token") if msg.get("type") == "auth" else None
@@ -285,7 +303,7 @@ class Pipeline:
         # Language per utterance, detected by the fast partial model, so the big model needn't detect it
         # again (that costs ~1 s): auto language at no extra delay.
         self.seg_lang: dict[int, str] = {}
-        self.server = CaptionServer(args.host, args.port, args.target, args.allow_hf)
+        self.server = CaptionServer(args.host, args.port, args.target, args.allow_hf, args.lan_secret)
         try:
             from .vad import SileroVad
 
@@ -659,12 +677,15 @@ def cli() -> None:
                          "(default: the account this Mac is signed in with)")
     ap.add_argument("--require-mic", action="store_true",
                     help="exit if the --mic device is missing instead of using the default mic (autostart)")
-    # localhost only: the https page can't reach a LAN address anyway (mixed content), the headset comes in over
-    # adb reverse or the tunnel; 0.0.0.0 gave anyone on the Wi-Fi the room audio without any sign-in
+    # localhost by default: 0.0.0.0 without --lan-secret gave anyone on the Wi-Fi the room audio without any sign-in
     ap.add_argument("--host", default="127.0.0.1")
+    ap.add_argument("--lan-secret", default=os.environ.get("REACHY_LAN_SECRET", ""),
+                    help="clients on other machines must send this first (Unity app); use with --host 0.0.0.0")
     ap.add_argument("--port", type=int, default=8766)
     ap.add_argument("-v", "--verbose", action="store_true")
     args = ap.parse_args()
+    if args.host not in ("127.0.0.1", "localhost", "::1") and not args.lan_secret:
+        ap.error("--host on a network needs --lan-secret: otherwise anyone on the Wi-Fi hears the room")
 
     from .stt import default_engine, has_cuda
 

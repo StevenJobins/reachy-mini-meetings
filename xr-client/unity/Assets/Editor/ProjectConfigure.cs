@@ -134,6 +134,7 @@ public static class ProjectConfigure
         var camGo = new GameObject("Main Camera") { tag = "MainCamera" };
         camGo.transform.SetParent(offset.transform, false);
         var cam = camGo.AddComponent<Camera>();
+        camGo.AddComponent<AudioListener>();
         cam.clearFlags = CameraClearFlags.SolidColor;
         cam.backgroundColor = new Color(0.10f, 0.12f, 0.20f);
         cam.nearClipPlane = 0.05f;
@@ -181,6 +182,10 @@ public static class ProjectConfigure
         video.control.video = video;
         video.control.head = camGo.transform;
         video.gameObject.AddComponent<AppLifecycle>();
+        video.mic = video.gameObject.AddComponent<MicSender>();
+        video.mic.control = video.control;
+        video.room = new GameObject("Room Sound").AddComponent<RoomSound>();
+        video.room.video = video;
         video.view = window.AddComponent<VideoWindow>();
         video.view.control = video.control;
         video.view.video = video;

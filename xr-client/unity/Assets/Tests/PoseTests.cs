@@ -160,4 +160,50 @@ public class PoseTests
         Assert.That(b.TryAt(2.3, commanded, out var a), Is.True);
         Assert.That(a.Yaw, Is.EqualTo(Cmd(2.3 - lag) + offset).Within(1.0));
     }
+
+    static byte[] Pcm(int samples, short value)
+    {
+        var b = new byte[samples * 2];
+        for (int i = 0; i < samples; i++) { b[2 * i] = (byte)(value & 0xff); b[2 * i + 1] = (byte)(value >> 8); }
+        return b;
+    }
+
+    [Test]
+    public void AudioBufferWaitsForTheTargetThenPlaysThenFades()
+    {
+        var a = new AudioJitterBuffer();
+        var output = new float[320];
+        a.PushPcm16(Pcm(1000, 16384), 2000);   // 62 ms, below the 120 ms target
+        a.Read(output, 0, 320);
+        Assert.That(output[319], Is.EqualTo(0).Within(1e-6), "still filling");
+        a.PushPcm16(Pcm(1000, 16384), 2000);
+        a.Read(output, 0, 320);
+        Assert.That(output[0], Is.EqualTo(0.5f).Within(1e-3), "playing");
+        for (int i = 0; i < 6; i++) a.Read(output, 0, 320);
+        Assert.That(a.Underruns, Is.EqualTo(1));
+        Assert.That(output[319], Is.LessThan(0.01f), "faded out");
+    }
+
+    [Test]
+    public void AudioBufferDropsOldSoundAfterAStall()
+    {
+        var a = new AudioJitterBuffer();
+        a.PushPcm16(Pcm(16000, 1000), 32000);   // 1 s burst
+        a.Read(new float[160], 0, 160);
+        Assert.That(a.BufferedMs, Is.LessThan(125));
+    }
+
+    [Test]
+    public void SpeechFilterRemovesHumAndKeepsVoiceBand()
+    {
+        double Rms(double hz)
+        {
+            var f = new SpeechFilter();
+            var s = new float[8000];
+            for (int i = 0; i < s.Length; i++) s[i] = (float)(0.01 * Math.Sin(2 * Math.PI * hz * i / 16000));
+            f.Process(s, 0, s.Length);
+            return Math.Sqrt(s.Skip(4000).Average(v => v * v));
+        }
+        Assert.That(Rms(50), Is.LessThan(Rms(1000) / 3), "hum");
+    }
 }
