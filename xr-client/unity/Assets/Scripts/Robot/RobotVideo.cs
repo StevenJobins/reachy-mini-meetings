@@ -12,14 +12,21 @@ public class RobotVideo : MonoBehaviour
 {
     const string UrlKey = "signalling";
     const float RetryS = 2f;
+    // Camera exposure/readout + encoding + network, the part the stats do not show. From the flash test: 141 ms total
+    // minus jitter buffer and decode (41 ms) minus ~20 ms for the test screen, minus ~10 ms the pose stream itself is
+    // late. Override for tests: adb ... -e capturems 70
+    const double CaptureDefaultMs = 70;
 
     public Renderer window;
     public FpsLabel hud;
     public VideoLatency latency;
     public FlashLatency flash;
     public RobotControl control;
+    public VideoWindow view;
 
     public string SignallingUrl => url;
+    /// <summary>Age of the shown frame relative to the pose stream, live from the WebRTC stats (see CaptureDefaultMs).</summary>
+    public double VideoDelayS { get; private set; } = 0.12;
     /// <summary>The received video (a RenderTexture the WebRTC package updates), null until the first frame.</summary>
     public Texture VideoTexture { get; private set; }
 
@@ -30,6 +37,7 @@ public class RobotVideo : MonoBehaviour
     string state = "starting";
     string stats = "";
     float retryAt;
+    double captureS = CaptureDefaultMs / 1000;
     bool keepAudio;      // adb ... -e audio on: accept the robot's audio track (for A/B tests of the video delay)
     int statsLogged;
 
@@ -39,6 +47,8 @@ public class RobotVideo : MonoBehaviour
     void Start()
     {
         keepAudio = ReadIntentExtra("audio") == "on";
+        if (double.TryParse(ReadIntentExtra("capturems"), System.Globalization.NumberStyles.Float,
+                System.Globalization.CultureInfo.InvariantCulture, out var ms)) captureS = ms / 1000;
         url = ReadIntentExtra(UrlKey);
         if (!string.IsNullOrEmpty(url)) { PlayerPrefs.SetString(UrlKey, url); PlayerPrefs.Save(); }
         else url = PlayerPrefs.GetString(UrlKey, "");
@@ -90,7 +100,7 @@ public class RobotVideo : MonoBehaviour
             retryAt = 0;
             Connect();
         }
-        if (hud != null) hud.extra = $"{state}\n{stats}\n{latency?.Summary}{flash?.Summary}\n{control?.Summary}";
+        if (hud != null) hud.extra = $"{state}\n{stats}\n{latency?.Summary}{flash?.Summary}\n{control?.Summary}\n{view?.Summary}";
     }
 
     void Handle(GstSignalling.Message m)
@@ -193,6 +203,7 @@ public class RobotVideo : MonoBehaviour
                 var mbps = dt > 0 ? (v.bytesReceived - lastBytes) * 8 / dt / 1e6 : 0;
                 var jbMs = jbCount > 0 ? (v.jitterBufferDelay - lastJbDelay) / jbCount * 1000 : 0;
                 var decMs = decoded > 0 ? (v.totalDecodeTime - lastDecodeS) / decoded * 1000 : 0;
+                if (jbCount > 0 && decoded > 0) VideoDelayS += 0.3 * ((jbMs + decMs) / 1000 + captureS - VideoDelayS);
                 stats = $"{v.frameWidth}x{v.frameHeight} {v.framesPerSecond:0}fps {mbps:0.0}Mbps {codec} {v.decoderImplementation}\n" +
                         $"jitter buf {jbMs:0}ms  decode {decMs:0.0}ms  dropped {v.framesDropped}";
                 if (++statsLogged % 5 == 0) Debug.Log($"[stats] audio {(keepAudio ? "on" : "off")} {stats.Replace('\n', ' ')}");
@@ -202,7 +213,7 @@ public class RobotVideo : MonoBehaviour
         }
     }
 
-    static string ReadIntentExtra(string key)
+    public static string ReadIntentExtra(string key)
     {
 #if UNITY_ANDROID && !UNITY_EDITOR
         try

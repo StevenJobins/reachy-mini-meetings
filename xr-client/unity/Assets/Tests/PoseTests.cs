@@ -10,7 +10,7 @@ public class PoseTests
 {
     const double Tol = 1e-9;
 
-    static double[][] Golden(string kind) => File.ReadAllLines("Assets/Tests/PoseGolden.txt")
+    static double[][] Golden(string kind, string file = "Assets/Tests/PoseGolden.txt") => File.ReadAllLines(file)
         .Where(l => l.StartsWith(kind + " "))
         .Select(l => l.Split(' ').Skip(1).Select(v => double.Parse(v, CultureInfo.InvariantCulture)).ToArray())
         .ToArray();
@@ -80,5 +80,84 @@ public class PoseTests
         r.Set(q);
         var a = PoseMath.HeadsetToRobot(r.ToRelative(q));
         Assert.That(new[] { a.Roll, a.Pitch, a.Yaw }, Is.EqualTo(new[] { 0.0, 0.0, 0.0 }).Within(Tol));
+    }
+
+    [Test]
+    public void CameraModelMatchesCameraJs()
+    {
+        var c = CameraModel.Calibrated();
+        const string file = "Assets/Tests/CameraGolden.txt";
+        foreach (var v in Golden("unproject", file))
+        {
+            Assert.That(c.Unproject(v[0], v[1], out var x, out var y, out var z), Is.True);
+            Assert.That(new[] { x, y, z }, Is.EqualTo(new[] { v[2], v[3], v[4] }).Within(1e-8));
+        }
+        foreach (var v in Golden("project", file))
+        {
+            Assert.That(c.Project(v[0], v[1], v[2], out var pu, out var pv), Is.True);
+            Assert.That(new[] { pu, pv }, Is.EqualTo(new[] { v[3], v[4] }).Within(1e-8));
+        }
+    }
+
+    [Test]
+    public void PoseHistoryInterpolatesAndClamps()
+    {
+        var h = new PoseHistory();
+        h.Add(1, new RobotAngles(0, 0, 0));
+        h.Add(2, new RobotAngles(10, 20, 30));
+        Assert.That(h.TryAt(1.5, out var mid), Is.True);
+        Assert.That(new[] { mid.Roll, mid.Pitch, mid.Yaw }, Is.EqualTo(new[] { 5.0, 10.0, 15.0 }).Within(Tol));
+        h.TryAt(0, out var before);
+        Assert.That(before.Yaw, Is.EqualTo(0).Within(Tol));
+        h.TryAt(9, out var after);
+        Assert.That(after.Yaw, Is.EqualTo(30).Within(Tol));
+    }
+
+    [Test]
+    public void FollowGuardLocksOnlyWhileTheRobotDoesWhatWeCommand()
+    {
+        var measured = new PoseHistory();
+        var commanded = new PoseHistory();
+        var g = new FollowGuard();
+        var good = new RobotAngles(0, 0, 10);
+        for (double t = 0; t < 1; t += 0.02) { measured.Add(t, good); commanded.Add(t, good); g.Update(true, measured, commanded, 0.1, t); }
+        Assert.That(g.Following, Is.True, "locks after the hold time");
+        for (double t = 1; t < 2; t += 0.02) { measured.Add(t, new RobotAngles(0, 26, 10)); commanded.Add(t, good); g.Update(true, measured, commanded, 0.1, t); }
+        Assert.That(g.Following, Is.True, "11..26 deg off: above the entry tolerance but inside the exit tolerance");
+        for (double t = 2; t < 3; t += 0.02) { measured.Add(t, new RobotAngles(0, 45, 10)); commanded.Add(t, good); g.Update(true, measured, commanded, 0.1, t); }
+        Assert.That(g.Following, Is.False, "stuck 45 deg off");
+        for (double t = 3; t < 4; t += 0.02) { measured.Add(t, good); commanded.Add(t, good); g.Update(false, measured, commanded, 0.1, t); }
+        Assert.That(g.Following, Is.False, "not active");
+        for (double t = 4; t < 6; t += 0.02) { commanded.Add(t, good); g.Update(true, measured, commanded, 0.1, t); }
+        Assert.That(g.Following, Is.False, "no fresh poses for 2 s");
+    }
+
+    [Test]
+    public void PoseClockIgnoresNetworkDelay()
+    {
+        var c = new PoseClock();
+        const double offset = 1000;
+        double[] delays = { 0.005, 0.004, 0.120, 0.100, 0.080, 0.006, 0.005, 0.300, 0.004 };
+        for (int i = 0; i < delays.Length; i++)
+        {
+            double sender = i * 0.0167;
+            double local = c.ToLocal(sender, sender + offset + delays[i]);
+            if (i >= 1) Assert.That(local - sender - offset, Is.LessThan(0.006), $"sample {i}");
+        }
+    }
+
+    [Test]
+    public void PoseBlendIsTheDelayedCommandPlusTheOffset()
+    {
+        const double lag = 0.24, offset = 3;
+        double Cmd(double t) => 30 * Math.Sin(t * 1.5);
+        var commanded = new PoseHistory();
+        var b = new PoseBlend(lag);
+        for (double t = 0; t < 2.4; t += 0.0139) commanded.Add(t, new RobotAngles(0, 0, Cmd(t)));
+        // Stair-stepped robot pose: new value every 40 ms
+        for (double t = 0.3; t < 2.4; t += 0.0167)
+            b.AddMeasured(t, new RobotAngles(0, 0, Cmd(Math.Floor((t - lag) / 0.04) * 0.04) + offset), commanded);
+        Assert.That(b.TryAt(2.3, commanded, out var a), Is.True);
+        Assert.That(a.Yaw, Is.EqualTo(Cmd(2.3 - lag) + offset).Within(1.0));
     }
 }

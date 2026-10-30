@@ -1,6 +1,5 @@
 // Reachy follows the user's head. It never moves by itself: nothing is sent until the user pinches (or pulls the
 // trigger). Pinch = wake if needed, take this as "straight ahead", follow. Pinch again = recenter.
-// Hold for 1.5 s = back to the sleep pose, motors off, stop following.
 
 using System.Collections;
 using System.Globalization;
@@ -10,12 +9,13 @@ using UnityEngine.Networking;
 
 public class RobotControl : MonoBehaviour
 {
-    enum Mode { Idle, Waking, Following, Sleeping }
+    enum Mode { Idle, Waking, Following }
 
-    const float HoldS = 1.5f;
     const float PressLevel = 0.8f;
     const double SleepPitchDeg = 18;   // measured pitch above this = still in the sleep pose (see robot.js wake())
     const float MoveTimeoutS = 8f;
+    // adb ... -e sweep 1: bench test without a person: slow yaw sweep, see VideoWindow's recording
+    const float SweepS = 24f, SweepPeriodS = 4f, SweepYawDeg = 30f;
 
     public RobotVideo video;
     public Transform head;
@@ -26,14 +26,22 @@ public class RobotControl : MonoBehaviour
     HeadMirror mirror = new HeadMirror();
     HeadTarget lastSent;
     Mode mode = Mode.Idle;
-    bool pressed, held;
-    float pressedAt;
+    bool pressed;
     int sent, sentAtMark;
     float markAt;
     float sendHz;
     string note = "";
+    bool sweep;
+    float sweepAt = -1f;
 
     public string Summary { get; private set; } = "";
+    public bool IsFollowing => mode == Mode.Following;
+    public bool Sweeping => sweep && sweepAt >= 0;
+    public Recenter Frame => recenter;
+    public Quat HeadRotation => HeadNow();
+    public DaemonClient Daemon => daemon;
+    /// <summary>What we commanded, for comparing with the measured pose (VideoWindow).</summary>
+    public PoseHistory Commanded { get; } = new PoseHistory();
 
     void Awake()
     {
@@ -41,6 +49,7 @@ public class RobotControl : MonoBehaviour
         press.AddBinding("<HandInteraction>/pinchValue");
         press.AddBinding("<XRController>/trigger");
         press.Enable();
+        sweep = RobotVideo.ReadIntentExtra("sweep") == "1";
     }
 
     void OnDestroy()
@@ -63,11 +72,21 @@ public class RobotControl : MonoBehaviour
             daemon = new DaemonClient(new System.Uri(video.SignallingUrl).Host);
         }
         HandlePress();
-        if (mode == Mode.Following && Application.isFocused)
+        if (sweep && sweepAt < 0 && daemon.TargetConnected && daemon.Latest != null)
         {
-            var raw = PoseMath.HeadsetToRobot(recenter.ToRelative(HeadNow()));
+            sweepAt = Time.unscaledTime;
+            mirror = new HeadMirror();
+            mode = Mode.Following;
+        }
+        if (Sweeping && Time.unscaledTime - sweepAt >= SweepS) { sweep = false; sweepAt = -1f; mode = Mode.Idle; }
+        if (mode == Mode.Following && (Application.isFocused || Sweeping))
+        {
+            var raw = Sweeping
+                ? new RobotAngles(0, 0, SweepYawDeg * Mathf.Sin(2 * Mathf.PI * (Time.unscaledTime - sweepAt) / SweepPeriodS))
+                : PoseMath.HeadsetToRobot(recenter.ToRelative(HeadNow()));
             lastSent = mirror.Step(raw, Time.unscaledDeltaTime);
             daemon.SendTarget(lastSent);
+            Commanded.Add(DaemonClient.NowS(), new RobotAngles(lastSent.Roll, lastSent.Pitch, lastSent.Yaw));
             sent++;
         }
         UpdateSummary();
@@ -76,13 +95,7 @@ public class RobotControl : MonoBehaviour
     void HandlePress()
     {
         bool now = press.ReadValue<float>() > PressLevel;
-        if (now && !pressed) { pressedAt = Time.unscaledTime; held = false; }
-        if (now && !held && Time.unscaledTime - pressedAt >= HoldS && mode == Mode.Following)
-        {
-            held = true;
-            StartCoroutine(Sleep());
-        }
-        if (!now && pressed && !held)
+        if (!now && pressed)
         {
             if (mode == Mode.Idle) StartCoroutine(Wake());
             else if (mode == Mode.Following) { recenter.Set(HeadNow()); note = "recentered"; Debug.Log("[control] recentered"); }
@@ -128,18 +141,6 @@ public class RobotControl : MonoBehaviour
         recenter.Set(HeadNow());
         note = "";
         mode = Mode.Following;
-    }
-
-    IEnumerator Sleep()
-    {
-        mode = Mode.Sleeping;
-        note = "going to sleep";
-        Debug.Log("[control] sleep");
-        yield return Post("/api/move/play/goto_sleep");
-        yield return WaitForMoves();
-        yield return Post("/api/motors/set_mode/disabled");
-        note = "";
-        mode = Mode.Idle;
     }
 
     void UpdateSummary()

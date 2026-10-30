@@ -151,25 +151,27 @@ public static class ProjectConfigure
         floor.transform.localScale = new Vector3(2, 1, 2);
         floor.GetComponent<Renderer>().sharedMaterial = SaveMaterial("Floor", unlit, new Color(0.18f, 0.20f, 0.28f));
 
-        // Placeholder for the robot video window (Phase 1 puts the WebRTC texture here); 16:9, 2 m ahead
-        var window = GameObject.CreatePrimitive(PrimitiveType.Quad);
-        window.name = "Video Window";
-        window.transform.position = new Vector3(0, 1.5f, 2f);
-        window.transform.localScale = new Vector3(1.6f, 0.9f, 1);
-        Object.DestroyImmediate(window.GetComponent<Collider>());
-        var mat = SaveMaterial("VideoWindow", unlit, Color.white);
+        // Robot video: a piece of sphere around the eye, built at runtime from the camera model (VideoWindow.cs).
+        // Same parent as the camera, so head and window share the tracking frame.
+        var window = new GameObject("Video Window");
+        window.transform.SetParent(offset.transform, false);
+        window.AddComponent<MeshFilter>();
+        var windowRenderer = window.AddComponent<MeshRenderer>();
+        var mat = SaveMaterial("VideoWindow", Shader.Find("Reachy/VideoSphere"), Color.white);
         mat.mainTexture = SaveCheckerboard();
-        window.GetComponent<Renderer>().sharedMaterial = mat;
+        windowRenderer.sharedMaterial = mat;
 
-        // Frame-rate readout below the window: the Phase 1 go/no-go is measured against this
+        // Status text below the image, moves with the window
         var label = new GameObject("Fps Label");
-        label.transform.position = new Vector3(0, 0.95f, 2f);
+        label.transform.SetParent(window.transform, false);
+        label.transform.localPosition = new Vector3(0, -1.75f, 2.75f);
+        label.transform.localScale = Vector3.one * 1.6f;
         var hud = label.AddComponent<FpsLabel>();
         hud.textMaterial = SaveMaterial("WorldText", Shader.Find("Reachy/WorldText"), Color.white);
 
         // Robot camera -> video window (Phase 1)
         var video = new GameObject("Robot Video").AddComponent<RobotVideo>();
-        video.window = window.GetComponent<Renderer>();
+        video.window = windowRenderer;
         video.hud = hud;
         video.latency = video.gameObject.AddComponent<VideoLatency>();
         video.latency.video = video;
@@ -178,6 +180,11 @@ public static class ProjectConfigure
         video.control = video.gameObject.AddComponent<RobotControl>();
         video.control.video = video;
         video.control.head = camGo.transform;
+        video.gameObject.AddComponent<AppLifecycle>();
+        video.view = window.AddComponent<VideoWindow>();
+        video.view.control = video.control;
+        video.view.video = video;
+        video.view.head = camGo.transform;
 
         EditorSceneManager.SaveScene(scene, ScenePath);
         EditorBuildSettings.scenes = new[] { new EditorBuildSettingsScene(ScenePath, true) };

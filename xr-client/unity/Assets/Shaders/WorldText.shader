@@ -15,6 +15,7 @@ Shader "Reachy/WorldText"
         {
             Blend SrcAlpha OneMinusSrcAlpha
             ZWrite Off
+            ZTest Always
             Cull Off
 
             HLSLPROGRAM
