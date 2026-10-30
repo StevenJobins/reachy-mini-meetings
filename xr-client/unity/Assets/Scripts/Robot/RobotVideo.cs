@@ -24,6 +24,7 @@ public class RobotVideo : MonoBehaviour
     public RobotControl control;
     public MicSender mic;
     public RoomSound room;
+    public CaptionView captions;
     public VideoWindow view;
 
     public string SignallingUrl => url;
@@ -103,7 +104,7 @@ public class RobotVideo : MonoBehaviour
             retryAt = 0;
             Connect();
         }
-        if (hud != null) hud.extra = $"{state}\n{stats}\n{latency?.Summary}{flash?.Summary}\n{control?.Summary}  {mic?.Status}\n{view?.Summary}  {room?.Status}";
+        if (hud != null) hud.extra = $"{state}\n{stats}\n{latency?.Summary}{flash?.Summary}\n{control?.Summary}  {mic?.Status}\n{view?.Summary}  {room?.Status}  {captions?.Status}";
     }
 
     void Handle(GstSignalling.Message m)

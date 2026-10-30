@@ -8,7 +8,7 @@ The headset app. Since 2026-10-30 this is the way forward ([docs/xr-client-strat
 | 1 | Video spike: robot camera via `com.unity.webrtc` (daemon signalling on the LAN), fps + latency against the web app (34 fps, 233 ms) | done (2026-10-30, real robot): **VR 72 fps**, video 60 fps, latency **median 141 ms** with the flash test, over Wi-Fi ([latency.md](../../docs/measurements/latency.md)). The web app's 233 ms came from the QR method on one Mac, so the two numbers are not a strict comparison |
 | 2 | Head-pose loop: port `pose.js`, targets and measured pose directly from the daemon | done (2026-10-30, real robot): Reachy follows the head, targets sent at 72 Hz. Follow lag not measured yet |
 | 3 | World-locked reprojection: port `camera.js` (video sphere, lens model) | done (2026-10-30, real robot): tried in the headset, comfortable after the pose fix below |
-| 4 | Feature parity, in this order: audio, captions, speaker following, panorama with a short scan, notes, sign-in, depth | audio working (2026-10-30), still to be tried in a separate room |
+| 4 | Feature parity, in this order: audio, captions, speaker following, panorama with a short scan, notes, sign-in, depth | audio and speech bubbles working (2026-10-30), both still to be tried with the headset in another room |
 
 ## Setup
 
@@ -117,6 +117,14 @@ $ADB shell am start -n ch.ethz.reachymeetings/com.unity3d.player.UnityPlayerGame
 ```
 
 **If the room sound is silent:** check `curl localhost:8000/api/audio/config/parameter/AUDIO_MGR_MIC_GAIN`. If it fails (`status 68`, `exceeds 100 times`), the robot's mic chip is stuck and sends digital silence: put Reachy to sleep and power-cycle it. Seen once on 2026-10-30, cause unknown.
+
+## Speech bubbles (Phase 4)
+
+Live captions from the backend appear above the speaker's head in the video (`CaptionView.cs`, `Assets/Shaders/Bubble.shader`). `FaceSpeakers.cs`, a port of `speakers.js` tested against it, picks who is talking from the faces the backend finds, mouth movement and mic direction, and gives each person a number and colour. With no face in view the bubble waits at the top of the window, towards the voice. Italic text is still changing; upright text is final. A bubble stays 8 s after its last update.
+
+The backend needs a `DEEPL_AUTH_KEY` to translate; without one, bubbles show the original language. With one, they show the translation with the original underneath.
+
+**Testing with the headset in the same room as Reachy:** keep your mic off (do not pinch). With the mic on, your voice comes out of Reachy's speaker, and the mic chip's echo cancelling seems to remove your real voice too: no captions then. Not an issue when the headset is in another room. Speech played from the Mac at low volume is unreliable as a test.
 
 ## Scene
 

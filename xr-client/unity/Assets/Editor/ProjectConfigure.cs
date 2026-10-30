@@ -186,6 +186,12 @@ public static class ProjectConfigure
         video.mic.control = video.control;
         video.room = new GameObject("Room Sound").AddComponent<RoomSound>();
         video.room.video = video;
+        video.captions = video.room.gameObject.AddComponent<CaptionView>();
+        video.captions.room = video.room;
+        video.captions.control = video.control;
+        video.captions.window = window.transform;
+        video.captions.textMaterial = hud.textMaterial;
+        video.captions.panelMaterial = SaveMaterial("Bubble", Shader.Find("Reachy/Bubble"), Color.white);
         video.view = window.AddComponent<VideoWindow>();
         video.view.control = video.control;
         video.view.video = video;

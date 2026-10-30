@@ -206,4 +206,33 @@ public class PoseTests
         }
         Assert.That(Rms(50), Is.LessThan(Rms(1000) / 3), "hum");
     }
+
+    [Test]
+    public void FaceSpeakersMatchesSpeakersJs()
+    {
+        double D(string v) => double.Parse(v, CultureInfo.InvariantCulture);
+        var s = new FaceSpeakers(CameraModel.Calibrated());
+        foreach (var line in File.ReadAllLines("Assets/Tests/SpeakersGolden.txt").Where(l => l.StartsWith("step ")))
+        {
+            var p = line.Split(' ');
+            double? head = p[2] == "null" ? (double?)null : D(p[2]), doa = p[3] == "null" ? (double?)null : D(p[3]);
+            var faces = p[4] == "-" ? new Face[0] : p[4].Split(';').Select(f =>
+            {
+                var v = f.Split(',').Select(D).ToArray();
+                return new Face { Cx = v[0], Cy = v[1], Top = v[2], W = v[3], H = v[4], Mouth = v[5] < 0 ? (double?)null : v[5] };
+            }).ToArray();
+            s.Update(faces, D(p[1]), head);
+            var expected = p[5] == "-" ? new string[0] : p[5].Split(';');
+            Assert.That(s.Tracks.Count, Is.EqualTo(expected.Length), line);
+            for (int i = 0; i < expected.Length; i++)
+            {
+                var e = expected[i].Split(',');
+                Assert.That(s.Tracks[i].Id, Is.EqualTo(int.Parse(e[0])), line);
+                Assert.That(s.Tracks[i].Pid, Is.EqualTo(int.Parse(e[1])), line);
+                Assert.That(s.Tracks[i].Cx, Is.EqualTo(D(e[2])).Within(1e-8), line);
+            }
+            var pick = s.Pick(doa);
+            Assert.That(pick == null ? "null" : pick.Id.ToString(), Is.EqualTo(p[6]), line);
+        }
+    }
 }

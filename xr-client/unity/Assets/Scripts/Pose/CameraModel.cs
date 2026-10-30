@@ -70,4 +70,18 @@ public class CameraModel
         dx = x / n; dy = y / n; dz = 1 / n;
         return true;
     }
+
+    /// <summary>Horizontal angle of an image point, degrees, + = left (robot convention).</summary>
+    public double YawDeg(double u, double v)
+    {
+        if (!Unproject(u, v, out var x, out _, out var z) && !Unproject(0.5, v, out x, out _, out z)) return 0;
+        return -Math.Atan2(x, z) * 180 / Math.PI;
+    }
+
+    /// <summary>Image column of a direction on the horizon, yaw + = left.</summary>
+    public double UForYaw(double yawDeg)
+    {
+        double rad = yawDeg * Math.PI / 180;
+        return Project(-Math.Sin(rad), 0, Math.Cos(rad), out var u, out _) ? u : (yawDeg > 0 ? 0 : 1);
+    }
 }
