@@ -1,14 +1,14 @@
-// Dark edge of the view, clear in the centre. _Strength 0..1, set by VideoWindow while the picture turns on its own.
-Shader "Reachy/Vignette"
+// One saved frame of the room panorama: soft edges so patches blend, a little dimmer than the live video.
+Shader "Reachy/RoomPatch"
 {
     Properties
     {
-        _Color ("Color", Color) = (0, 0, 0, 1)
-        _Strength ("Strength", Range(0, 1)) = 0
+        _MainTex ("Frame", 2D) = "white" {}
+        _Color ("Color", Color) = (0.8, 0.8, 0.8, 1)
     }
     SubShader
     {
-        Tags { "RenderType" = "Transparent" "Queue" = "Overlay" "RenderPipeline" = "UniversalPipeline" }
+        Tags { "RenderType" = "Transparent" "Queue" = "Geometry+10" "RenderPipeline" = "UniversalPipeline" }
         Pass
         {
             Blend SrcAlpha OneMinusSrcAlpha
@@ -36,9 +36,12 @@ Shader "Reachy/Vignette"
                 UNITY_VERTEX_OUTPUT_STEREO
             };
 
+            TEXTURE2D(_MainTex);
+            SAMPLER(sampler_MainTex);
+
             CBUFFER_START(UnityPerMaterial)
+                float4 _MainTex_ST;
                 half4 _Color;
-                float _Strength;
             CBUFFER_END
 
             Varyings vert(Attributes v)
@@ -53,9 +56,9 @@ Shader "Reachy/Vignette"
 
             half4 frag(Varyings i) : SV_Target
             {
-                // quad 1.6 m wide at 0.3 m: uv radius 0.2 is about 34° from the centre of the view
-                float r = length(i.uv - 0.5);
-                return half4(_Color.rgb, _Strength * smoothstep(0.2, 0.4, r));
+                float2 e = min(i.uv, 1 - i.uv);
+                float edge = smoothstep(0, 0.08, e.x) * smoothstep(0, 0.1, e.y);
+                return half4(SAMPLE_TEXTURE2D(_MainTex, sampler_MainTex, i.uv).rgb * _Color.rgb, edge);
             }
             ENDHLSL
         }

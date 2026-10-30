@@ -237,75 +237,6 @@ public class PoseTests
     }
 
     [Test]
-    public void SpeakerTrackerMatchesSpeakerJs()
-    {
-        double D(string v) => double.Parse(v, CultureInfo.InvariantCulture);
-        var s = new SpeakerTracker();
-        foreach (var line in File.ReadAllLines("Assets/Tests/TrackerGolden.txt").Where(l => l.StartsWith("step ")))
-        {
-            var p = line.Split(' ');
-            s.PushHeadYaw(D(p[1]), D(p[2]));
-            if (p[3] != "null") s.PushDoa(D(p[1]), D(p[3]));
-            Assert.That(s.Step(0.05), Is.EqualTo(D(p[5])).Within(1e-8), line);
-            Assert.That(s.Target, Is.EqualTo(D(p[4])).Within(1e-8), line);
-        }
-    }
-
-    static (SpeakerFollow f, FaceSpeakers s) Follower()
-    {
-        var cam = CameraModel.Calibrated();
-        var s = new FaceSpeakers(cam);
-        var f = new SpeakerFollow(s, cam) { Active = true };
-        f.PushHead(0, 0, 0);
-        return (f, s);
-    }
-
-    [Test]
-    public void SpeakerFollowIgnoresMicDirectionsWithoutConfirmedSpeech()
-    {
-        var (f, _) = Follower();
-        for (double t = 0; t < 2; t += 0.05) f.PushDoa(t, (90 - 60) * Math.PI / 180, t);   // 60° left, nobody confirmed
-        Assert.That(f.Tracker.Target, Is.EqualTo(0));
-        f.OnVad(true, 2.0);
-        for (double t = 2; t < 3; t += 0.05) f.PushDoa(t, (90 - 60) * Math.PI / 180, t);
-        Assert.That(f.Tracker.Target, Is.EqualTo(60).Within(0.5));
-    }
-
-    [Test]
-    public void SpeakerFollowFramesTheSpeakingFace()
-    {
-        var (f, s) = Follower();
-        var face = new Face { Cx = 0.25, Cy = 0.6, Top = 0.5, W = 0.1, H = 0.2, Mouth = 0.1 };
-        s.Update(new[] { face }, 1.0, 0);
-        f.OnVad(true, 1.0);
-        Assert.That(f.FocusPid, Is.EqualTo(1));
-        Assert.That(f.Tracker.Target, Is.GreaterThan(15), "face is left of the centre: turn left");
-        Assert.That(f.TargetPitch, Is.GreaterThan(0), "face is below the framing point: look down");
-    }
-
-    [Test]
-    public void SpeakerFollowDoesNothingWhileNotActive()
-    {
-        var (f, s) = Follower();
-        f.Active = false;
-        s.Update(new[] { new Face { Cx = 0.25, Cy = 0.6, Top = 0.5, W = 0.1, H = 0.2, Mouth = 0.1 } }, 1.0, 0);
-        f.OnVad(true, 1.0);
-        Assert.That(f.FocusPid, Is.Null);
-        Assert.That(f.Tracker.Target, Is.EqualTo(0));
-    }
-
-    [Test]
-    public void SpeakerFollowStopsSearchingUpAndComesBack()
-    {
-        var (f, _) = Follower();
-        for (double t = 10; t < 20; t += 0.25) f.OnVad(true, t);   // a voice, no face anywhere
-        Assert.That(f.TargetPitch, Is.EqualTo(-25).Within(1e-9), "stops at the search limit, not at the ceiling");
-        for (double t = 20; t < 30; t += 0.02) f.Step(0.02, t);
-        Assert.That(Math.Abs(f.TargetPitch), Is.LessThan(1.1), "back to level after the voice stopped");
-        Assert.That(Math.Abs(f.BasePitch), Is.LessThan(1.5));
-    }
-
-    [Test]
     public void BacklashSwallowsSmallMovesAndFollowsBigOnes()
     {
         var b = new Backlash(3);
@@ -315,5 +246,46 @@ public class PoseTests
         Assert.That(b.Step(10), Is.EqualTo(7).Within(Tol), "pushed along, 3° behind");
         Assert.That(b.Step(8), Is.EqualTo(7).Within(Tol), "reversal: stays until the far side of the gap");
         Assert.That(b.Step(3), Is.EqualTo(6).Within(Tol));
+    }
+
+    [Test]
+    public void RoomScanStopsOnlyInTheHeadRangeAndWaitsForTheHeadToSettle()
+    {
+        var s = new RoomScan();
+        s.Start(0);
+        for (int i = 0; i < s.Total; i++)
+        {
+            var tg = s.Target;
+            Assert.That(Math.Abs(tg.Yaw), Is.LessThanOrEqualTo(60), "inside the head/body window: the body stays still");
+            Assert.That(tg.Pitch, Is.InRange(-35.0, 20.0));
+            double t0 = i * 1.0;
+            Assert.That(s.Step(t0 + 0.1, tg, 5, 0.1), Is.False, "still moving");
+            Assert.That(s.Step(t0 + 0.2, new RobotAngles(0, tg.Pitch, tg.Yaw + 4), 0.2, 0.1), Is.False, "steady starts, 4° short is near enough");
+            Assert.That(s.Step(t0 + 0.7, new RobotAngles(0, tg.Pitch, tg.Yaw + 4), 0.2, 0.1), Is.True, "settled + video delay");
+            s.Shot(t0 + 0.7);
+        }
+        Assert.That(s.Active, Is.False);
+    }
+
+    [Test]
+    public void RoomScanGivesUpOnAStuckHead()
+    {
+        var s = new RoomScan();
+        s.Start(0);
+        Assert.That(s.Step(2.9, new RobotAngles(), 0, 0), Is.False);
+        Assert.That(s.Step(3.1, new RobotAngles(), 0, 0), Is.True);
+    }
+
+    [Test]
+    public void PatchSlotsReuseNearbyDirectionsAndDropTheOldest()
+    {
+        var p = new PatchSlots();
+        var a = p.Take(0, 0, 1, out _);
+        Assert.That(p.Take(5, 10, 2, out _).Id, Is.EqualTo(a.Id), "same direction: replaced");
+        Assert.That(p.Take(0, 90, 3, out _).Id, Is.Not.EqualTo(a.Id), "new direction: new slot");
+        Assert.That(p.Take(0, -175, 4, out _).Id, Is.Not.EqualTo(a.Id));
+        Assert.That(p.Take(0, 178, 5, out _).Id, Is.EqualTo(3 - 1), "wraps at ±180");
+        for (int i = 0; i < 40; i++) p.Take(i % 2 == 0 ? -30 : 30, i * 30, 10 + i, out _);
+        Assert.That(p.Count, Is.LessThanOrEqualTo(PatchSlots.Max));
     }
 }

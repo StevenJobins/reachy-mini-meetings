@@ -8,9 +8,10 @@ Shader "Reachy/VideoSphere"
     }
     SubShader
     {
-        Tags { "RenderType" = "Opaque" "Queue" = "Geometry+100" "RenderPipeline" = "UniversalPipeline" }
+        Tags { "RenderType" = "Transparent" "Queue" = "Geometry+100" "RenderPipeline" = "UniversalPipeline" }
         Pass
         {
+            Blend SrcAlpha OneMinusSrcAlpha   // soft edges: the live picture blends into the room panorama
             ZWrite Off
             ZTest Always
             Cull Off
@@ -55,7 +56,9 @@ Shader "Reachy/VideoSphere"
 
             half4 frag(Varyings i) : SV_Target
             {
-                return half4(SAMPLE_TEXTURE2D(_MainTex, sampler_MainTex, i.uv).rgb * _Color.rgb, 1);
+                float2 e = min(i.uv, 1 - i.uv);
+                float edge = smoothstep(0, 0.03, e.x) * smoothstep(0, 0.04, e.y);
+                return half4(SAMPLE_TEXTURE2D(_MainTex, sampler_MainTex, i.uv).rgb * _Color.rgb, edge);
             }
             ENDHLSL
         }

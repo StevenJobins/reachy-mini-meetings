@@ -8,7 +8,7 @@ The headset app. Since 2026-10-30 this is the way forward ([docs/xr-client-strat
 | 1 | Video spike: robot camera via `com.unity.webrtc` (daemon signalling on the LAN), fps + latency against the web app (34 fps, 233 ms) | done (2026-10-30, real robot): **VR 72 fps**, video 60 fps, latency **median 141 ms** with the flash test, over Wi-Fi ([latency.md](../../docs/measurements/latency.md)). The web app's 233 ms came from the QR method on one Mac, so the two numbers are not a strict comparison |
 | 2 | Head-pose loop: port `pose.js`, targets and measured pose directly from the daemon | done (2026-10-30, real robot): Reachy follows the head, targets sent at 72 Hz. Follow lag not measured yet |
 | 3 | World-locked reprojection: port `camera.js` (video sphere, lens model) | done (2026-10-30, real robot): tried in the headset, comfortable after the pose fix below |
-| 4 | Feature parity, in this order: audio, captions, speaker following, panorama with a short scan, notes, sign-in, depth | audio and speech bubbles working (2026-10-30), both still to be tried with the headset in another room |
+| 4 | Feature parity, in this order: audio, captions, panorama with a short scan, notes, sign-in, depth. Speaker following is postponed (see below) | audio and speech bubbles working (2026-10-30), both still to be tried with the headset in another room |
 
 ## Setup
 
@@ -132,10 +132,27 @@ The backend needs a `DEEPL_AUTH_KEY` to translate; without one, bubbles show the
 
 **Testing with the headset in the same room as Reachy:** keep your mic off. With the mic on, your voice comes out of Reachy's speaker, and the mic chip's echo cancelling seems to remove your real voice too: no captions then. Not an issue when the headset is in another room. Speech played from the Mac at low volume is unreliable as a test.
 
-## Speaker following (Phase 4)
+## Room panorama (Phase 4)
 
-Reachy turns to whoever speaks (`SpeakerFollow.cs`, port of `speaker.js` and the following part of `app.js`): only on speech the backend confirms, exactly to the speaking face when it is in the picture, otherwise by mic direction. It frames the face (centred, 1/3 from the top) and stays with the last speaker in silence. Your head rotation is added on top, so straight ahead means the speaker. The window stays in front of you and the picture pans inside it; the edge of the view darkens while that happens (`Vignette.shader`).
+Saved video frames around the live window (`RoomPanorama.cs`, `RoomScan.cs`, `RoomPatch.shader`), so turning your head shows the room at once and only what moves waits for the live video. Each patch is a frame on the same lens-corrected sphere, 10 % further away, dimmed to 80 %, with soft edges.
 
+- **Scan at start:** 6 stops in two rows, head only (yaw ±50°, pitch −18° to +15°, the body stays still), about 10 s. Left pinch skips it.
+- **Grows by itself:** whenever Reachy holds still (under 1° in 0.6 s), at most once per second, the frame replaces the patch in that direction, or takes a new one (over 25° away, up to 24).
+- **Placed by the measured pose,** which is accurate at rest, not by the command, which the head stops short of. A stop counts as reached when the head stopped moving near it.
+
+It is rebuilt each time the app opens, and it is flat: no depth yet. People who moved stay as an old image until Reachy looks there again.
+
+## Speaker following: postponed
+
+Removed on 2026-10-30, to come back to later. The last version is in git at `83ae89a` (`SpeakerFollow.cs`, tests, `TrackerGolden.txt`); the turn view and vignette were never committed. Before trying again:
+
+- **It ran away on the real robot.** With speech from one spot, the mic-based target kept climbing to −150°, the head reached −180° and the body −115°, and the yaw reading wrapped to +150°. Likely cause, not verified: the mic direction is added to the head yaw, which is wrong if it does not turn with the head. Check that first: head at 0°, ±30°, a sound from one spot, read `/api/state/doa`. `backend/.../doa.py` has the same open question.
+- **Mic direction is noisy in a large hall.** It wandered from +29° to −26° for a voice in one spot.
+- **Needed:** a small limit (about ±60°), a stop if the target keeps climbing, and a first test with nobody in the headset.
+- **Comfort is open.** A picture panning by itself feels bad; the idea was to keep the picture fixed in the room during a turn and let the window move, then glide back. Never seen working.
+- **Not tested:** turning to a real face, because the headset hid the only face in view.
+
+## Scene
 ## Scene
 
 - `XR Origin` (floor tracking) → `Camera Offset` → `Main Camera`, with a Tracked Pose Driver on the headset pose.

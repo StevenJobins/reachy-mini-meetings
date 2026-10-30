@@ -20,6 +20,21 @@ public class PoseHistory
         if (samples.Count > MaxSamples) samples.RemoveAt(0);
     }
 
+    /// <summary>How far the pose moved in this time span: the larger of the yaw and pitch ranges.</summary>
+    public double SpanDeg(double from, double to)
+    {
+        double loY = double.MaxValue, hiY = double.MinValue, loP = double.MaxValue, hiP = double.MinValue;
+        int n = 0;
+        foreach (var (t, a) in samples)
+        {
+            if (t < from || t > to) continue;
+            n++;
+            loY = Math.Min(loY, a.Yaw); hiY = Math.Max(hiY, a.Yaw);
+            loP = Math.Min(loP, a.Pitch); hiP = Math.Max(hiP, a.Pitch);
+        }
+        return n < 5 ? double.PositiveInfinity : Math.Max(hiY - loY, hiP - loP);
+    }
+
     public bool TryAt(double t, out RobotAngles result)
     {
         result = default;

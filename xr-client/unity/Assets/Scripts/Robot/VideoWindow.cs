@@ -20,9 +20,7 @@ public class VideoWindow : MonoBehaviour
     public RobotControl control;
     public RobotVideo video;
     public Transform head;
-    public Renderer vignette;
 
-    float vignetteLevel;
     readonly PoseHistory measured = new PoseHistory();
     readonly FollowGuard guard = new FollowGuard();
     readonly PoseClock clock = new PoseClock();
@@ -41,12 +39,16 @@ public class VideoWindow : MonoBehaviour
     bool recordDone;
 
     public string Summary { get; private set; } = "";
+    public Mesh SphereMesh { get; private set; }
+    public bool Locked => locked;
+    public PoseHistory Measured => measured;
 
     void Awake()
     {
         if (double.TryParse(RobotVideo.ReadIntentExtra("lagms"), System.Globalization.NumberStyles.Float,
                 System.Globalization.CultureInfo.InvariantCulture, out var ms)) blend = new PoseBlend(ms / 1000);
-        GetComponent<MeshFilter>().sharedMesh = BuildSphere(CameraModel.Calibrated());
+        SphereMesh = BuildSphere(CameraModel.Calibrated());
+        GetComponent<MeshFilter>().sharedMesh = SphereMesh;
     }
 
     /// <summary>N x M grid over the image, each vertex in the direction its pixel sees. Unity frame: x right, y up, z forward.</summary>
@@ -118,8 +120,6 @@ public class VideoWindow : MonoBehaviour
         {
             double poseT = s.senderS > 0 ? clock.ToLocal(s.senderS, s.arrivedS) : s.arrivedS;
             measured.Add(poseT, s.Head);
-            control.Follow?.PushHead(poseT, s.Head.Yaw, s.Head.Pitch);
-            if (s.hasDoa) control.Follow?.PushDoa(poseT, s.doa.angle, DaemonClient.NowS());
             if (control.IsFollowing) blend.AddMeasured(poseT, s.Head, control.Modelled);
             if (control.Sweeping && !recordDone)
                 poses.AppendLine(string.Format(System.Globalization.CultureInfo.InvariantCulture,
@@ -147,28 +147,13 @@ public class VideoWindow : MonoBehaviour
 
         Quaternion target;
         if (locked && blend.TryAt(now - delay, control.Modelled, out var a))
-        {
-            // The room turns with the base (speaker direction + framing pitch), as it was when this frame was captured:
-            // the window stays in front of the user while Reachy turns to a speaker, and looking ahead = at the speaker.
-            control.BaseHistory.TryAt(now - delay - blend.LagS, out var b);
-            var room = control.Frame.ToWorld(PoseMath.RobotToHeadset(0, b.Pitch, b.Yaw).Inverse);
-            target = ToUnity(room * PoseMath.RobotToHeadset(a.Roll, a.Pitch, a.Yaw));
-        }
+            target = ToUnity(control.Frame.ToWorld(PoseMath.RobotToHeadset(a.Roll, a.Pitch, a.Yaw)));
         else
             target = Front();
 
         float t = (Time.unscaledTime - blendAt) / BlendS;
         transform.localRotation = t < 1 ? Quaternion.Slerp(blendFrom, target, Mathf.SmoothStep(0, 1, t)) : target;
         transform.localPosition = head.localPosition;   // centred on the eye
-        // The picture turns without the user's own head motion: darken the edge of the view, the standard measure
-        // against VR sickness. 0 below 6 °/s, full at 45 °/s.
-        if (vignette != null)
-        {
-            float strength = Mathf.Clamp01(((float)control.BaseRate - 6) / 39);
-            vignetteLevel = Mathf.MoveTowards(vignetteLevel, strength, Time.unscaledDeltaTime / 0.15f);
-            vignette.enabled = vignetteLevel > 0.01f;
-            vignette.material.SetFloat("_Strength", vignetteLevel);
-        }
         Summary = $"view {(locked ? "world-locked" : "in front")}  delay {delay * 1000:0} ms";
     }
 }

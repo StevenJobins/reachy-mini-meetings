@@ -192,22 +192,21 @@ public static class ProjectConfigure
         video.captions.window = window.transform;
         video.captions.textMaterial = hud.textMaterial;
         video.captions.panelMaterial = SaveMaterial("Bubble", Shader.Find("Reachy/Bubble"), Color.white);
+
         video.view = window.AddComponent<VideoWindow>();
         video.view.control = video.control;
         video.view.video = video;
         video.view.head = camGo.transform;
 
-        // Head-locked dark edge while Reachy turns on its own (VideoWindow)
-        var vignette = GameObject.CreatePrimitive(PrimitiveType.Quad);
-        vignette.name = "Vignette";
-        Object.DestroyImmediate(vignette.GetComponent<Collider>());
-        vignette.transform.SetParent(camGo.transform, false);
-        vignette.transform.localPosition = new Vector3(0, 0, 0.3f);
-        vignette.transform.localScale = new Vector3(1.6f, 1.6f, 1);
-        var vignetteRenderer = vignette.GetComponent<Renderer>();
-        vignetteRenderer.sharedMaterial = SaveMaterial("Vignette", Shader.Find("Reachy/Vignette"), Color.black);
-        vignetteRenderer.enabled = false;
-        video.view.vignette = vignetteRenderer;
+        var panorama = new GameObject("Room Panorama");
+        panorama.transform.SetParent(offset.transform, false);
+        video.panorama = panorama.AddComponent<RoomPanorama>();
+        video.panorama.control = video.control;
+        video.panorama.video = video;
+        video.panorama.view = video.view;
+        video.panorama.head = camGo.transform;
+        video.panorama.floor = floor.GetComponent<Renderer>();
+        video.panorama.patchMaterial = SaveMaterial("RoomPatch", Shader.Find("Reachy/RoomPatch"), new Color(0.8f, 0.8f, 0.8f));
 
         EditorSceneManager.SaveScene(scene, ScenePath);
         EditorBuildSettings.scenes = new[] { new EditorBuildSettingsScene(ScenePath, true) };
