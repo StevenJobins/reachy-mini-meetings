@@ -17,6 +17,7 @@ public class RobotVideo : MonoBehaviour
     public FpsLabel hud;
     public VideoLatency latency;
     public FlashLatency flash;
+    public RobotControl control;
 
     public string SignallingUrl => url;
     /// <summary>The received video (a RenderTexture the WebRTC package updates), null until the first frame.</summary>
@@ -89,7 +90,7 @@ public class RobotVideo : MonoBehaviour
             retryAt = 0;
             Connect();
         }
-        if (hud != null) hud.extra = $"{state}\n{stats}\n{latency?.Summary}{flash?.Summary}";
+        if (hud != null) hud.extra = $"{state}\n{stats}\n{latency?.Summary}{flash?.Summary}\n{control?.Summary}";
     }
 
     void Handle(GstSignalling.Message m)

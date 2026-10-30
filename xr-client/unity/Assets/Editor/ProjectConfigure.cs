@@ -81,6 +81,7 @@ public static class ProjectConfigure
         PlayerSettings.Android.applicationEntry = AndroidApplicationEntry.GameActivity;
         PlayerSettings.Android.resizeableActivity = true;
         PlayerSettings.Android.forceInternetPermission = true;   // WebRTC + backend WebSockets from Phase 1 on
+        PlayerSettings.insecureHttpOption = InsecureHttpOption.AlwaysAllowed;   // daemon REST on the LAN is plain http
         PlayerSettings.SetUseDefaultGraphicsAPIs(BuildTarget.Android, false);
         PlayerSettings.SetGraphicsAPIs(BuildTarget.Android, new[] { GraphicsDeviceType.Vulkan });
 
@@ -174,6 +175,9 @@ public static class ProjectConfigure
         video.latency.video = video;
         video.flash = video.gameObject.AddComponent<FlashLatency>();
         video.flash.video = video;
+        video.control = video.gameObject.AddComponent<RobotControl>();
+        video.control.video = video;
+        video.control.head = camGo.transform;
 
         EditorSceneManager.SaveScene(scene, ScenePath);
         EditorBuildSettings.scenes = new[] { new EditorBuildSettingsScene(ScenePath, true) };
