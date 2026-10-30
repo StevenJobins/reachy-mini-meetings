@@ -1,14 +1,14 @@
 # xr-client/unity
 
-Native headset app (Unity), step 7 of [docs/xr-client-strategy.md](../../docs/xr-client-strategy.md). The web app in `../pages/` stays the working version until this one is at least as good. The Unity app only replaces it if it is clearly faster (go/no-go by Nov 29, 2026).
+The headset app. Since 2026-10-30 this is the way forward ([docs/xr-client-strategy.md](../../docs/xr-client-strategy.md)); the web app in `../pages/` is only a reference for porting.
 
 | Phase | What | Status |
 |---|---|---|
 | 0 | Project skeleton: URP, OpenXR + Android XR, empty scene with a placeholder video window and an fps readout, builds to an APK | done (2026-10-28: runs on the Galaxy XR, OpenXR session focused, Vulkan on the Adreno 740, steady 72 fps / 13.9 ms without video) |
-| 1 | Video spike: robot camera via `com.unity.webrtc` (daemon signalling on the LAN), fps + latency against the web app (34 fps, 233 ms) | works with the fake camera (2026-10-28): 1080p60 VP8 in, **VR stays at 72 fps**, latency median 46 ms without a camera in the loop ([latency.md](../../docs/measurements/latency.md)). Open: the same with the real robot |
+| 1 | Video spike: robot camera via `com.unity.webrtc` (daemon signalling on the LAN), fps + latency against the web app (34 fps, 233 ms) | done (2026-10-30, real robot): **VR 72 fps**, video 60 fps, latency **median 141 ms** with the flash test, over Wi-Fi ([latency.md](../../docs/measurements/latency.md)). The web app's 233 ms came from the QR method on one Mac, so the two numbers are not a strict comparison |
 | 2 | Head-pose loop: port `pose.js`, send to the robot bridge, measured pose from the daemon | |
 | 3 | World-locked reprojection: port `camera.js` (video sphere, lens model) | |
-| 4 | Feature parity (only after a go): captions, notes, room audio, depth, HF sign-in + Pollen central, UI | |
+| 4 | Feature parity: captions, notes, room audio, depth, HF sign-in + Pollen central, UI | |
 
 ## Setup
 
@@ -64,11 +64,17 @@ $ADB shell am start -n ch.ethz.reachymeetings/com.unity3d.player.UnityPlayerGame
 - **Real robot:** the daemon (Reachy Mini Control) must be running with media on. Its signalling server listens on all interfaces, also with the default `--localhost-only`.
 - **Without the robot:** `robot/scripts/fake_camera.py` (see robot/README.md) sends a 1080p60 test pattern with the same signalling and codec, plus a time strip: the app then also shows the video latency.
 
-Status lines below the frame rate: connection state; incoming video (size, fps, bitrate, codec, decoder); jitter buffer delay, decode time per frame, dropped frames; latency (fake camera only: median, p10–p90, clock sync accuracy; every 300 frames also in `adb logcat -s Unity` as `[latency]`).
+**Audio is declined by default.** libwebrtc delays video to stay in sync with the audio track, and this app does not play it: 141 ms without, 302 ms with (`-e audio on` on the `am start` line, for A/B tests). Sending the mic to the robot in Phase 4 will need that transceiver as send-only instead of inactive.
+
+- **Real latency:** `robot/scripts/flash_clock.py` on the robot laptop, with its screen in the camera's view.
+
+**Debugging over Wi-Fi:** Developer options → Wireless debugging → pair once (`$ADB pair <ip>:<pairing-port> <code>`; the port and code are on the pairing screen), then `$ADB connect <ip>:<port>` with the port on the Wireless debugging screen. Installs take about a minute. If adb reports `more than one device`, use `-s <ip>:<port>`.
+
+Status lines below the frame rate: connection state; incoming video (size, fps, bitrate, codec, decoder); jitter buffer delay, decode time per frame, dropped frames; latency (median, p10–p90, clock sync accuracy). All of it also goes to `adb logcat -s Unity` as `[stats]`, `[latency]` (fake camera) and `[flash]` (real camera).
 
 ## Scene
 
 - `XR Origin` (floor tracking) → `Camera Offset` → `Main Camera`, with a Tracked Pose Driver on the headset pose.
 - `Video Window`: 16:9 quad, 1.6 × 0.9 m at 2 m, shows the WebRTC texture.
-- `Robot Video`: `Assets/Scripts/Robot/RobotVideo.cs` (peer connection, stats), `GstSignalling.cs` (webrtcsink signalling protocol, no Unity rendering), `VideoLatency.cs` (time strip readback + clock sync).
+- `Robot Video`: `Assets/Scripts/Robot/RobotVideo.cs` (peer connection, stats), `GstSignalling.cs` (webrtcsink signalling protocol, no Unity rendering), `VideoLatency.cs` (time strip, fake camera), `FlashLatency.cs` (flash test, real camera), `ClockSync.cs`.
 - `Fps Label` (`Assets/Scripts/FpsLabel.cs`): fps and ms per frame, averaged over 0.5 s. Drawn with `Assets/Shaders/WorldText.shader`: the built-in text shader does not render both eyes with single-pass instanced stereo, and URP Unlit draws the alpha-only font atlas black.

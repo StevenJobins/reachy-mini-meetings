@@ -34,7 +34,7 @@ Out of scope: spatial audio.
 
 ## Decisions
 
-- **XR client: web app first, native app later.** Rules and roadmap: [docs/xr-client-strategy.md](docs/xr-client-strategy.md)
+- **XR client: the Unity app (`xr-client/unity`) is the way forward** (decided 2026-10-30); the web app is only a reference. Background: [docs/xr-client-strategy.md](docs/xr-client-strategy.md)
 
 ## Getting started
 

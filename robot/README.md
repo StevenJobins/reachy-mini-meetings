@@ -72,7 +72,7 @@ src/reachy_meetings_robot/
 └── bridge/
     ├── protocol.py      JSON messages (keep in sync with xr-client / backend)
     └── server.py        WebSocket server
-scripts/                 check_connection, demo_gestures, mock_headset, fake_camera (video stand-in)
+scripts/                 check_connection, demo_gestures, mock_headset, fake_camera (video stand-in), flash_clock (latency)
 tests/                   pure-logic tests
 ```
 
@@ -104,6 +104,10 @@ Stand-in for the daemon's video when no robot is at hand: a 1080p60 test pattern
 ```
 
 H264 does not work from a Mac: `webrtcsink`'s codec discovery fails with Apple's `vtenc_h264` (`not-negotiated`, every profile tried, GStreamer 1.28.8, 2026-10-28). The daemon uses the same `webrtcsink`, so `patch_daemon_video.py --h264` most likely hits the same error; check the daemon log before relying on it.
+
+## Real camera latency: `scripts/flash_clock.py`
+
+Opens `flash_clock.html`, a page that flips black/white once per second on exact clock ticks, and answers on `ws://<laptop>:8444` with the Mac's clock. Point Reachy at the screen and keep it still; the Unity app shows `flash latency` by itself. Method and results: [docs/measurements/latency.md](../docs/measurements/latency.md). Same Python as `fake_camera.py`.
 
 ## Camera calibration with the real camera: `scripts/calibrate_camera_apriltag.py`
 

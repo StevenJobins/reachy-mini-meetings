@@ -1,5 +1,7 @@
 # XR client strategy: web app first, native app later
 
+> **Update 2026-10-30: decided, we go forward with the Unity app** (`xr-client/unity`). Steps 1–5 below are history. The web app (`xr-client/pages/`) is no longer developed; it stays online only as a reference for porting. Reason: 72 fps instead of 34 in the headset and 141 ms video latency, measured with the real robot.
+
 Decided on 2026-10-01.
 
 ## Decision

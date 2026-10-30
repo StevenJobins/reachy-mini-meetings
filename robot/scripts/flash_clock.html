@@ -1,0 +1,18 @@
+<!doctype html>
+<!-- Latency test with the real camera (see flash_clock.py): black/white flips on exact clock ticks, filmed by Reachy. -->
+<meta charset="utf-8">
+<title>Flash clock</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #000; color: #808080; font: 16px system-ui; cursor: pointer; }
+  p { position: fixed; left: 16px; bottom: 8px; margin: 0; }
+</style>
+<p id="hint">Click for full screen. Keep this window in front.</p>
+<script>
+  // White while floor(t / 500) is odd: white starts at t mod 1000 = 500, black at 0 (FlashLatency.cs relies on this)
+  function tick() {
+    document.body.style.background = Math.floor(Date.now() / 500) % 2 ? "#fff" : "#000";
+    requestAnimationFrame(tick);
+  }
+  tick();
+  addEventListener("click", () => { document.documentElement.requestFullscreen(); document.getElementById("hint").remove(); });
+</script>

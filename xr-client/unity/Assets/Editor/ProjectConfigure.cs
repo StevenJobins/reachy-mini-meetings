@@ -172,6 +172,8 @@ public static class ProjectConfigure
         video.hud = hud;
         video.latency = video.gameObject.AddComponent<VideoLatency>();
         video.latency.video = video;
+        video.flash = video.gameObject.AddComponent<FlashLatency>();
+        video.flash.video = video;
 
         EditorSceneManager.SaveScene(scene, ScenePath);
         EditorBuildSettings.scenes = new[] { new EditorBuildSettingsScene(ScenePath, true) };

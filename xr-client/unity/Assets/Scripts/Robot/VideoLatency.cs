@@ -3,18 +3,12 @@
 // Latency = sender clock when this headset first has the frame in its texture − time in the strip.
 // Includes encoding, network, jitter buffer, decoding and the texture copy; not rendering and display
 // (add ~1 frame, 14 ms at 72 Hz, for glass to glass). Same definition as xr-client/pages/latency.js.
-// The clocks are synced over ws://<sender>:8444 (best of 12 round trips, like clocksync.js).
+// Clocks: ClockSync.cs.
 
 using System;
 using System.Collections.Generic;
-using System.Diagnostics;
-using System.Net.WebSockets;
-using System.Text;
-using System.Threading;
-using System.Threading.Tasks;
 using UnityEngine;
 using UnityEngine.Rendering;
-using Debug = UnityEngine.Debug;
 
 public class VideoLatency : MonoBehaviour
 {
@@ -23,7 +17,6 @@ public class VideoLatency : MonoBehaviour
     const float StripBlock = 40f / 1920f;   // block width as a fraction of the frame width
     const float StripRow = 20f / 1080f;     // block centre row as a fraction of the frame height
     const int Window = 300;
-    const float ResyncS = 60f;
 
     public RobotVideo video;
 
@@ -31,29 +24,18 @@ public class VideoLatency : MonoBehaviour
     readonly List<double> sorted = new List<double>();
     long lastValue = -1;
     int pending, newSinceLog;
-    volatile bool synced;
-    long offsetMs;       // sender clock − local clock
-    double syncRttMs;
-    float nextSyncAt;
+    readonly ClockSync clock = new ClockSync();
     int rowFromTop = -1; // which readback row holds the strip (texture orientation), found on the first match
 
     public string Summary { get; private set; } = "";
 
-    static long LocalMs() => Stopwatch.GetTimestamp() * 1000 / Stopwatch.Frequency;
-    long SenderNowMs() => LocalMs() + offsetMs;
-
     void Update()
     {
-        if (!string.IsNullOrEmpty(video.SignallingUrl) && Time.time >= nextSyncAt)
-        {
-            nextSyncAt = Time.time + ResyncS;
-            var uri = new UriBuilder(video.SignallingUrl) { Port = 8444 }.Uri;
-            _ = Sync(uri);
-        }
+        clock.Tick(video.SignallingUrl);
         var tex = video.VideoTexture;
-        if (!synced || tex == null || pending > 2) return;
+        if (!clock.Ok || tex == null || pending > 2) return;
 
-        long at = SenderNowMs();
+        long at = clock.SenderNowMs();
         int y = Mathf.RoundToInt(StripRow * tex.height);
         foreach (var fromTop in new[] { true, false })
         {
@@ -88,42 +70,12 @@ public class VideoLatency : MonoBehaviour
         sorted.AddRange(samples);
         sorted.Sort();
         double P(double q) => sorted[(int)Math.Round(q * (sorted.Count - 1))];
-        Summary = $"latency {P(0.5):0} ms (p10 {P(0.1):0} - p90 {P(0.9):0}, n {sorted.Count}, sync ±{syncRttMs / 2:0})";
+        Summary = $"latency {P(0.5):0} ms (p10 {P(0.1):0} - p90 {P(0.9):0}, n {sorted.Count}, sync ±{clock.RttMs / 2:0})";
         if (++newSinceLog >= Window)
         {
             newSinceLog = 0;
             Debug.Log($"[latency] median {P(0.5):0} p10 {P(0.1):0} p90 {P(0.9):0} min {sorted[0]:0} max {sorted[^1]:0} " +
-                      $"n {sorted.Count} sync ±{syncRttMs / 2:0}");
-        }
-    }
-
-    /// <summary>Clock offset from the round trip with the smallest RTT (its midpoint is the best estimate).</summary>
-    async Task Sync(Uri uri)
-    {
-        try
-        {
-            using var ws = new ClientWebSocket();
-            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
-            await ws.ConnectAsync(uri, cts.Token);
-            var buffer = new byte[64];
-            double bestRtt = double.MaxValue;
-            long bestOffset = 0;
-            for (int i = 0; i < 12; i++)
-            {
-                long t0 = LocalMs();
-                await ws.SendAsync(new ArraySegment<byte>(Encoding.ASCII.GetBytes("t")), WebSocketMessageType.Text, true, cts.Token);
-                var r = await ws.ReceiveAsync(new ArraySegment<byte>(buffer), cts.Token);
-                long t1 = LocalMs();
-                long sender = long.Parse(Encoding.ASCII.GetString(buffer, 0, r.Count));
-                if (t1 - t0 < bestRtt) { bestRtt = t1 - t0; bestOffset = sender - (t0 + t1) / 2; }
-            }
-            offsetMs = bestOffset;
-            syncRttMs = bestRtt;
-            synced = true;
-        }
-        catch (Exception e)
-        {
-            Debug.LogWarning($"[latency] clock sync with {uri}: {e.Message}");
+                      $"n {sorted.Count} sync ±{clock.RttMs / 2:0}");
         }
     }
 }

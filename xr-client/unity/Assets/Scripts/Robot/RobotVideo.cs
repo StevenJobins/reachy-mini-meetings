@@ -16,6 +16,7 @@ public class RobotVideo : MonoBehaviour
     public Renderer window;
     public FpsLabel hud;
     public VideoLatency latency;
+    public FlashLatency flash;
 
     public string SignallingUrl => url;
     /// <summary>The received video (a RenderTexture the WebRTC package updates), null until the first frame.</summary>
@@ -28,12 +29,15 @@ public class RobotVideo : MonoBehaviour
     string state = "starting";
     string stats = "";
     float retryAt;
+    bool keepAudio;      // adb ... -e audio on: accept the robot's audio track (for A/B tests of the video delay)
+    int statsLogged;
 
     // previous GetStats() sample, for rates
     double lastStatsT, lastBytes, lastJbDelay, lastJbCount, lastDecodeS, lastDecoded;
 
     void Start()
     {
+        keepAudio = ReadIntentExtra("audio") == "on";
         url = ReadIntentExtra(UrlKey);
         if (!string.IsNullOrEmpty(url)) { PlayerPrefs.SetString(UrlKey, url); PlayerPrefs.Save(); }
         else url = PlayerPrefs.GetString(UrlKey, "");
@@ -85,7 +89,7 @@ public class RobotVideo : MonoBehaviour
             retryAt = 0;
             Connect();
         }
-        if (hud != null) hud.extra = $"{state}\n{stats}\n{latency?.Summary}";
+        if (hud != null) hud.extra = $"{state}\n{stats}\n{latency?.Summary}{flash?.Summary}";
     }
 
     void Handle(GstSignalling.Message m)
@@ -154,6 +158,10 @@ public class RobotVideo : MonoBehaviour
         var setRemote = pc.SetRemoteDescription(ref offer);
         yield return setRemote;
         if (setRemote.IsError) { state = $"setRemote: {setRemote.Error.message}"; yield break; }
+        // Nothing plays the robot's WebRTC audio here, and libwebrtc holds video back to stay in sync with it
+        if (!keepAudio)
+            foreach (var t in pc.GetTransceivers())
+                if (t.Receiver.Track?.Kind == TrackKind.Audio) t.Direction = RTCRtpTransceiverDirection.Inactive;
         var create = pc.CreateAnswer();
         yield return create;
         if (create.IsError) { state = $"createAnswer: {create.Error.message}"; yield break; }
@@ -186,6 +194,7 @@ public class RobotVideo : MonoBehaviour
                 var decMs = decoded > 0 ? (v.totalDecodeTime - lastDecodeS) / decoded * 1000 : 0;
                 stats = $"{v.frameWidth}x{v.frameHeight} {v.framesPerSecond:0}fps {mbps:0.0}Mbps {codec} {v.decoderImplementation}\n" +
                         $"jitter buf {jbMs:0}ms  decode {decMs:0.0}ms  dropped {v.framesDropped}";
+                if (++statsLogged % 5 == 0) Debug.Log($"[stats] audio {(keepAudio ? "on" : "off")} {stats.Replace('\n', ' ')}");
                 lastStatsT = t; lastBytes = v.bytesReceived; lastJbDelay = v.jitterBufferDelay;
                 lastJbCount = v.jitterBufferEmittedCount; lastDecodeS = v.totalDecodeTime; lastDecoded = v.framesDecoded;
             }
