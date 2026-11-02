@@ -282,7 +282,6 @@
   .step.on { opacity: 1; border-color: var(--c); background: var(--panel2); }
   .step b { display: grid; place-items: center; width: 50px; height: 50px; border-radius: 50%; font: 700 24px var(--head); color: var(--bg); background: var(--c); }
   .step h3 { font-size: 24px; margin: 0 0 3px; }
-  .step p { margin: 0; font-size: 18px; line-height: 1.3; color: var(--muted); }
   .sofar { display: grid; grid-template-columns: 450px 1fr; gap: 26px; margin-top: 8px; }
   .sofar > .card { padding: 34px 36px; }
   .sofar > .card h3 { font-size: 28px; margin-bottom: 26px; }
@@ -290,24 +289,22 @@
   .done li { display: grid; grid-template-columns: 38px 1fr; align-items: center; font-size: 25px; line-height: 1.2; color: var(--text); }
   .done li::before { content: "✓"; display: grid; place-items: center; width: 26px; height: 26px; border-radius: 50%; font: 700 15px var(--mono); color: var(--bg); background: var(--pose); }
   .tiles { display: grid; grid-template-columns: 1fr 1fr; gap: 22px; }
-  .tile { border-top: 4px solid var(--c); padding: 26px 30px; }
+  .tile { border-top: 4px solid var(--c); padding: 26px 30px; display: flex; flex-direction: column; justify-content: center; }
   .tile b { display: block; font: 700 66px/1.05 var(--head); letter-spacing: -.02em; color: var(--c); margin-bottom: 12px; white-space: nowrap; }
   .tile b i { font-style: normal; font-size: 40px; color: var(--muted); }
   .tile b small { font-size: 26px; color: var(--muted); margin-left: 8px; letter-spacing: 0; }
   .tile h3 { font-size: 25px; margin: 0 0 6px; }
-  .tile p { margin: 0; font-size: 19px; line-height: 1.35; color: var(--muted); }
-  .tl { position: relative; display: grid; grid-template-columns: repeat(6, 1fr); gap: 16px; margin-top: 40px; }
+  .tl { position: relative; display: grid; grid-template-columns: 1fr 1.8fr repeat(4, 1fr); gap: 14px; margin-top: 40px; }
   .tl .line { position: absolute; left: 0; right: 0; top: 10px; height: 4px; border-radius: 4px; background: rgba(255,255,255,.08); overflow: hidden; }
   .tl .line span { display: block; height: 100%; width: 0; background: linear-gradient(90deg, #fff, var(--pose), var(--video), var(--lang), var(--hot), var(--depth)); }
   .slide.active .tl .line span { animation: grow 2.2s ease .4s forwards; }
   .tlc { position: relative; display: flex; flex-direction: column; align-items: center; }
   .tlc > i { width: 24px; height: 24px; border-radius: 50%; background: var(--bg); border: 5px solid var(--c); margin-bottom: 26px; z-index: 1; }
   .tlc.now > i { background: #fff; animation: here 1.8s ease-out infinite; }
-  .tlc .card { width: 100%; height: 250px; padding: 22px 20px; border-top: 4px solid var(--c); }
+  .tlc .card { width: 100%; height: 240px; padding: 22px 18px; border-top: 4px solid var(--c); }
   .tlc b { display: block; font: 700 19px var(--mono); color: var(--c); margin-bottom: 14px; white-space: nowrap; }
   .tlc h3 { font-size: 27px; line-height: 1.15; margin: 0 0 12px; }
-  .tlc p { margin: 0; font-size: 19px; line-height: 1.35; color: var(--muted); }
-  .extras { margin: 26px 0 0; text-align: center; font-size: 22px; color: var(--muted); }
+  .tlc p { margin: 0; font-size: 21px; line-height: 1.35; color: var(--text); }
   html.print .step { opacity: 1; }
   html.print .tl .line span { width: 100%; animation: none; }
 
@@ -349,15 +346,15 @@
     <span class="vr-tag" style="left:925px">In the headset</span>
   </div>
   <div class="steps">
-    <div class="step" data-from="0" data-to="6.3" style="--c:var(--video)"><b>1</b><div><h3>Reachy scans the room</h3><p>It looks around and saves what it sees.</p></div></div>
-    <div class="step" data-from="6.3" data-to="12" style="--c:var(--pose)"><b>2</b><div><h3>Reachy follows the head</h3><p>The room stays in place when the user looks around.</p></div></div>
-    <div class="step" data-from="12" data-to="99" style="--c:var(--lang)"><b>3</b><div><h3>Speech appears</h3><p>Spoken words show up in a bubble above the head.</p></div></div>
+    <div class="step" data-from="0" data-to="6.3" style="--c:var(--video)"><b>1</b><div><h3>Reachy scans the room</h3></div></div>
+    <div class="step" data-from="6.3" data-to="12" style="--c:var(--pose)"><b>2</b><div><h3>Reachy follows the head</h3></div></div>
+    <div class="step" data-from="12" data-to="99" style="--c:var(--lang)"><b>3</b><div><h3>Speech appears</h3></div></div>
   </div>
   <aside class="notes">• Real robot, nothing simulated
 • Left: room. Right: headset
-• 1. Scans the room
-• 2. Follows the head, room stays in place
-• 3. Speech appears in a bubble</aside>
+• 1. Scans the room: looks around, saves what it sees
+• 2. Follows the head, room stays in place when the user looks around
+• 3. Speech appears in a bubble above the head</aside>
 </section>
 
 <!-- ======================================================= 3 DONE -->
@@ -376,20 +373,20 @@
       </ul>
     </div>
     <div class="tiles">
-      <div class="card tile a" style="--d:.25s;--c:var(--pose)"><b>34 <i>→</i> 72<small>fps</small></b><h3>Frame rate</h3><p>Chrome halved it with video. Unity keeps 72.</p></div>
-      <div class="card tile a" style="--d:.35s;--c:var(--video)"><b>141<small>ms</small></b><h3>Video delay</h3><p>In the headset over Wi-Fi, real camera.</p></div>
-      <div class="card tile a" style="--d:.45s;--c:var(--lang)"><b>5×<small>less</small></b><h3>Video shake</h3><p>It caused motion sickness. Now it feels much better.</p></div>
-      <div class="card tile a" style="--d:.55s;--c:var(--hot)"><b>±3°</b><h3>Head play</h3><p>Small moves don't reach the robot. The app now handles it.</p></div>
+      <div class="card tile a" style="--d:.25s;--c:var(--pose)"><b>34 <i>→</i> 72<small>fps</small></b><h3>Frame rate</h3></div>
+      <div class="card tile a" style="--d:.35s;--c:var(--video)"><b>141<small>ms</small></b><h3>Video delay</h3></div>
+      <div class="card tile a" style="--d:.45s;--c:var(--lang)"><b>5×<small>less</small></b><h3>Video shake</h3></div>
+      <div class="card tile a" style="--d:.55s;--c:var(--hot)"><b>±3°</b><h3>Head play</h3></div>
     </div>
   </div>
   <aside class="notes">• Moved from web to Unity
-• Frame rate: 34 → 72 fps. Chrome copied every frame
-• Delay: 141 ms. Measured with a flashing screen
+• Frame rate: 34 → 72 fps. Chrome copied every frame and halved it with video. Unity keeps 72
+• Delay: 141 ms in the headset, over Wi-Fi, real camera. Measured with a flashing screen
 • Was 302 ms: video waited for unused audio. Removed it
 • Reprojection: frame shown where robot looked. Head turns feel instant
 • Panorama fills the edges
-• Shake: head pose arrives unevenly. Now use commanded pose, 5× less shake
-• Head play: 3° command barely moves it. Found with photos, app accounts for it
+• Shake caused motion sickness: head pose arrives unevenly. Now use commanded pose, 5× less shake, feels much better
+• Head play: 3° command barely moves it, small moves don't reach the robot. Found with photos, app accounts for it
 • Open: speaker following turned too far. Removed until we know why</aside>
 </section>
 
@@ -398,20 +395,19 @@
   <h2 class="a">Six weeks <span class="grad">to the live demo</span></h2>
   <div class="tl">
     <div class="line"><span></span></div>
-    <div class="tlc a now" style="--d:.15s;--c:#fff"><i></i><div class="card"><b>Nov 2</b><h3>Midterm</h3><p>We are here</p></div></div>
-    <div class="tlc a" style="--d:.25s;--c:var(--pose)"><i></i><div class="card"><b>Nov 3–15</b><h3>Move to Unity</h3><p>Translation, speaker following, nods and “I want to speak”</p></div></div>
-    <div class="tlc a" style="--d:.35s;--c:var(--video)"><i></i><div class="card"><b>Nov 16–29</b><h3>Measure</h3><p>Latency, speaker attribution, language</p></div></div>
-    <div class="tlc a" style="--d:.45s;--c:var(--lang)"><i></i><div class="card"><b>Nov 30–Dec 11</b><h3>User study</h3><p>8–10 people: presence, sickness, comprehension</p></div></div>
-    <div class="tlc a" style="--d:.55s;--c:var(--hot)"><i></i><div class="card"><b>Dec 14</b><h3>Final demo</h3><p>Live meeting in English and German</p></div></div>
-    <div class="tlc a" style="--d:.65s;--c:var(--depth)"><i></i><div class="card"><b>Jan 11</b><h3>Report</h3><p>Results and write-up</p></div></div>
+    <div class="tlc a now" style="--d:.15s;--c:#fff"><i></i><div class="card"><b>Nov 2</b><h3>Midterm</h3></div></div>
+    <div class="tlc a" style="--d:.25s;--c:var(--pose)"><i></i><div class="card"><b>Nov 3–15</b><h3>Move to Unity</h3><p>Translation, speaker following, nods, “I want to speak”, depth, translated robot voice, notes panel</p></div></div>
+    <div class="tlc a" style="--d:.35s;--c:var(--video)"><i></i><div class="card"><b>Nov 16–29</b><h3>Measure</h3></div></div>
+    <div class="tlc a" style="--d:.45s;--c:var(--lang)"><i></i><div class="card"><b>Nov 30–Dec 11</b><h3>User study</h3></div></div>
+    <div class="tlc a" style="--d:.55s;--c:var(--hot)"><i></i><div class="card"><b>Dec 14</b><h3>Final demo</h3></div></div>
+    <div class="tlc a" style="--d:.65s;--c:var(--depth)"><i></i><div class="card"><b>Jan 11</b><h3>Report</h3></div></div>
   </div>
-  <p class="a extras" style="--d:.8s">If time allows: depth, translated robot voice, notes panel</p>
-  <aside class="notes">• Six weeks to the live demo
-• Move to Unity: translation, speaker following, nods, “I want to speak”
+  <aside class="notes">• We are here: midterm. Six weeks to the live demo
+• Move to Unity: translation, speaker following, nods, “I want to speak”, depth, translated robot voice, notes panel
 • Measure: latency, speaker attribution, language
-• User study: 8–10 people
-• If time: depth, robot voice, notes panel
-• Final demo Dec 14, report Jan 11
+• User study: 8–10 people. Presence, sickness, comprehension
+• Final demo Dec 14: live meeting in English and German
+• Report Jan 11: results and write-up
 • Thank you. Any questions?
 
 If asked:
