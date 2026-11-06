@@ -42,6 +42,11 @@ public class VideoWindow : MonoBehaviour
     public Mesh SphereMesh { get; private set; }
     public bool Locked => locked;
     public PoseHistory Measured => measured;
+    /// <summary>The robot pose the window shows now (world-locked only).</summary>
+    public RobotAngles Shown { get; private set; }
+
+    /// <summary>Robot laptop wall clock (daemon, backend) to the local clock.</summary>
+    public bool TryLocal(double laptopS, out double local) => clock.TryLocal(laptopS, out local);
 
     void Awake()
     {
@@ -147,7 +152,10 @@ public class VideoWindow : MonoBehaviour
 
         Quaternion target;
         if (locked && blend.TryAt(now - delay, control.Modelled, out var a))
+        {
+            Shown = a;
             target = ToUnity(control.Frame.ToWorld(PoseMath.RobotToHeadset(a.Roll, a.Pitch, a.Yaw)));
+        }
         else
             target = Front();
 

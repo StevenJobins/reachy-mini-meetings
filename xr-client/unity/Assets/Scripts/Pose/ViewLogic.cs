@@ -66,6 +66,13 @@ public class PoseClock
     bool started;
     double offset, lastArrival;
 
+    /// <summary>Another time on the sender's clock (e.g. the backend, on the same laptop) to the local clock.</summary>
+    public bool TryLocal(double senderS, out double local)
+    {
+        local = senderS + offset;
+        return started;
+    }
+
     public double ToLocal(double senderS, double arrivalS)
     {
         double o = arrivalS - senderS;

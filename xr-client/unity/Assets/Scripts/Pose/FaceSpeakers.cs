@@ -1,5 +1,6 @@
 // Who is speaking: person tracks in the robot camera image + mouth movement + microphone direction. Pure logic, no
-// Unity: port of xr-client/pages/speakers.js, checked against it in Assets/Tests.
+// Unity. Tracks and identities are a port of xr-client/pages/speakers.js, checked against it in Assets/Tests; who
+// talks (Talker) is judged over the time the words were said, not when their caption arrives (Whisper is 1-2 s late).
 //
 // Faces come in normalized image coordinates (0..1, origin top left) from backend/vision.py, ~20 times a second.
 // Angles: degrees, + = left of the camera axis.
@@ -31,7 +32,11 @@ public class FaceSpeakers
 {
     class Person { public int Pid; public double Yaw, Seen; }
 
-    const double WindowS = 1.5;      // mouth movement is judged over this window
+    const double HistoryS = 10;      // mouth openness kept this long, to judge a whole utterance
+    const int MinSamples = 5;        // fewer mouth readings in a time span say nothing (0.25 s at 20/s)
+    const double TalkStd = 0.03;     // mouth movement above this is talking (talking ~0.05-0.2, silent ~0.01)
+    const double DoaWeight = 0.5;    // the mic direction only breaks ties: it wanders and front/back is unclear
+    const double KeepMargin = 0.3;   // the current talker stays unless another one scores clearly higher
     const double MaxJump = 0.25;     // max face movement between two detections (fraction of the image)
     const double TtlS = 1.0;         // a face not seen for this long is dropped
     const double ReIdDeg = 25;       // same person if within this many degrees of where they were
@@ -75,7 +80,7 @@ public class FaceSpeakers
             }
             best.Seen = t;
             if (f.Mouth != null) best.MouthHistory.Add((t, f.Mouth.Value));
-            while (best.MouthHistory.Count > 0 && best.MouthHistory[0].t < t - WindowS) best.MouthHistory.RemoveAt(0);
+            while (best.MouthHistory.Count > 0 && best.MouthHistory[0].t < t - HistoryS) best.MouthHistory.RemoveAt(0);
         }
         Tracks = Tracks.Where(tr => t - tr.Seen < TtlS).ToList();
         Identify(t, headYawDeg);
@@ -129,29 +134,34 @@ public class FaceSpeakers
         return lost.Count == 1 ? lost[0] : null;
     }
 
-    /// <summary>Mouth movement: standard deviation of jaw opening over the window (talking ~0.05-0.2, silent ~0.01).</summary>
-    public static double Activity(FaceTrack tr)
+    /// <summary>Mouth movement over [from, to] (face clock): standard deviation of jaw opening, 0 with too few readings.</summary>
+    public static double Activity(FaceTrack tr, double from, double to)
     {
-        if (tr.MouthHistory.Count < 3) return 0;
-        double mean = tr.MouthHistory.Average(m => m.mouth);
-        return Math.Sqrt(tr.MouthHistory.Average(m => (m.mouth - mean) * (m.mouth - mean)));
+        var m = tr.MouthHistory.Where(h => h.t >= from && h.t <= to).Select(h => h.mouth).ToList();
+        if (m.Count < MinSamples) return 0;
+        double mean = m.Average();
+        return Math.Sqrt(m.Average(x => (x - mean) * (x - mean)));
     }
 
     /// <summary>Horizontal angle of the face centre, + = left.</summary>
     public double AngleDeg(FaceTrack tr) => camera.YawDeg(tr.Cx, tr.Cy);
 
-    /// <summary>Most likely speaker track, or null when no face is visible.</summary>
-    public FaceTrack Pick(double? doaDeg)
+    /// <summary>Who talked during [from, to] (face clock): the face whose mouth moved most, the mic direction (relative to
+    /// the camera) breaking ties. Null when nobody in view clearly moved their mouth: the speaker is out of the picture,
+    /// or turned away. `current` is kept unless another face scores clearly higher, so the answer does not flicker.</summary>
+    public FaceTrack Talker(double from, double to, double? doaDeg, FaceTrack current = null)
     {
-        if (Tracks.Count <= 1) return Tracks.FirstOrDefault();
         FaceTrack best = null;
-        double bestScore = -1;
+        double bestScore = 0, currentScore = -1;
         foreach (var tr in Tracks)
         {
-            double score = Math.Min(2, Activity(tr) / 0.05);
-            if (doaDeg != null) score += Math.Max(0, 1 - Math.Abs(AngleDeg(tr) - doaDeg.Value) / 30);
+            double activity = Activity(tr, from, to);
+            if (activity < TalkStd) continue;
+            double score = Math.Min(2, activity / 0.05);
+            if (doaDeg != null) score += DoaWeight * Math.Max(0, 1 - Math.Abs(AngleDeg(tr) - doaDeg.Value) / 30);
+            if (tr == current) currentScore = score;
             if (score > bestScore) { bestScore = score; best = tr; }
         }
-        return best;
+        return currentScore >= 0 && currentScore >= bestScore - KeepMargin ? current : best;
     }
 }

@@ -17,8 +17,9 @@ Protocol (server -> headset, one JSON per message; keep in sync with xr-client):
            (vision.py, ~20/s): the page uses them instead of its own, much slower detector
   me       {"text": str, "lang": str, "translation": str | null, "target": str, "t": s}   what the remote
            user said (their headset mic, see below) and what Reachy said for them in the meeting language
-  vad      {"speaking": bool, "t": s}   instantly from the neural VAD (~0.1 s), long before any text:
-           sent when speech starts/ends and every 0.25 s while it lasts (speaker following uses it)
+  vad      {"speaking": bool, "doa_deg": float | null, "azimuth_deg": float | null, "t": s}   instantly from
+           the neural VAD (~0.1 s), long before any text: sent when speech starts/ends and every 0.25 s while it
+           lasts; directions = the mic over the last second (headset: "someone is speaking over there")
   binary   the room audio itself: int16 little-endian PCM, 16 kHz mono, ~40 ms per frame. The robot's own
            WebRTC audio drops ~55 % of the sound (daemon bug, 0 packets lost); the page plays this instead.
            Between utterances it is turned down by --pause-db (noise gate driven by the neural VAD).
@@ -272,9 +273,9 @@ class CaptionServer:
             pcm = (np.clip(chunk, -1, 1) * 32767).astype("<i2").tobytes()
             websockets.broadcast(self.clients, pcm)
 
-    def send_vad(self, speaking: bool) -> None:
-        websockets.broadcast(self.clients, json.dumps({"type": "vad", "speaking": speaking,
-                                                       "t": round(time.time(), 3)}))
+    def send_vad(self, speaking: bool, doa_deg: float | None, azimuth_deg: float | None) -> None:
+        websockets.broadcast(self.clients, json.dumps({"type": "vad", "speaking": speaking, "doa_deg": doa_deg,
+                                                       "azimuth_deg": azimuth_deg, "t": round(time.time(), 3)}))
 
     def send_faces(self, people: list, t: float) -> None:
         if self.clients:
@@ -613,7 +614,7 @@ class Pipeline:
             now = time.time()
             if self.segmenter.active != vad_on or (vad_on and now - vad_sent > 0.25):
                 vad_on, vad_sent = self.segmenter.active, now
-                self.server.send_vad(vad_on)
+                self.server.send_vad(vad_on, *(self.doa.direction(now - 1.0, now) if self.doa else (None, None)))
             for seg in segs:
                 if seg.final:
                     spawn(self._final(seg, time.time()))

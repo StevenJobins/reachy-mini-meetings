@@ -189,7 +189,6 @@ public static class ProjectConfigure
         video.captions = video.room.gameObject.AddComponent<CaptionView>();
         video.captions.room = video.room;
         video.captions.control = video.control;
-        video.captions.window = window.transform;
         video.captions.textMaterial = hud.textMaterial;
         video.captions.panelMaterial = SaveMaterial("Bubble", Shader.Find("Reachy/Bubble"), Color.white);
 
@@ -197,6 +196,7 @@ public static class ProjectConfigure
         video.view.control = video.control;
         video.view.video = video;
         video.view.head = camGo.transform;
+        video.captions.view = video.view;
 
         var panorama = new GameObject("Room Panorama");
         panorama.transform.SetParent(offset.transform, false);

@@ -126,7 +126,14 @@ $ADB shell am start -n ch.ethz.reachymeetings/com.unity3d.player.UnityPlayerGame
 
 ## Speech bubbles (Phase 4)
 
-Live captions from the backend appear above the speaker's head in the video (`CaptionView.cs`, `Assets/Shaders/Bubble.shader`). `FaceSpeakers.cs`, a port of `speakers.js` tested against it, picks who is talking from the faces the backend finds, mouth movement and mic direction, and gives each person a number and colour. With no face in view the bubble waits at the top of the window, towards the voice. Italic text is still changing; upright text is final. A bubble stays 8 s after its last update.
+Live captions from the backend appear above the speaker's head (`CaptionView.cs`, `Assets/Shaders/Bubble.shader`). Italic text is still changing; upright text is final. A bubble stays 8 s after its last update.
+
+- **Who said it** (`FaceSpeakers.Talker`): the face whose mouth moved most *while the words were said* (the caption's `t_start`–`t_end`; the caption itself arrives 1–2 s later), judged again with every update, so a wrong first guess gets corrected. The mic direction only breaks ties. If no mouth in view clearly moved, nobody in the picture gets the bubble: it waits at the top of the window, towards the voice, until the speaker comes into view.
+- **Stays on the person:** the bubble is fixed in the room (Reachy's measured head pose when the face was seen + the face direction), not on a spot in the video. When Reachy looks elsewhere it stays where the person is, over the panorama. Bubbles that would cover each other stack.
+- **Speaking marker:** from the backend's voice detection (~0.1 s, long before any text), an orange ring pulses around the face that is talking. When someone talks but no mouth in the picture moves, an arrow at the window edge points towards the voice (mic direction, so only roughly). Off while you hold the talk pinch.
+- **No speaker numbers or colours for now:** telling people apart was not reliable enough. `logcat` shows each decision: `[speakers] #12: p2 (mouth p1 0.011, p2 0.074)` and `[speaking] ...`, for counting right and wrong picks.
+
+The marker's arrow needs the backend from 2026-11-06 or later (mic direction in its `vad` messages); with an older one only the ring shows.
 
 The backend needs a `DEEPL_AUTH_KEY` to translate; without one, bubbles show the original language. With one, they show the translation with the original underneath.
 

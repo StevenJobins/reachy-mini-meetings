@@ -231,9 +231,64 @@ public class PoseTests
                 Assert.That(s.Tracks[i].Pid, Is.EqualTo(int.Parse(e[1])), line);
                 Assert.That(s.Tracks[i].Cx, Is.EqualTo(D(e[2])).Within(1e-8), line);
             }
-            var pick = s.Pick(doa);
-            Assert.That(pick == null ? "null" : pick.Id.ToString(), Is.EqualTo(p[6]), line);
+            // the pick column (p[6]) is speakers.js's old live pick, replaced by Talker below
         }
+    }
+
+    /// <summary>Two faces at 20/s from t = 0 to `until`; mouth(face, t) = jaw opening.</summary>
+    static FaceSpeakers TwoFaces(double until, Func<int, double, double> mouth)
+    {
+        var s = new FaceSpeakers(CameraModel.Calibrated());
+        for (double t = 0; t <= until + 1e-9; t += 0.05)
+            s.Update(new[]
+            {
+                new Face { Cx = 0.3, Cy = 0.4, Top = 0.3, W = 0.1, H = 0.2, Mouth = mouth(0, t) },
+                new Face { Cx = 0.7, Cy = 0.4, Top = 0.3, W = 0.1, H = 0.2, Mouth = mouth(1, t) },
+            }, t, 0);
+        return s;
+    }
+
+    static double Talking(double t, double amplitude = 0.08) => 0.1 + amplitude * Math.Sin(2 * Math.PI * 4 * t);
+    const double Silent = 0.02;
+
+    [Test]
+    public void TalkerIsWhoseMouthMovedWhileTheWordsWereSaidNotWhenTheCaptionCame()
+    {
+        // left face talks for 2 s, then the right one; the left one's caption arrives at 4 s (Whisper is late)
+        var s = TwoFaces(4, (f, t) => (f == 0) == (t < 2) ? Talking(t) : Silent);
+        Assert.That(s.Talker(0, 2, null).Cx, Is.EqualTo(0.3).Within(1e-6), "the utterance");
+        Assert.That(s.Talker(3.4, 4, null).Cx, Is.EqualTo(0.7).Within(1e-6), "now");
+    }
+
+    [Test]
+    public void NobodyIsTalkingWhenNoMouthInViewMoves()
+    {
+        // the speaker is out of the picture: a silent face must not get the bubble, also when it is the only one
+        var s = TwoFaces(2, (f, t) => Silent + 0.003 * Math.Sin(7 * t + f));
+        Assert.That(s.Talker(0, 2, null), Is.Null);
+        Assert.That(s.Talker(0, 2, s.AngleDeg(s.Tracks[0])), Is.Null, "the mic direction alone is not enough");
+        var one = new FaceSpeakers(CameraModel.Calibrated());
+        for (double t = 0; t <= 2; t += 0.05)
+            one.Update(new[] { new Face { Cx = 0.5, Cy = 0.4, Top = 0.3, W = 0.1, H = 0.2, Mouth = Silent } }, t, 0);
+        Assert.That(one.Talker(0, 2, 0), Is.Null);
+    }
+
+    [Test]
+    public void TalkerKeepsTheCurrentOneUnlessAnotherIsClearlyMoreActive()
+    {
+        var close = TwoFaces(2, (f, t) => Talking(t, f == 0 ? 0.06 : 0.07));
+        Assert.That(close.Talker(0, 2, null).Cx, Is.EqualTo(0.7).Within(1e-6), "no current: the more active one");
+        Assert.That(close.Talker(0, 2, null, close.Tracks[0]).Cx, Is.EqualTo(0.3).Within(1e-6), "close: kept");
+        var clear = TwoFaces(2, (f, t) => Talking(t, f == 0 ? 0.06 : 0.12));
+        Assert.That(clear.Talker(0, 2, null, clear.Tracks[0]).Cx, Is.EqualTo(0.7).Within(1e-6), "clearly more: switch");
+    }
+
+    [Test]
+    public void MicDirectionBreaksTiesBetweenTalkingFaces()
+    {
+        var s = TwoFaces(2, (f, t) => Talking(t));
+        Assert.That(s.Talker(0, 2, s.AngleDeg(s.Tracks[0])).Cx, Is.EqualTo(0.3).Within(1e-6));
+        Assert.That(s.Talker(0, 2, s.AngleDeg(s.Tracks[1])).Cx, Is.EqualTo(0.7).Within(1e-6));
     }
 
     [Test]

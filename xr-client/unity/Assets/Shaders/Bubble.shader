@@ -1,5 +1,6 @@
 // Speech bubble parts: a rounded rectangle, drawn in the fragment shader so it stays sharp at any size.
-// _Rect = width, height, corner radius (metres). Always on top of the video, like the status text.
+// _Rect = width, height, corner radius, outline width (metres; 0 = filled). Always on top of the video, like the status
+// text. Also draws the speaking ring (a circle as outline) and the arrow bars.
 Shader "Reachy/Bubble"
 {
     Properties
@@ -58,7 +59,9 @@ Shader "Reachy/Bubble"
                 float2 q = abs(p) - _Rect.xy * 0.5 + _Rect.z;
                 float d = length(max(q, 0)) + min(max(q.x, q.y), 0) - _Rect.z;
                 float aa = max(fwidth(d), 1e-5);
-                return half4(_Color.rgb, _Color.a * (1 - smoothstep(-aa, aa, d)));
+                float a = 1 - smoothstep(-aa, aa, d);
+                if (_Rect.w > 0) a *= smoothstep(-_Rect.w - aa, -_Rect.w + aa, d);
+                return half4(_Color.rgb, _Color.a * a);
             }
             ENDHLSL
         }
