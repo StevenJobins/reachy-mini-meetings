@@ -165,7 +165,7 @@ public static class ProjectConfigure
         // Status text below the image, moves with the window
         var label = new GameObject("Fps Label");
         label.transform.SetParent(window.transform, false);
-        label.transform.localPosition = new Vector3(0, -1.85f, 2.75f);   // room for the Quick Menu above
+        label.transform.localPosition = new Vector3(0, -1.75f, 2.75f);
         label.transform.localScale = Vector3.one * 1.6f;
         var hud = label.AddComponent<FpsLabel>();
         hud.textMaterial = SaveMaterial("WorldText", Shader.Find("Reachy/WorldText"), Color.white);
@@ -193,12 +193,11 @@ public static class ProjectConfigure
         video.captions.textMaterial = hud.textMaterial;
         video.captions.panelMaterial = SaveMaterial("Bubble", Shader.Find("Reachy/Bubble"), Color.white);
 
-        // Settings row just under the image, shown while you look at it (Translate me, bubble language)
+        // Menu column at the left edge of the image, moves with it (QuickMenu places itself)
         var menu = new GameObject("Quick Menu");
         menu.transform.SetParent(window.transform, false);
-        menu.transform.localPosition = new Vector3(0, -1.5f, 2.75f);
-        menu.transform.localScale = Vector3.one * 1.6f;
         var quick = menu.AddComponent<QuickMenu>();
+        quick.panelMaterial = video.captions.panelMaterial;
         quick.room = video.room;
         quick.head = camGo.transform;
         quick.textMaterial = hud.textMaterial;
@@ -217,12 +216,16 @@ public static class ProjectConfigure
         notesPanel.textMaterial = hud.textMaterial;
         notesPanel.panelMaterial = video.captions.panelMaterial;
         video.captions.notes = notesPanel;
+        video.control.notes = notesPanel;
 
-        // Guided tour on the first start, again from "Help" in the row
+        // Interactive guided tour on the first start (Reachy waits), again from "Help" in the menu
         var tour = new GameObject("Tutorial");
         tour.transform.SetParent(offset.transform, false);
         var tutorial = tour.AddComponent<Tutorial>();
         tutorial.head = camGo.transform;
+        tutorial.control = video.control;
+        tutorial.menu = quick;
+        tutorial.notes = notesPanel;
         tutorial.textMaterial = hud.textMaterial;
         tutorial.panelMaterial = video.captions.panelMaterial;
         quick.tutorial = tutorial;

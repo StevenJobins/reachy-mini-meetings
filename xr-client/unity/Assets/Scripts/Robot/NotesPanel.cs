@@ -1,6 +1,8 @@
 // Live meeting notes from the backend (message "summary": summary bullets, action items, next steps; Gemini, in the
-// bubble language, see backend/README.md "Meeting notes"). A card in the room to the right of "straight ahead", like
-// xr-client/pages/notes.js: look right to read it, no button. When new notes arrive, QuickMenu says so for a moment.
+// bubble language, see backend/README.md "Meeting notes"). A card in the room, by default 45° right of straight ahead,
+// like xr-client/pages/notes.js: look there to read it. It moves like a window in the headset: look at the handle
+// under it, hold the left pinch and look where it should go (RobotControl). The place is kept relative to straight
+// ahead, also after a restart. When new notes arrive, QuickMenu says so for a moment.
 
 using System;
 using System.Collections.Generic;
@@ -20,81 +22,88 @@ public class NotesPanel : MonoBehaviour
         public double t;
     }
 
-    const float SideDeg = 45f;           // right of straight ahead
-    const float Distance = 1.7f, Drop = 0.1f;   // m from the eye, m below eye height
+    const string YawKey = "notes_yaw", UpKey = "notes_up";
+    const float DefaultYaw = 45f, DefaultUp = -3.5f;   // degrees right of / above straight ahead
+    const float Distance = 1.7f;                        // m from the eye
     const float Width = 0.95f, Pad = 0.06f, StripW = 0.012f;
     const float TextScale = 0.7f;
     const int Chars = 46, ItemLines = 3, MaxItems = 5;
+    const float HandleW = 0.2f, HandleH = 0.022f, HandleGap = 0.04f;
     static readonly Color Panel = new Color(0.07f, 0.08f, 0.11f, 0.93f);
     static readonly Color Accent = new Color(1f, 0.58f, 0f);   // #ff9500
+    static readonly Color Drag = new Color(0.22f, 0.74f, 0.97f);
 
     public RobotControl control;
     public Transform head;
     public QuickMenu menu;
     public Material textMaterial, panelMaterial;
 
-    Transform card, panelT, stripT;
-    Material panel, strip, text;
+    Transform card;
+    Ui.Rect panel, strip, handle;
     TextMesh body;
-    Renderer bodyR;
-    Font font;
     SummaryMsg notes;
+    float yaw, up, h;
+    bool handleGazed, dragging;
+
+    /// <summary>The card, for the tutorial ("look to your right").</summary>
+    public Transform Card => card;
+    public bool HandleGazed => handleGazed;
 
     void Awake()
     {
-        font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
-        text = new Material(textMaterial) { renderQueue = 3017 };
-        UpdateAtlas(font);
-        Font.textureRebuilt += UpdateAtlas;
-
+        yaw = PlayerPrefs.GetFloat(YawKey, DefaultYaw);
+        up = PlayerPrefs.GetFloat(UpKey, DefaultUp);
+        var text = Ui.TextMaterial(textMaterial, 3017);
         card = new GameObject("Card").transform;
         card.SetParent(transform, false);
-        (panelT, panel) = Quad("Panel", 3015);
-        (stripT, strip) = Quad("Strip", 3016);
-        var go = new GameObject("Text");
-        go.transform.SetParent(card, false);
-        go.transform.localScale = Vector3.one * TextScale;
-        body = go.AddComponent<TextMesh>();
-        body.font = font;
-        body.fontSize = 48;
-        body.characterSize = 0.01f;
-        body.anchor = TextAnchor.UpperLeft;
-        body.alignment = TextAlignment.Left;
-        body.richText = true;
-        body.color = Color.white;
-        bodyR = go.GetComponent<MeshRenderer>();
-        bodyR.sharedMaterial = text;
+        panel = Ui.Quad(card, "Panel", panelMaterial, 3015);
+        strip = Ui.Quad(card, "Strip", panelMaterial, 3016);
+        handle = Ui.Quad(card, "Handle", panelMaterial, 3016);
+        body = Ui.Text(card, "Text", text, 48, TextScale, TextAnchor.UpperLeft);
         Redraw();
-    }
-
-    void OnDestroy() => Font.textureRebuilt -= UpdateAtlas;
-
-    void UpdateAtlas(Font f)
-    {
-        if (f == font) text.mainTexture = font.material.mainTexture;
-    }
-
-    (Transform, Material) Quad(string name, int queue)
-    {
-        var go = GameObject.CreatePrimitive(PrimitiveType.Quad);
-        go.name = name;
-        Destroy(go.GetComponent<Collider>());
-        go.transform.SetParent(card, false);
-        var m = new Material(panelMaterial) { renderQueue = queue };
-        go.GetComponent<Renderer>().sharedMaterial = m;
-        return (go.transform, m);
     }
 
     static Quaternion ToUnity(Quat q) => new Quaternion(-(float)q.X, -(float)q.Y, (float)q.Z, (float)q.W);
 
+    float FrameYaw => ToUnity(control.Frame.ToWorld(Quat.Identity)).eulerAngles.y;
+
     void Update()
     {
-        // follows "straight ahead" (recenter), only its heading: the card stays upright
-        float yaw = ToUnity(control.Frame.ToWorld(Quat.Identity)).eulerAngles.y + SideDeg;
-        var eye = head.localPosition;
-        var dir = Quaternion.Euler(0, yaw, 0) * Vector3.forward;
-        card.localPosition = eye + dir * Distance + Vector3.down * Drop;
+        if (dragging)
+        {
+            if (control.LeftHeld)
+            {
+                // the card hangs on the gaze, same distance
+                var f = head.localRotation * Vector3.forward;
+                yaw = Mathf.DeltaAngle(0, Mathf.Atan2(f.x, f.z) * Mathf.Rad2Deg - FrameYaw);
+                up = Mathf.Asin(Mathf.Clamp(f.y, -1, 1)) * Mathf.Rad2Deg;
+            }
+            else
+            {
+                dragging = false;
+                PlayerPrefs.SetFloat(YawKey, yaw);
+                PlayerPrefs.SetFloat(UpKey, up);
+                PlayerPrefs.Save();
+                Debug.Log($"[notes] moved to {yaw:0}° right, {up:0}° up");
+            }
+        }
+        // follows straight ahead (recenter) by heading only, so it stays upright
+        var dir = Quaternion.Euler(-up, FrameYaw + yaw, 0) * Vector3.forward;
+        card.localPosition = head.localPosition + dir * Distance;
         card.localRotation = Quaternion.LookRotation(dir, Vector3.up);
+
+        var p = Ui.GazeOn(card, head);
+        var handleAt = new Vector3(0, -h / 2 - HandleGap, -0.001f);
+        handleGazed = !dragging && Ui.Inside(p, handleAt, HandleW + 0.12f, 0.09f);
+        handle.Set(HandleW, HandleH, HandleH / 2, handleAt,
+            dragging ? Drag : new Color(1, 1, 1, handleGazed ? 0.95f : 0.35f));
+    }
+
+    /// <summary>Left pinch on the handle (RobotControl); the drag lasts while the pinch is held.</summary>
+    public void BeginDrag()
+    {
+        dragging = true;
+        Debug.Log("[notes] drag");
     }
 
     /// <summary>New notes from the backend (CaptionView).</summary>
@@ -102,13 +111,13 @@ public class NotesPanel : MonoBehaviour
     {
         notes = msg;
         Redraw();
-        if (menu != null) menu.Flash(Tutorial.German ? "Meeting-Notizen aktualisiert  →" : "Meeting notes updated  →");
+        if (menu != null) menu.Flash(Ui.German ? "Meeting-Notizen\naktualisiert  →" : "Meeting notes\nupdated  →");
         Debug.Log($"[notes] {msg.summary?.Length ?? 0} bullets, {msg.actions?.Length ?? 0} actions, {msg.next_steps?.Length ?? 0} next steps");
     }
 
     void Redraw()
     {
-        bool de = Tutorial.German;
+        bool de = Ui.German;
         var s = new StringBuilder();
         s.Append($"<size=60><b>{(de ? "Meeting-Notizen" : "Meeting notes")}</b></size>\n");
         if (notes == null)
@@ -125,19 +134,12 @@ public class NotesPanel : MonoBehaviour
         }
         body.text = s.ToString();
 
-        var size = bodyR.localBounds.size * TextScale;
-        float w = Mathf.Max(Width, size.x + 2 * Pad + StripW), h = size.y + 2 * Pad;
-        Rect(panel, panelT, w, h, 0.04f, Vector3.zero, Panel);
-        Rect(strip, stripT, StripW, h - 0.08f, StripW / 2, new Vector3(-w / 2 + 0.025f, 0, -0.001f), Accent);
+        var size = Ui.Size(body);
+        float w = Mathf.Max(Width, size.x + 2 * Pad + StripW);
+        h = size.y + 2 * Pad;
+        panel.Set(w, h, 0.04f, Vector3.zero, Panel);
+        strip.Set(StripW, h - 0.08f, StripW / 2, new Vector3(-w / 2 + 0.025f, 0, -0.001f), Accent);
         body.transform.localPosition = new Vector3(-w / 2 + Pad + StripW, h / 2 - Pad, -0.002f);
-    }
-
-    static void Rect(Material m, Transform t, float w, float h, float r, Vector3 at, Color c)
-    {
-        t.localScale = new Vector3(w, h, 1);
-        t.localPosition = at;
-        m.SetVector("_Rect", new Vector4(w, h, r, 0));
-        m.color = c;
     }
 
     static string ActionText(ActionMsg a) =>

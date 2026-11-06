@@ -1,7 +1,8 @@
 // Reachy follows the user's head. Starts by itself once the app has the robot: wake if needed, take the current head
 // direction as "straight ahead", follow. Hands: hold the right pinch (or trigger) to talk, like a walkie-talkie, so the
 // mic can never stay on by accident; left pinch recenters, or skips the room scan while it runs, or, while you look
-// at an entry of the QuickMenu, switches that; while the Tutorial is open, shows its next card.
+// at an entry of the QuickMenu, switches that; on the notes card's handle, drags it; while the Tutorial is open, it
+// goes to the tutorial, and Reachy neither wakes nor follows nor hears you (practice).
 
 using System.Collections;
 using System.Globalization;
@@ -24,6 +25,7 @@ public class RobotControl : MonoBehaviour
     public Transform head;
     public QuickMenu menu;
     public Tutorial tutorial;
+    public NotesPanel notes;
 
     readonly Recenter recenter = new Recenter();
     InputAction talk, recenterPress;
@@ -44,6 +46,12 @@ public class RobotControl : MonoBehaviour
     public string Summary { get; private set; } = "";
     public bool IsFollowing => mode == Mode.Following;
     public bool MicOn { get; private set; }
+    /// <summary>Pinch strength 0..1, for the tutorial's live view of the fingers.</summary>
+    public float RightLevel { get; private set; }
+    public float LeftLevel { get; private set; }
+    /// <summary>Left pinch held, for dragging the notes card.</summary>
+    public bool LeftHeld => recenterDown;
+    bool Paused => tutorial != null && tutorial.Open;   // the tutorial is practice: Reachy stays still meanwhile
     /// <summary>Set by the room scan: where to look instead of following the head.</summary>
     public RobotAngles? Override { get; set; }
     public bool Sweeping => sweep && sweepAt >= 0;
@@ -106,14 +114,14 @@ public class RobotControl : MonoBehaviour
             mirror = new HeadMirror();
             mode = Mode.Following;
         }
-        if (!sweep && !started && Application.isFocused && daemon.TargetConnected && daemon.Latest?.head_pose != null
+        if (!sweep && !started && !Paused && Application.isFocused && daemon.TargetConnected && daemon.Latest?.head_pose != null
             && video.VideoTexture != null)
         {
             started = true;
             StartCoroutine(Wake());
         }
         if (Sweeping && Time.unscaledTime - sweepAt >= SweepS) { sweep = false; sweepAt = -1f; mode = Mode.Idle; }
-        if (mode == Mode.Following && (Application.isFocused || Sweeping))
+        if (mode == Mode.Following && !Paused && (Application.isFocused || Sweeping))
         {
             var raw = Sweeping
                 ? new RobotAngles(0, 0, SweepYawDeg * Mathf.Sin(2 * Mathf.PI * (Time.unscaledTime - sweepAt) / SweepPeriodS))
@@ -132,10 +140,11 @@ public class RobotControl : MonoBehaviour
     void HandlePress()
     {
         float level = talk.ReadValue<float>();
+        RightLevel = level;
         if (level > PressLevel) talking = true;
         else if (level < ReleaseLevel) talking = false;
         if (talking) talkReleasedAt = Time.unscaledTime;
-        bool mic = talking || Time.unscaledTime - talkReleasedAt < MicHoldS;
+        bool mic = !Paused && (talking || Time.unscaledTime - talkReleasedAt < MicHoldS);
         if (mic != MicOn)
         {
             MicOn = mic;
@@ -143,19 +152,25 @@ public class RobotControl : MonoBehaviour
         }
 
         float left = recenterPress.ReadValue<float>();
+        LeftLevel = left;
         bool down = left > PressLevel || recenterDown && left > ReleaseLevel;
-        if (down && !recenterDown && tutorial != null && tutorial.Open) tutorial.Next();
-        else if (down && !recenterDown && menu != null && menu.Gazed) menu.Select();
-        else if (down && !recenterDown && mode == Mode.Following)
+        bool pressed = down && !recenterDown;
+        if (pressed && notes != null && notes.HandleGazed) notes.BeginDrag();
+        else if (pressed && menu != null && menu.Gazed) menu.Select();
+        else if (pressed && Paused) tutorial.LeftPinch();
+        else if (pressed && mode == Mode.Following)
         {
             if (Override != null) skip = true;
-            else
-            {
-                recenter.Set(HeadNow());
-                Debug.Log("[control] recentered");
-            }
+            else Recenter();
         }
         recenterDown = down;
+    }
+
+    /// <summary>Your current head direction becomes straight ahead.</summary>
+    public void Recenter()
+    {
+        recenter.Set(HeadNow());
+        Debug.Log("[control] recentered");
     }
 
     IEnumerator Post(string path)
