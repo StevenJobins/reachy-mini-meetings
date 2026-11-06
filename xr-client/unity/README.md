@@ -132,6 +132,18 @@ The backend needs a `DEEPL_AUTH_KEY` to translate; without one, bubbles show the
 
 **Testing with the headset in the same room as Reachy:** keep your mic off. With the mic on, your voice comes out of Reachy's speaker, and the mic chip's echo cancelling seems to remove your real voice too: no captions then. Not an issue when the headset is in another room. Speech played from the Mac at low volume is unreliable as a test.
 
+## Translation (Phase 4)
+
+Both directions, with as few buttons as possible:
+
+- **The room to you:** the bubbles are translated into the **headset's system language** (de, en, fr, it, es; otherwise English), sent to the backend as `{"type": "lang", "target": …}` on every connect.
+- **You to the room (Translate me, on by default):** hold the right pinch and talk as before. Your voice goes to the backend instead of straight to Reachy (`MicSender.cs`: 16 kHz int16, 40 ms frames, `voice_end` on release, same protocol as `../pages/mic.js`). Whisper transcribes it, DeepL translates it into the language most spoken in the room (`auto`), and Reachy says it. If you already speak that language, Reachy just says it in your words. For a few seconds, a line *Reachy (de→en): …* above the menu shows what was said.
+- **Settings row** (`QuickMenu.cs`): just under the image, visible only while you look at it. Look at an entry and pinch left: *Translate me: on/off* (off = your own voice straight to Reachy, as before), and *Bubbles: <language> >* (next language). Remembered on the headset. The left pinch elsewhere still recenters.
+
+Needs the backend running with `DEEPL_AUTH_KEY`. Without it, nothing is translated, and Reachy says your words as they are. Echo: test Translate me with the headset in another room, see *Speech bubbles*.
+
+Not yet tried in the headset (2026-11-06, written without Unity at hand): positions of the row (`Quick Menu` at `(0, -1.5, 2.75)` under `Video Window`; the status text moved down to `-1.85` to make room) may need tuning.
+
 ## Room panorama (Phase 4)
 
 Saved video frames around the live window (`RoomPanorama.cs`, `RoomScan.cs`, `RoomPatch.shader`), so turning your head shows the room at once and only what moves waits for the live video. Each patch is a frame on the same lens-corrected sphere, 10 % further away, dimmed to 80 %, with soft edges.
