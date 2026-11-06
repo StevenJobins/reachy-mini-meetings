@@ -207,6 +207,16 @@ public static class ProjectConfigure
         video.mic.room = video.room;
         video.mic.menu = quick;
 
+        // Guided tour on the first start, again from "Help" in the row
+        var tour = new GameObject("Tutorial");
+        tour.transform.SetParent(offset.transform, false);
+        var tutorial = tour.AddComponent<Tutorial>();
+        tutorial.head = camGo.transform;
+        tutorial.textMaterial = hud.textMaterial;
+        tutorial.panelMaterial = video.captions.panelMaterial;
+        quick.tutorial = tutorial;
+        video.control.tutorial = tutorial;
+
         video.view = window.AddComponent<VideoWindow>();
         video.view.control = video.control;
         video.view.video = video;

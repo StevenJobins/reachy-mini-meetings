@@ -2,9 +2,11 @@
 // Look at an entry and pinch left to switch it (RobotControl); otherwise the left pinch recenters as before.
 //   Translate me on / off: your voice goes to the backend, Reachy says it in the meeting language (MicSender)
 //   Bubbles: the language the room is translated into; starts as the headset's system language
+//   Help: the guided tour again (Tutorial)
 // Always there, small: "translated -> EN" while Translate me is on, and for a few seconds what Reachy said for you
 // (the backend's "me" message). Settings are remembered on the headset and sent again on every reconnect.
 
+using System.Linq;
 using UnityEngine;
 
 public class QuickMenu : MonoBehaviour
@@ -15,13 +17,16 @@ public class QuickMenu : MonoBehaviour
     static readonly string[] Langs = { "de", "en", "fr", "it", "es" };
     static readonly string[] LangNames = { "Deutsch", "English", "Français", "Italiano", "Español" };
     const float ShowDeg = 14f;            // the row shows while the gaze is this close to it
-    const float ItemW = 0.55f, ItemH = 0.14f, ItemGap = 0.7f;   // menu-local metres, see ProjectConfigure
+    // menu-local metres (the row is scaled 1.6 in ProjectConfigure): centre and width of each entry
+    static readonly float[] ItemX = { -0.78f, 0.06f, 0.78f }, ItemW = { 0.6f, 0.78f, 0.36f };
+    const float ItemH = 0.14f;
     const float MeS = 6f;
     const int MeChars = 60, MeLines = 2;
 
     public RoomSound room;
     public Transform head;
     public Material textMaterial;
+    public Tutorial tutorial;
 
     TextMesh[] items;
     TextMesh line, me;
@@ -45,7 +50,7 @@ public class QuickMenu : MonoBehaviour
 
         Translate = PlayerPrefs.GetInt(TranslateKey, 1) == 1;
         Target = PlayerPrefs.GetString(TargetKey, SystemLang());
-        items = new[] { Text("Translate", new Vector3(-ItemGap / 2, 0, 0), 56), Text("Bubbles", new Vector3(ItemGap / 2, 0, 0), 56) };
+        items = new[] { "Translate", "Bubbles", "Help" }.Select((n, i) => Text(n, new Vector3(ItemX[i], 0, 0), 48)).ToArray();
         line = Text("Line", new Vector3(0, -0.13f, 0), 36);
         me = Text("Me", new Vector3(0, 0.16f, 0), 44);
         me.anchor = TextAnchor.LowerCenter;
@@ -105,7 +110,7 @@ public class QuickMenu : MonoBehaviour
             for (int i = 0; i < items.Length; i++)
             {
                 var c = items[i].transform.localPosition;
-                if (Mathf.Abs(p.x - c.x) < ItemW / 2 && Mathf.Abs(p.y - c.y) < ItemH / 2) gazed = i;
+                if (Mathf.Abs(p.x - c.x) < ItemW[i] / 2 && Mathf.Abs(p.y - c.y) < ItemH / 2) gazed = i;
             }
         }
         foreach (var t in items) t.gameObject.SetActive(near);
@@ -129,6 +134,7 @@ public class QuickMenu : MonoBehaviour
             SendLang();
             Debug.Log($"[menu] bubbles in {Target}");
         }
+        else if (gazed == 2 && tutorial != null) tutorial.Show();
         PlayerPrefs.Save();
     }
 
@@ -154,12 +160,14 @@ public class QuickMenu : MonoBehaviour
 
     void Redraw()
     {
-        items[0].text = Item(0, Translate ? "Translate me: <b>on</b>" : "Translate me: off");
+        bool de = Tutorial.German;
+        items[0].text = Item(0, $"Translate me: {(Translate ? $"<b>{(de ? "an" : "on")}</b>" : de ? "aus" : "off")}");
         int i = System.Array.IndexOf(Langs, Target);
-        items[1].text = Item(1, $"Bubbles: <b>{(i >= 0 ? LangNames[i] : Target)}</b> >");
+        items[1].text = Item(1, $"{(de ? "Sprechblasen" : "Bubbles")}: <b>{(i >= 0 ? LangNames[i] : Target)}</b> >");
+        items[2].text = Item(2, de ? "Hilfe" : "Help");
         line.text = !Translate ? ""
-            : meetingLang != null ? $"<color=#9ca3af>your voice translated → {meetingLang.ToUpper()}</color>"
-            : "<color=#9ca3af>your voice translated into the room's language</color>";
+            : meetingLang != null ? $"<color=#9ca3af>{(de ? "deine Stimme übersetzt" : "your voice translated")} → {meetingLang.ToUpper()}</color>"
+            : $"<color=#9ca3af>{(de ? "deine Stimme wird in die Sprache des Raums übersetzt" : "your voice translated into the room's language")}</color>";
     }
 
     string Item(int i, string label) => gazed == i ? $"<color=#facc15>{label}</color>" : label;
