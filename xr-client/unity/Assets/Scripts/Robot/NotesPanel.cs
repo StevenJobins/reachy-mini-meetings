@@ -1,8 +1,12 @@
 // Live meeting notes from the backend (message "summary": summary bullets, action items, next steps; Gemini, in the
 // bubble language, see backend/README.md "Meeting notes"). A card in the room, by default 45° right of straight ahead,
-// like xr-client/pages/notes.js: look there to read it. It moves like a window in the headset: look at the handle
-// under it, hold the left pinch and look where it should go (RobotControl). The place is kept relative to straight
-// ahead, also after a restart. When new notes arrive, QuickMenu says so for a moment.
+// like xr-client/pages/notes.js: look there to read it. It moves like a window in the headset: point at the handle
+// under it with either hand (a dot and a closing ring show where, as in the headset's menus), pinch, hold, and move
+// that hand: the card goes along, a hand movement of 10° moves it
+// 25° around you. Only the hand moves it, not the head (it needs hand tracking). The place is kept relative to
+// straight ahead, also after a restart. When new notes arrive, QuickMenu says so for a moment.
+// New meeting: the button top right (look + pinch left, then once more to confirm) asks the backend to drop the
+// transcript; it also does that by itself after 20 min without speech. Either way empty notes arrive, the card clears.
 
 using System;
 using System.Collections.Generic;
@@ -20,6 +24,7 @@ public class NotesPanel : MonoBehaviour
         public ActionMsg[] actions;
         public string[] next_steps;
         public double t;
+        public bool new_meeting;
     }
 
     const string YawKey = "notes_yaw", UpKey = "notes_up";
@@ -29,6 +34,8 @@ public class NotesPanel : MonoBehaviour
     const float TextScale = 0.7f;
     const int Chars = 46, ItemLines = 3, MaxItems = 5;
     const float HandleW = 0.2f, HandleH = 0.022f, HandleGap = 0.04f;
+    const float DragGain = 2.5f, MaxUp = 40f;
+    const float ConfirmS = 3f;
     static readonly Color Panel = new Color(0.07f, 0.08f, 0.11f, 0.93f);
     static readonly Color Accent = new Color(1f, 0.58f, 0f);   // #ff9500
     static readonly Color Drag = new Color(0.22f, 0.74f, 0.97f);
@@ -36,18 +43,27 @@ public class NotesPanel : MonoBehaviour
     public RobotControl control;
     public Transform head;
     public QuickMenu menu;
+    public RoomSound room;
     public Material textMaterial, panelMaterial;
 
     Transform card;
-    Ui.Rect panel, strip, handle;
-    TextMesh body;
+    Ui.Rect panel, strip, handle, button;
+    TextMesh body, buttonText;
+    float armedAt = -10f;   // first pinch on New meeting; the second within ConfirmS clears
+    float w;
     SummaryMsg notes;
     float yaw, up, h;
-    bool handleGazed, dragging;
+    readonly bool[] onHandle = new bool[2], onButton = new bool[2];   // per hand: left, right
+    readonly Ui.Cursor[] cursors = new Ui.Cursor[2];
+    bool dragging;
+    float startYaw, startUp;
+    Vector2? handStart;   // hand direction (yaw, up) when the drag began; null until the hand is tracked
+    bool dragRight;
 
     /// <summary>The card, for the tutorial ("look to your right").</summary>
     public Transform Card => card;
-    public bool HandleGazed => handleGazed;
+    /// <summary>That hand points at the handle or the button: its pinch goes here (RobotControl).</summary>
+    public bool Hovered(bool right) => onHandle[right ? 1 : 0] || onButton[right ? 1 : 0];
 
     void Awake()
     {
@@ -59,6 +75,9 @@ public class NotesPanel : MonoBehaviour
         panel = Ui.Quad(card, "Panel", panelMaterial, 3015);
         strip = Ui.Quad(card, "Strip", panelMaterial, 3016);
         handle = Ui.Quad(card, "Handle", panelMaterial, 3016);
+        button = Ui.Quad(card, "NewMeeting", panelMaterial, 3016);
+        buttonText = Ui.Text(card, "NewMeetingText", text, 36, TextScale);
+        for (int i = 0; i < 2; i++) cursors[i] = new Ui.Cursor(card, panelMaterial);
         body = Ui.Text(card, "Text", text, 48, TextScale, TextAnchor.UpperLeft);
         Redraw();
     }
@@ -71,12 +90,16 @@ public class NotesPanel : MonoBehaviour
     {
         if (dragging)
         {
-            if (control.LeftHeld)
+            if (dragRight ? control.RightHeld : control.LeftHeld)
             {
-                // the card hangs on the gaze, same distance
-                var f = head.localRotation * Vector3.forward;
-                yaw = Mathf.DeltaAngle(0, Mathf.Atan2(f.x, f.z) * Mathf.Rad2Deg - FrameYaw);
-                up = Mathf.Asin(Mathf.Clamp(f.y, -1, 1)) * Mathf.Rad2Deg;
+                var hand = HandAngles(dragRight);
+                if (handStart == null && hand != null) { handStart = hand; startYaw = yaw; startUp = up; }
+                if (handStart is Vector2 h0 && hand is Vector2 h1)
+                {
+                    // the card goes along with the hand, around you, at the same distance
+                    yaw = startYaw + DragGain * Mathf.DeltaAngle(h0.x, h1.x);
+                    up = Mathf.Clamp(startUp + DragGain * (h1.y - h0.y), -MaxUp, MaxUp);
+                }
             }
             else
             {
@@ -92,26 +115,74 @@ public class NotesPanel : MonoBehaviour
         card.localPosition = head.localPosition + dir * Distance;
         card.localRotation = Quaternion.LookRotation(dir, Vector3.up);
 
-        var p = Ui.GazeOn(card, head);
+        bool armed = Time.unscaledTime - armedAt < ConfirmS;
+        bool de = Ui.German;
+        buttonText.text = armed ? (de ? "Wirklich? Nochmals pinchen" : "Sure? Pinch again") : (de ? "Neues Meeting" : "New meeting");
+        var bs = Ui.Size(buttonText);
+        var buttonAt = new Vector3(w / 2 - Pad - bs.x / 2 - 0.02f, h / 2 - Pad - 0.025f, -0.003f);
         var handleAt = new Vector3(0, -h / 2 - HandleGap, -0.001f);
-        handleGazed = !dragging && Ui.Inside(p, handleAt, HandleW + 0.12f, 0.09f);
+        for (int hand = 0; hand < 2; hand++)
+        {
+            bool right = hand == 1;
+            var aim = XrInput.Aim(right, head);
+            var p = Ui.PointOn(card, aim ?? XrInput.Gaze(head));
+            onHandle[hand] = !dragging && Ui.Inside(p, handleAt, HandleW + 0.12f, 0.09f);
+            onButton[hand] = !dragging && Ui.Inside(p, buttonAt, bs.x + 0.06f, 0.08f);
+            bool onCard = p is Vector3 q && Ui.Inside(q, new Vector3(0, -HandleGap / 2, 0), w + 0.1f, h + 2 * HandleGap + 0.1f);
+            if (aim != null && onCard) cursors[hand].Show(p.Value, right ? control.RightLevel : control.LeftLevel);
+            else cursors[hand].Hide();
+        }
+        bool overHandle = onHandle[0] || onHandle[1], overButton = onButton[0] || onButton[1];
         handle.Set(HandleW, HandleH, HandleH / 2, handleAt,
-            dragging ? Drag : new Color(1, 1, 1, handleGazed ? 0.95f : 0.35f));
+            dragging ? Drag : new Color(1, 1, 1, overHandle ? 0.95f : 0.35f));
+        button.Set(bs.x + 0.04f, 0.055f, 0.0275f, buttonAt + new Vector3(0, 0, 0.001f),
+            armed ? new Color(0.94f, 0.27f, 0.27f, 0.9f) : new Color(1, 1, 1, overButton ? 0.3f : 0.1f));
+        buttonText.transform.localPosition = buttonAt;
     }
 
-    /// <summary>Left pinch on the handle (RobotControl); the drag lasts while the pinch is held.</summary>
-    public void BeginDrag()
+    /// <summary>Pinch (either hand) on the handle (drag while held) or on New meeting (twice).</summary>
+    public void Press(bool right)
+    {
+        int hand = right ? 1 : 0;
+        if (onHandle[hand]) { BeginDrag(right); return; }
+        if (!onButton[hand]) return;
+        if (Time.unscaledTime - armedAt < ConfirmS)
+        {
+            armedAt = -10f;
+            room?.Backend?.Send("{\"type\": \"new_meeting\"}");
+            Debug.Log("[notes] new meeting asked");
+        }
+        else armedAt = Time.unscaledTime;
+    }
+
+    /// <summary>The drag lasts while that hand's pinch is held.</summary>
+    void BeginDrag(bool right)
     {
         dragging = true;
-        Debug.Log("[notes] drag");
+        dragRight = right;
+        startYaw = yaw;
+        startUp = up;
+        handStart = HandAngles(right);
+        Debug.Log($"[notes] drag with the {(right ? "right" : "left")} hand{(handStart == null ? ", not tracked yet" : "")}");
+    }
+
+    /// <summary>Direction from the eye to that hand's pinch, degrees in the tracking space; null without hand tracking.</summary>
+    Vector2? HandAngles(bool right)
+    {
+        if (!(XrInput.PinchPoint(!right, head) is Vector3 p)) return null;
+        var d = head.parent.InverseTransformDirection(p - head.position).normalized;
+        return new Vector2(Mathf.Atan2(d.x, d.z) * Mathf.Rad2Deg, Mathf.Asin(Mathf.Clamp(d.y, -1, 1)) * Mathf.Rad2Deg);
     }
 
     /// <summary>New notes from the backend (CaptionView).</summary>
     public void Show(SummaryMsg msg)
     {
-        notes = msg;
+        bool empty = (msg.summary?.Length ?? 0) + (msg.actions?.Length ?? 0) + (msg.next_steps?.Length ?? 0) == 0;
+        notes = empty ? null : msg;
         Redraw();
-        if (menu != null) menu.Flash(Ui.German ? "Meeting-Notizen\naktualisiert  →" : "Meeting notes\nupdated  →");
+        if (menu != null)
+            menu.Flash(empty ? Ui.German ? "Neues Meeting:\nNotizen geleert" : "New meeting:\nnotes cleared"
+                             : Ui.German ? "Meeting-Notizen\naktualisiert  →" : "Meeting notes\nupdated  →");
         Debug.Log($"[notes] {msg.summary?.Length ?? 0} bullets, {msg.actions?.Length ?? 0} actions, {msg.next_steps?.Length ?? 0} next steps");
     }
 
@@ -135,7 +206,7 @@ public class NotesPanel : MonoBehaviour
         body.text = s.ToString();
 
         var size = Ui.Size(body);
-        float w = Mathf.Max(Width, size.x + 2 * Pad + StripW);
+        w = Mathf.Max(Width, size.x + 2 * Pad + StripW);
         h = size.y + 2 * Pad;
         panel.Set(w, h, 0.04f, Vector3.zero, Panel);
         strip.Set(StripW, h - 0.08f, StripW / 2, new Vector3(-w / 2 + 0.025f, 0, -0.001f), Accent);

@@ -197,10 +197,11 @@ public static class ProjectConfigure
         video.captions.textMaterial = hud.textMaterial;
         video.captions.panelMaterial = SaveMaterial("Bubble", Shader.Find("Reachy/Bubble"), Color.white);
 
-        // Menu column at the left edge of the image, moves with it (QuickMenu places itself)
+        // Menu column at the lower left, still in the room (QuickMenu places itself relative to straight ahead)
         var menu = new GameObject("Quick Menu");
-        menu.transform.SetParent(window.transform, false);
+        menu.transform.SetParent(offset.transform, false);
         var quick = menu.AddComponent<QuickMenu>();
+        quick.control = video.control;
         quick.panelMaterial = video.captions.panelMaterial;
         quick.room = video.room;
         quick.head = camGo.transform;
@@ -217,6 +218,7 @@ public static class ProjectConfigure
         notesPanel.control = video.control;
         notesPanel.head = camGo.transform;
         notesPanel.menu = quick;
+        notesPanel.room = video.room;
         notesPanel.textMaterial = hud.textMaterial;
         notesPanel.panelMaterial = video.captions.panelMaterial;
         video.captions.notes = notesPanel;

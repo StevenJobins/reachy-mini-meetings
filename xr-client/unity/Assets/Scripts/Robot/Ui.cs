@@ -83,11 +83,47 @@ public static class Ui
     }
 
     /// <summary>Where the gaze (eyes, else head: XrInput) meets the plane of `t`, in its local coordinates; null if not.</summary>
-    public static Vector3? GazeOn(Transform t, Transform head)
+    public static Vector3? GazeOn(Transform t, Transform head) => PointOn(t, XrInput.Gaze(head));
+
+    /// <summary>Where a ray meets the plane of `t`, in its local coordinates; null if it does not.</summary>
+    public static Vector3? PointOn(Transform t, Ray ray)
     {
-        var ray = XrInput.Gaze(head);
         if (!new Plane(t.forward, t.position).Raycast(ray, out float d)) return null;
         return t.InverseTransformPoint(ray.GetPoint(d));
+    }
+
+    /// <summary>
+    /// The hand cursor on a panel, like in the headset's own menus: a dot where the hand points and a ring around it
+    /// that closes as thumb and index finger come together; the dot turns the accent colour once the pinch counts.
+    /// </summary>
+    public class Cursor
+    {
+        static readonly Color Ring = new Color(1, 1, 1, 0.28f), Dot = new Color(1, 1, 1, 0.95f), Pinched = new Color(0.98f, 0.8f, 0.08f);
+        const float DotD = 0.016f, OpenD = 0.06f;
+        readonly Rect ring, dot;
+
+        public Cursor(Transform parent, Material panel)
+        {
+            ring = Quad(parent, "CursorRing", panel, 3050);
+            dot = Quad(parent, "CursorDot", panel, 3051);
+            Hide();
+        }
+
+        /// <summary>At a point in the panel's local plane, pinch 0..1.</summary>
+        public void Show(Vector3 at, float pinch)
+        {
+            float d = Mathf.Lerp(OpenD, DotD * 1.2f, Mathf.Clamp01(pinch));
+            ring.Set(d, d, d / 2, new Vector3(at.x, at.y, -0.012f), Ring);
+            dot.Set(DotD, DotD, DotD / 2, new Vector3(at.x, at.y, -0.013f), pinch > 0.8f ? Pinched : Dot);
+            ring.Show(true);
+            dot.Show(true);
+        }
+
+        public void Hide()
+        {
+            ring.Show(false);
+            dot.Show(false);
+        }
     }
 
     public static bool Inside(Vector3? p, Vector3 centre, float w, float h) =>

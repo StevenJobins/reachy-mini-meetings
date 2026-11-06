@@ -5,6 +5,9 @@
 //   larger of this and the hand interaction profile's pinch value, so a pinch counts if either sees it.
 // - Gaze: where the eyes look (OpenXR eye gaze interaction), slightly smoothed; the head direction while the eyes are
 //   not tracked or not allowed. Used to pick menu tiles, the notes handle and the tour's "look at" tasks.
+// - Pinch point (between thumb and index tip), for carrying the notes card with the hand.
+// - Pointer rays: the system's aim ray of each hand (hand interaction profile, or the controller), like the cursor in
+//   the headset's own menus. The menu and the notes pick with these; with no ray, the gaze picks instead.
 // Every 2 s, adb logcat -s Unity shows [input] with both pinch sources and whether the eyes are tracked.
 
 using System.Collections.Generic;
@@ -27,6 +30,7 @@ public class XrInput : MonoBehaviour
     XRHandSubsystem hands;
     readonly List<XRHandSubsystem> found = new List<XRHandSubsystem>();
     InputAction eyePos, eyeRot, eyeTracked;
+    readonly InputAction[] aimPos = new InputAction[2], aimRot = new InputAction[2], aimTracked = new InputAction[2];
     Vector3 gazeDir;
     float loggedAt;
 
@@ -51,11 +55,33 @@ public class XrInput : MonoBehaviour
         eyeRot = Bind("<EyeGaze>/pose/rotation", "Quaternion");
         eyeTracked = Bind("<EyeGaze>/pose/isTracked", "Button");
         gazeDir = head.forward;
+        for (int i = 0; i < 2; i++)
+        {
+            var hand = i == 0 ? "{LeftHand}" : "{RightHand}";
+            aimPos[i] = Bind($"<HandInteraction>{hand}/pointer/position", "Vector3", $"<XRController>{hand}/pointerPosition");
+            aimRot[i] = Bind($"<HandInteraction>{hand}/pointer/rotation", "Quaternion", $"<XRController>{hand}/pointerRotation");
+            aimTracked[i] = Bind($"<HandInteraction>{hand}/pointer/isTracked", "Button", $"<XRController>{hand}/isTracked");
+        }
     }
 
-    static InputAction Bind(string path, string type)
+    /// <summary>The aim ray of one hand (or controller) in world space; null while it is not tracked.</summary>
+    public static Ray? Aim(bool right, Transform head)
+    {
+        if (instance == null) return null;
+        int i = right ? 1 : 0;
+        if (instance.aimTracked[i].ReadValue<float>() < 0.5f) return null;
+        var origin = head.parent.TransformPoint(instance.aimPos[i].ReadValue<Vector3>());
+        var dir = head.parent.rotation * (instance.aimRot[i].ReadValue<Quaternion>() * Vector3.forward);
+        return dir.sqrMagnitude > 0.5f ? new Ray(origin, dir) : (Ray?)null;
+    }
+
+    /// <summary>What picks for this hand: its aim ray, else the gaze.</summary>
+    public static Ray Pointer(bool right, Transform head) => Aim(right, head) ?? Gaze(head);
+
+    static InputAction Bind(string path, string type, string alternative = null)
     {
         var a = new InputAction(binding: path, expectedControlType: type);
+        if (alternative != null) a.AddBinding(alternative);
         a.Enable();
         return a;
     }
@@ -65,6 +91,9 @@ public class XrInput : MonoBehaviour
         eyePos.Dispose();
         eyeRot.Dispose();
         eyeTracked.Dispose();
+        foreach (var a in aimPos) a.Dispose();
+        foreach (var a in aimRot) a.Dispose();
+        foreach (var a in aimTracked) a.Dispose();
     }
 
     void Update()
@@ -91,8 +120,19 @@ public class XrInput : MonoBehaviour
         {
             loggedAt = Time.unscaledTime;
             Debug.Log($"[input] joints L {PinchLeft:0.00} R {PinchRight:0.00} ({(hands == null ? "no hand subsystem" : $"tracked L {hands.leftHand.isTracked} R {hands.rightHand.isTracked}")}), "
-                      + $"eyes {(EyesTracked ? "tracked" : "not tracked")}, permissions hand {Allowed(HandPermission)} eye {Allowed(EyePermission)}");
+                      + $"eyes {(EyesTracked ? "tracked" : "not tracked")}, aim rays L {Aim(false, head) != null} R {Aim(true, head) != null}, permissions hand {Allowed(HandPermission)} eye {Allowed(EyePermission)}");
         }
+    }
+
+    /// <summary>Between thumb tip and index tip of one hand, in world space; null while that hand is not tracked.</summary>
+    public static Vector3? PinchPoint(bool left, Transform head)
+    {
+        if (instance == null || instance.hands == null) return null;
+        var hand = left ? instance.hands.leftHand : instance.hands.rightHand;
+        if (!hand.isTracked) return null;
+        if (!hand.GetJoint(XRHandJointID.ThumbTip).TryGetPose(out var thumb)) return null;
+        if (!hand.GetJoint(XRHandJointID.IndexTip).TryGetPose(out var index)) return null;
+        return head.parent.TransformPoint((thumb.position + index.position) / 2);   // joints are in the tracking space
     }
 
     static bool Allowed(string p)

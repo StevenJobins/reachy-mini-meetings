@@ -1,6 +1,6 @@
 // Reachy follows the user's head. Starts by itself once the app has the robot: wake if needed, take the current head
 // direction as "straight ahead", follow. Hands: hold the right pinch (or trigger) to talk, like a walkie-talkie, so the
-// mic can never stay on by accident; left pinch recenters, or skips the room scan while it runs, or, while you look
+// mic can never stay on by accident (a right pinch on a menu tile or the notes works those instead); left pinch recenters, or skips the room scan while it runs, or, while you look
 // at an entry of the QuickMenu, switches that; on the notes card's handle, drags it; while the Tutorial is open, it
 // goes to the tutorial, and Reachy neither wakes nor follows nor hears you (practice).
 
@@ -35,6 +35,7 @@ public class RobotControl : MonoBehaviour
     HeadTarget lastSent;
     Mode mode = Mode.Idle;
     bool talking, recenterDown, started, skip;
+    bool rightDown, rightUi;   // rightUi: this right pinch went to the menu or the notes, so it is not talking
     float talkReleasedAt = float.NegativeInfinity;
     int sent, sentAtMark;
     float markAt;
@@ -51,6 +52,7 @@ public class RobotControl : MonoBehaviour
     public float LeftLevel { get; private set; }
     /// <summary>Left pinch held, for dragging the notes card.</summary>
     public bool LeftHeld => recenterDown;
+    public bool RightHeld => rightDown;
     bool Paused => tutorial != null && tutorial.Open;   // the tutorial is practice: Reachy stays still meanwhile
     /// <summary>Set by the room scan: where to look instead of following the head.</summary>
     public RobotAngles? Override { get; set; }
@@ -141,8 +143,16 @@ public class RobotControl : MonoBehaviour
     {
         float level = Mathf.Max(talk.ReadValue<float>(), XrInput.PinchRight);   // profile or hand joints
         RightLevel = level;
-        if (level > PressLevel) talking = true;
-        else if (level < ReleaseLevel) talking = false;
+        bool rightNow = level > PressLevel || rightDown && level > ReleaseLevel;
+        if (rightNow && !rightDown)
+        {
+            // a right pinch on the notes or a menu tile works them, like the left one, and does not talk
+            if (notes != null && notes.Hovered(true)) { notes.Press(true); rightUi = true; }
+            else if (menu != null && menu.Hovered(true)) { menu.Select(true); rightUi = true; }
+        }
+        if (!rightNow) rightUi = false;
+        rightDown = rightNow;
+        talking = rightNow && !rightUi;
         if (talking) talkReleasedAt = Time.unscaledTime;
         bool mic = !Paused && (talking || Time.unscaledTime - talkReleasedAt < MicHoldS);
         if (mic != MicOn)
@@ -155,8 +165,8 @@ public class RobotControl : MonoBehaviour
         LeftLevel = left;
         bool down = left > PressLevel || recenterDown && left > ReleaseLevel;
         bool pressed = down && !recenterDown;
-        if (pressed && notes != null && notes.HandleGazed) notes.BeginDrag();
-        else if (pressed && menu != null && menu.Gazed) menu.Select();
+        if (pressed && notes != null && notes.Hovered(false)) notes.Press(false);
+        else if (pressed && menu != null && menu.Hovered(false)) menu.Select(false);
         else if (pressed && Paused) tutorial.LeftPinch();
         else if (pressed && mode == Mode.Following)
         {

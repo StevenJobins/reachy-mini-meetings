@@ -139,9 +139,10 @@ The backend needs a `DEEPL_AUTH_KEY` to translate; without one, bubbles show the
 | Turn your head | Reachy looks along (Phase 2) |
 | **Hold the right pinch** (thumb + index finger) | Talk, like a walkie-talkie; let go = mic off. With *Translate me* on, Reachy says your sentences in the room's language, otherwise your own voice comes out of Reachy |
 | **Pinch left** | Your current view direction becomes "straight ahead"; skips the room scan while it runs |
-| **Look at a menu tile + pinch left** | The menu column at the left edge of the video, always visible: *Translate me* on/off, *Language* (opens a list: Deutsch, English, Français, Italiano, Español), *Help* (the tour again). The tile you look at gets a yellow frame |
+| **Point at a menu tile with either hand + pinch with that hand** | The menu column at the lower left, always visible and still in the room: *Translate me* on/off, *Language* (opens a list: Deutsch, English, Français, Italiano, Español), *Help* (the tour again). A dot shows where the hand points and its ring closes as you pinch, like in the headset's own menus; the tile pointed at gets a yellow frame |
 | **Look to your right** | The meeting notes: summary, action items (who, what, by when), next steps |
-| **Look at the bar under the notes, hold the left pinch** | Drag the notes like a window: they hang on your gaze until you let go, and stay there |
+| **Point at the bar under the notes, pinch (either hand), hold, move the hand** | Carry the notes like a window; they stay where you let go. Only the hand moves them, not the head |
+| **Point at *New meeting* on the notes, pinch twice** | Clear the notes for the next meeting (also happens by itself after 20 min without speech) |
 
 With controllers instead of hands: the trigger does what the pinch does.
 
@@ -153,6 +154,12 @@ Why push to talk: the mic can never stay on by accident; Reachy's own voice from
 
 - **Pinch:** the larger of the hand interaction profile's pinch value and the distance of thumb tip and index tip from the hand joints (4.5 cm = 0, 1.2 cm = 1). On the first headset test with the tour, pinches were not recognised; the joints are the second source, and `adb logcat -s Unity` shows `[input]` every 2 s with the joint pinch per hand, whether each hand is tracked, and both permissions.
 - **Gaze:** menu tiles, the notes handle and the tour's "look at" tasks follow the **eyes** when the headset tracks them (slightly smoothed), else the head. The tour card and the notes while dragging follow the head, which is steadier.
+
+### Pointing (menu and notes)
+
+Like the headset's own menus: each hand has its system aim ray (`XrInput.Aim`, the hand interaction profile's `pointer` pose, or the controller's). Where it meets the menu or the notes card, `Ui.Cursor` draws a dot and a ring around it; the ring closes from 6 cm to the dot's size as thumb and index finger come together, and the dot turns yellow once the pinch counts, so you see whether you are about to pick something. A pinch of that hand picks what it points at; a **right** pinch on the menu or the notes does that instead of talking. Hit areas are a bit larger than the tiles, and a tile stays picked for 0.3 s after the ray leaves it, against jitter. Without an aim ray (no hand tracking) the eyes pick, as before.
+
+The menu is no longer on the video window: it moved whenever Reachy turned, so looking at it made it slide away. It now stays still relative to straight ahead like the notes (`QuickMenu.SideDeg` −28°, `DownDeg` 14°, 1.5 m, three quarters size).
 
 ### Guided tour (first start)
 
@@ -177,7 +184,7 @@ Both directions, with as few buttons as possible. Most of it is automatic:
 - **The room to you:** the bubbles are translated into the **headset's system language** (de, en, fr, it, es; otherwise English). The app sends it to the backend as `{"type": "lang", "meeting": "auto", "target": …}` on every (re)connect (`BackendClient.Connects`), so a backend restart picks it up again. *Language* in the menu picks another one from a list.
 - **You to the room (Translate me, on by default):** while you hold the right pinch, the WebRTC mic track stays off and `MicSender.cs` sends your voice to the backend instead: the 48 kHz mic clip averaged down to 16 kHz, int16, in 40 ms frames (640 samples), `{"type": "voice_end"}` on release, the same protocol as `../pages/mic.js`. The backend cuts it into sentences, Whisper transcribes them (your language is detected per sentence), DeepL translates them into the language most spoken in the room (`auto`), and Reachy says them in order. If you already speak that language, Reachy says your words as they are.
 - **What Reachy said for you:** the backend's `me` message shows for 6 s under the menu as *Reachy (de→en): …*. The *Translate me* tile shows the room's language once the first sentence went through (*ON → EN*).
-- **Menu** (`QuickMenu.cs`): a column of three tiles 37° left of the image centre, on the image's left edge (the image spans ±44°; 49° was too far out in the headset), 2.5 m away, child of `Video Window`, so it moves with the image. *Translate me* is blue while on and shows the room's language once known (*ON → EN*). *Language* opens a list of the five languages right next to it (the current one blue); it closes after a choice or 3 s without looking at it. Gaze is a ray from the head onto the column's plane, no colliders (`Ui.GazeOn`). Settings are remembered on the headset (`PlayerPrefs`: `translate`, `target`, `tutorial`, `notes_yaw`, `notes_up`). What Reachy said for you and "notes updated" show for a few seconds under the column.
+- **Menu** (`QuickMenu.cs`): a column of three tiles at the lower left, 28° left of and 14° below straight ahead, 1.5 m away, still in the room (see *Pointing*; on the video window at 49°, 37° and 26° it was too far out or slid away when Reachy turned). *Translate me* is blue while on and shows the room's language once known (*ON → EN*). *Language* opens a list of the five languages right next to it (the current one blue); it closes after a choice or 3 s without looking at it. Gaze is a ray from the head onto the column's plane, no colliders (`Ui.GazeOn`). Settings are remembered on the headset (`PlayerPrefs`: `translate`, `target`, `tutorial`, `notes_yaw`, `notes_up`). What Reachy said for you and "notes updated" show for a few seconds under the column.
 
 The backend needs `DEEPL_AUTH_KEY`: without it nothing is translated, and Reachy says your words as they are. Echo: test Translate me with the headset in another room, see *Speech bubbles*.
 
@@ -187,7 +194,9 @@ Tried in the headset on 2026-11-06: translation both ways, the notes and the tou
 
 The backend writes live notes with Google Gemini every 45–60 s when something new was said (`GEMINI_API_KEY`, free tier; backend/README.md *Meeting notes*), in the bubble language, and sends them as `summary`: summary bullets, action items (who, what, by when) and next steps. `NotesPanel.cs` shows them on a card in the room, **45° to the right of straight ahead**, 1.7 m away and slightly below eye height, like the web app (`../pages/notes.js`). It follows recenter (heading only, so it stays upright). No button: look right to read it. When new notes arrive, *Meeting notes updated →* shows for 4 s under the menu.
 
-**Moving it**, like windows in the headset: a bar under the card lights up when you look at it; hold the left pinch on it and the card hangs on your gaze at the same distance until you let go. Its direction is kept relative to straight ahead (degrees right and up), also across restarts and recenters. A gaze ray and the left pinch, not a hand ray: the right pinch is push to talk, and hand rays would need the XR Hands package.
+**Moving it**, like windows in the headset: a bar under the card lights up when a hand points at it; pinch with that hand (left or right), hold, and move the hand: the card goes along around you at the same distance (10° of hand movement = 25° of card, so a small move is enough). Only the hand moves it, not the head; it needs hand tracking. Its direction is kept relative to straight ahead (degrees right and up), also across restarts and recenters. The first version moved the card with the head only, which felt like holding it without being able to carry it.
+
+**New meeting:** the notes are per meeting. The backend starts a new one by itself after **20 min without speech** (`--meeting-gap`), or when you point at *New meeting* top right on the card and pinch twice (the first pinch turns it red, *Sure? Pinch again*, for 3 s). It then drops the transcript, throws away a summary still being written for the old meeting, and sends empty notes with `"new_meeting": true`; the card clears and *New meeting: notes cleared* shows under the menu. Before, the notes of the last meeting stayed until the backend was restarted.
 
 Per section at most 5 items, each item at most 3 lines (cut with …). Before the first notes the card says when they will appear. A new connection gets the latest notes right after `hello`, so they are there again after an app restart.
 

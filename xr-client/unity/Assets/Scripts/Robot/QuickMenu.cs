@@ -1,5 +1,7 @@
-// The app's few settings, as a column of tiles at the left edge of the video, always visible. Look at a tile (with
-// the eyes when the headset tracks them, see XrInput; it gets a yellow frame) and pinch left (RobotControl):
+// The app's few settings, as a column of tiles at the lower left, always visible. It stays still in the room
+// (relative to straight ahead, like the notes), not on the video window, which moves whenever Reachy turns. Look at a
+// tile with either hand (a dot shows where it points, its ring closes as you pinch, like the headset's own menus) and
+// pinch with that hand (RobotControl); without hand rays the eyes pick. The tile pointed at gets a yellow frame:
 //   Translate me  on / off: your voice goes to the backend, Reachy says it in the room's language (MicSender)
 //   Language      opens a short list next to it: the language the room is translated into (bubbles and notes);
 //                 starts as the headset's system language
@@ -17,8 +19,10 @@ public class QuickMenu : MonoBehaviour
     public static readonly string[] Langs = { "de", "en", "fr", "it", "es" };
     public static readonly string[] LangNames = { "Deutsch", "English", "Français", "Italiano", "Español" };
 
-    // Place in the video window's frame (origin at the eye): on the left edge of the image, which spans ±44°
-    const float SideDeg = -37f, Distance = 2.5f;
+    // Left of and below straight ahead, 1.5 m away, three quarters size: in view without turning the head much.
+    // On the video window at 49°, 37° and 26° it was too far out or moved away when Reachy turned.
+    const float SideDeg = -28f, DownDeg = 14f, Distance = 1.5f, Scale = 0.75f;
+    const float HitPad = 0.04f, StickyS = 0.3f;   // larger hit area, and the gaze stays on a tile briefly after leaving
     const float TileW = 0.27f, TileH = 0.19f, Gap = 0.022f, Pad = 0.026f, Frame = 0.008f;
     const float RowW = 0.3f, RowH = 0.085f;
     const float ListCloseS = 3f, MeS = 6f, FlashS = 4f;
@@ -29,6 +33,7 @@ public class QuickMenu : MonoBehaviour
     static readonly Color Gaze = new Color(0.98f, 0.8f, 0.08f);            // #facc15
 
     public RoomSound room;
+    public RobotControl control;
     public Transform head;
     public Material textMaterial, panelMaterial;
     public Tutorial tutorial;
@@ -43,8 +48,10 @@ public class QuickMenu : MonoBehaviour
     readonly TextMesh[] rowText = new TextMesh[5];
     TextMesh me;
     Vector3[] tileAt, rowAt;
-    Item gazed = Item.None;
-    int gazedRow = -1;
+    class Hover { public Item Item = Item.None; public int Row = -1; public float ItemAt, RowAt; }
+    readonly Hover[] hover = { new Hover(), new Hover() };   // left, right hand
+    readonly Ui.Cursor[] cursors = new Ui.Cursor[2];
+    float h;
     bool listOpen;
     float listLookedAt;
     int sentConnects = -1;
@@ -53,23 +60,23 @@ public class QuickMenu : MonoBehaviour
 
     public bool Translate { get; private set; }
     public string Target { get; private set; }
-    public bool Gazed => gazed != Item.None || gazedRow >= 0;
-    /// <summary>For the tutorial: what is looked at and what happened.</summary>
-    public bool LanguageGazed => gazed == Item.Language;
+    /// <summary>That hand points at a tile or a language: its pinch goes here (RobotControl).</summary>
+    public bool Hovered(bool right) => hover[right ? 1 : 0].Item != Item.None || hover[right ? 1 : 0].Row >= 0;
+    /// <summary>For the tutorial: what is pointed at and what happened.</summary>
+    public bool LanguageGazed => hover[0].Item == Item.Language || hover[1].Item == Item.Language;
     public bool ListOpen => listOpen;
     public int LanguagePicks { get; private set; }
 
     void Awake()
     {
-        float a = SideDeg * Mathf.Deg2Rad;
-        transform.localPosition = new Vector3(Mathf.Sin(a), 0, Mathf.Cos(a)) * Distance;
-        transform.localRotation = Quaternion.Euler(0, SideDeg, 0);
+        transform.localScale = Vector3.one * Scale;
+        Place();
         text = Ui.TextMaterial(textMaterial, 3033);
 
         Translate = PlayerPrefs.GetInt(TranslateKey, 1) == 1;
         Target = PlayerPrefs.GetString(TargetKey, SystemLang());
 
-        float h = 3 * TileH + 2 * Gap + 2 * Pad;
+        h = 3 * TileH + 2 * Gap + 2 * Pad;
         back = Ui.Quad(transform, "Back", panelMaterial, 3030);
         back.Set(TileW + 2 * Pad, h, 0.04f, Vector3.zero, Back);
         tileAt = new Vector3[3];
@@ -102,8 +109,20 @@ public class QuickMenu : MonoBehaviour
         me = Ui.Text(transform, "Me", text, 36, 1f, TextAnchor.UpperCenter);
         me.transform.localPosition = new Vector3(0, -h / 2 - 0.04f, -0.002f);
         me.gameObject.SetActive(false);
+        for (int i = 0; i < 2; i++) cursors[i] = new Ui.Cursor(transform, panelMaterial);
         ShowList(false);
         Redraw();
+    }
+
+    static Quaternion ToUnity(Quat q) => new Quaternion(-(float)q.X, -(float)q.Y, (float)q.Z, (float)q.W);
+
+    /// <summary>Fixed relative to straight ahead (recenter), heading only, facing the eye.</summary>
+    void Place()
+    {
+        float frameYaw = control != null ? ToUnity(control.Frame.ToWorld(Quat.Identity)).eulerAngles.y : 0;
+        var rot = Quaternion.Euler(DownDeg, frameYaw + SideDeg, 0);
+        transform.localPosition = head.localPosition + rot * Vector3.forward * Distance;
+        transform.localRotation = rot;
     }
 
     /// <summary>Headset language if the backend can translate into it, else English.</summary>
@@ -125,28 +144,49 @@ public class QuickMenu : MonoBehaviour
             SendLang();
         }
 
-        var p = Ui.GazeOn(transform, head);
-        gazed = Item.None;
-        for (int i = 0; i < 3; i++)
-            if (Ui.Inside(p, tileAt[i], TileW + 2 * Frame, TileH + 2 * Frame)) gazed = (Item)i;
-        gazedRow = -1;
+        Place();
+        bool onList = false;
+        for (int hand = 0; hand < 2; hand++)
+        {
+            bool right = hand == 1;
+            var aim = XrInput.Aim(right, head);
+            var p = Ui.PointOn(transform, aim ?? XrInput.Gaze(head));
+            var hv = hover[hand];
+            var now = Item.None;
+            for (int i = 0; i < 3; i++)
+                if (Ui.Inside(p, tileAt[i], TileW + 2 * HitPad, TileH + Gap + HitPad)) now = (Item)i;
+            if (now != Item.None || Time.unscaledTime - hv.ItemAt > StickyS) hv.Item = now;
+            if (now != Item.None) hv.ItemAt = Time.unscaledTime;
+            int row = -1;
+            if (listOpen)
+                for (int i = 0; i < rows.Length; i++)
+                    if (Ui.Inside(p, rowAt[i], RowW + 2 * HitPad, RowH)) row = i;
+            if (row >= 0 || Time.unscaledTime - hv.RowAt > StickyS) hv.Row = listOpen ? row : -1;
+            if (row >= 0) hv.RowAt = Time.unscaledTime;
+            onList |= hv.Row >= 0 || hv.Item == Item.Language;
+
+            // the cursor, only for a real hand ray and only on the menu
+            bool onMenu = p is Vector3 q && (Ui.Inside(q, Vector3.zero, TileW + 2 * Pad + 0.1f, h + 0.1f)
+                                             || listOpen && Ui.Inside(q, rowAt[2], RowW + 0.15f, rows.Length * RowH + 0.1f));
+            if (aim != null && onMenu) cursors[hand].Show(p.Value, right ? control.RightLevel : control.LeftLevel);
+            else cursors[hand].Hide();
+        }
         if (listOpen)
         {
-            for (int i = 0; i < rows.Length; i++)
-                if (Ui.Inside(p, rowAt[i], RowW, RowH)) gazedRow = i;
-            if (gazedRow >= 0 || gazed == Item.Language) listLookedAt = Time.unscaledTime;
+            if (onList) listLookedAt = Time.unscaledTime;
             else if (Time.unscaledTime - listLookedAt > ListCloseS) ShowList(false);
         }
         if (me.gameObject.activeSelf && Time.unscaledTime > meUntil) me.gameObject.SetActive(false);
         Redraw();
     }
 
-    /// <summary>Left pinch while looking at a tile or a language.</summary>
-    public void Select()
+    /// <summary>A pinch of the hand that points at a tile or a language.</summary>
+    public void Select(bool right)
     {
-        if (gazedRow >= 0)
+        var hv = hover[right ? 1 : 0];
+        if (hv.Row >= 0)
         {
-            Target = Langs[gazedRow];
+            Target = Langs[hv.Row];
             PlayerPrefs.SetString(TargetKey, Target);
             PlayerPrefs.Save();
             SendLang();
@@ -155,7 +195,7 @@ public class QuickMenu : MonoBehaviour
             Debug.Log($"[menu] language {Target}");
             return;
         }
-        switch (gazed)
+        switch (hv.Item)
         {
             case Item.Translate:
                 Translate = !Translate;
@@ -224,12 +264,12 @@ public class QuickMenu : MonoBehaviour
         for (int i = 0; i < 3; i++)
         {
             tiles[i].Set(TileW, TileH, 0.025f, tileAt[i], i == 0 && Translate ? On : Tile);
-            frames[i].Show(gazed == (Item)i);
+            frames[i].Show(hover[0].Item == (Item)i || hover[1].Item == (Item)i);
         }
         if (!listOpen) return;
         for (int i = 0; i < rows.Length; i++)
         {
-            bool current = i == lang, look = i == gazedRow;
+            bool current = i == lang, look = hover[0].Row == i || hover[1].Row == i;
             rows[i].Set(RowW, RowH - 0.01f, 0.02f, rowAt[i], look ? Gaze : current ? On : Tile);
             rowText[i].text = look ? $"<color=#111111><b>{LangNames[i]}</b></color>" : current ? $"<b>{LangNames[i]}</b>" : LangNames[i];
         }

@@ -94,8 +94,8 @@ public class Tutorial : MonoBehaviour
                 Body = "Schau dorthin, wo für dich «geradeaus» sein soll, und pinche links. Das geht später jederzeit wieder.",
                 Footer = "Links pinchen" },
             new Card { Task = Task.PickLanguage, Hand = Hand.Left, Stay = true, DoneS = 2.5f, Title = "Menü und Sprache",
-                Body = "Links neben dem Video ist das Menü. Schau auf «Sprache», bis es gelb umrandet ist, und pinche links.",
-                Footer = "Auf «Sprache» schauen, links pinchen" },
+                Body = "Links unten ist das Menü. Zeig mit einer Hand auf «Sprache»: Ein Punkt zeigt, wohin du zeigst, und sein Ring schliesst sich beim Pinchen. Ist «Sprache» gelb umrandet, pinche mit dieser Hand.",
+                Footer = "Auf «Sprache» zeigen, pinchen" },
             new Card { Task = Task.Info, Hand = Hand.Left, Title = "Übersetzung",
                 Body = "Was im Raum gesagt wird, erscheint als Sprechblase über der Person, in deiner Sprache. Ist «Translate me» an (oben im Menü), sagt Reachy deine Sätze übersetzt in der Sprache des Raums. Ist es aus, hört man deine eigene Stimme.",
                 Footer = "Links pinchen: weiter" },
@@ -118,8 +118,8 @@ public class Tutorial : MonoBehaviour
                 Body = "Look where \"straight ahead\" should be for you and pinch left. You can do this again any time.",
                 Footer = "Pinch left" },
             new Card { Task = Task.PickLanguage, Hand = Hand.Left, Stay = true, DoneS = 2.5f, Title = "Menu and language",
-                Body = "The menu is to the left of the video. Look at \"Language\" until it has a yellow frame, and pinch left.",
-                Footer = "Look at \"Language\", pinch left" },
+                Body = "The menu is at the lower left. Point at \"Language\" with one hand: a dot shows where you point, and its ring closes as you pinch. Once \"Language\" has a yellow frame, pinch with that hand.",
+                Footer = "Point at \"Language\", pinch" },
             new Card { Task = Task.Info, Hand = Hand.Left, Title = "Translation",
                 Body = "What is said in the room appears as a speech bubble above the person, in your language. With \"Translate me\" on (top of the menu), Reachy says your sentences in the room's language. With it off, they hear your own voice.",
                 Footer = "Pinch left: next" },
@@ -193,7 +193,7 @@ public class Tutorial : MonoBehaviour
                 Succeed(De ? "Gesetzt: Das ist jetzt geradeaus." : "Set: this is straight ahead now.");
                 break;
             case Task.PickLanguage:
-                Hint(De ? "Schau dazu auf das Menü links neben dem Video." : "Look at the menu left of the video for this.");
+                Hint(De ? "Zeig dazu auf das Menü links unten." : "Point at the menu at the lower left for this.");
                 break;
             case Task.Finish:
                 Close();
@@ -252,13 +252,13 @@ public class Tutorial : MonoBehaviour
                     var name = i >= 0 ? QuickMenu.LangNames[i] : menu.Target;
                     Succeed(De ? $"Gut! Sprechblasen und Notizen kommen jetzt auf {name}." : $"Good! Bubbles and notes now come in {name}.");
                 }
-                else if (menu.ListOpen) Hint(De ? "Schau auf deine Sprache und pinche links." : "Look at your language and pinch left.");
-                else if (menu.LanguageGazed) Hint(De ? "Genau, jetzt links pinchen." : "That's it, now pinch left.");
+                else if (menu.ListOpen) Hint(De ? "Zeig auf deine Sprache und pinche." : "Point at your language and pinch.");
+                else if (menu.LanguageGazed) Hint(De ? "Genau, jetzt pinchen." : "That's it, now pinch.");
                 break;
             case Task.LookNotes:
                 if (notes != null && Vector3.Angle(XrInput.Gaze(head).direction, notes.Card.position - head.position) < NotesDeg)
-                    Succeed(De ? "Hier sind sie. Am Griff unten kannst du sie verschieben: anschauen, links pinchen und halten."
-                               : "Here they are. Drag them by the handle below: look at it, pinch left and hold.");
+                    Succeed(De ? "Hier sind sie. Am Griff unten kannst du sie verschieben: darauf zeigen, pinchen, halten und die Hand bewegen."
+                               : "Here they are. Move them by the handle below: point at it, pinch, hold and move your hand.");
                 break;
         }
     }
