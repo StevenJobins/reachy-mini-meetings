@@ -132,17 +132,31 @@ The backend needs a `DEEPL_AUTH_KEY` to translate; without one, bubbles show the
 
 **Testing with the headset in the same room as Reachy:** keep your mic off. With the mic on, your voice comes out of Reachy's speaker, and the mic chip's echo cancelling seems to remove your real voice too: no captions then. Not an issue when the headset is in another room. Speech played from the Mac at low volume is unreliable as a test.
 
+## How to use it (in the headset)
+
+On the first start a short guided tour explains everything, one card per control (`Tutorial.cs`). It is German when the headset is set to German, otherwise English. *Pinch left* shows the next card, and *Help* in the settings row opens it again.
+
+| You do | What happens |
+|---|---|
+| Turn your head | Reachy looks along (Phase 2) |
+| **Hold the right pinch** (thumb + index finger) | Talk, like a walkie-talkie; let go = mic off. With *Translate me* on, Reachy says your sentences in the room's language, otherwise your own voice comes out of Reachy |
+| **Pinch left** | Your current view direction becomes "straight ahead"; skips the room scan while it runs |
+| **Look below the video** | The settings row appears: *Translate me: on/off*, *Bubbles: <language> >*, *Help*. Look at an entry (it turns yellow) and pinch left |
+
+With controllers instead of hands: the trigger does what the pinch does.
+
 ## Translation (Phase 4)
 
-Both directions, with as few buttons as possible:
+Both directions, with as few buttons as possible. Most of it is automatic:
 
-- **The room to you:** the bubbles are translated into the **headset's system language** (de, en, fr, it, es; otherwise English), sent to the backend as `{"type": "lang", "target": …}` on every connect.
-- **You to the room (Translate me, on by default):** hold the right pinch and talk as before. Your voice goes to the backend instead of straight to Reachy (`MicSender.cs`: 16 kHz int16, 40 ms frames, `voice_end` on release, same protocol as `../pages/mic.js`). Whisper transcribes it, DeepL translates it into the language most spoken in the room (`auto`), and Reachy says it. If you already speak that language, Reachy just says it in your words. For a few seconds, a line *Reachy (de→en): …* above the menu shows what was said.
-- **Settings row** (`QuickMenu.cs`): just under the image, visible only while you look at it. Look at an entry and pinch left: *Translate me: on/off* (off = your own voice straight to Reachy, as before), and *Bubbles: <language> >* (next language). Remembered on the headset. The left pinch elsewhere still recenters.
+- **The room to you:** the bubbles are translated into the **headset's system language** (de, en, fr, it, es; otherwise English). The app sends it to the backend as `{"type": "lang", "meeting": "auto", "target": …}` on every (re)connect (`BackendClient.Connects`), so a backend restart picks it up again. *Bubbles* in the row cycles de → en → fr → it → es.
+- **You to the room (Translate me, on by default):** while you hold the right pinch, the WebRTC mic track stays off and `MicSender.cs` sends your voice to the backend instead: the 48 kHz mic clip averaged down to 16 kHz, int16, in 40 ms frames (640 samples), `{"type": "voice_end"}` on release, the same protocol as `../pages/mic.js`. The backend cuts it into sentences, Whisper transcribes them (your language is detected per sentence), DeepL translates them into the language most spoken in the room (`auto`), and Reachy says them in order. If you already speak that language, Reachy says your words as they are.
+- **What Reachy said for you:** the backend's `me` message shows for 6 s above the row as *Reachy (de→en): …*. Below the row, *your voice translated → EN* while Translate me is on (the language is known after the first sentence).
+- **Settings row** (`QuickMenu.cs`): 1.5 m under the window's centre, visible only while the gaze is within 14° of it. Gaze is a ray from the head onto the row's plane, no colliders. Settings are remembered on the headset (`PlayerPrefs`: `translate`, `target`, `tutorial`).
 
-Needs the backend running with `DEEPL_AUTH_KEY`. Without it, nothing is translated, and Reachy says your words as they are. Echo: test Translate me with the headset in another room, see *Speech bubbles*.
+The backend needs `DEEPL_AUTH_KEY`: without it nothing is translated, and Reachy says your words as they are. Echo: test Translate me with the headset in another room, see *Speech bubbles*.
 
-Not yet tried in the headset (2026-11-06, written without Unity at hand): positions of the row (`Quick Menu` at `(0, -1.5, 2.75)` under `Video Window`; the status text moved down to `-1.85` to make room) may need tuning.
+Built 2026-11-06 (Unity 6000.6.7f1, no compile errors), not yet tried in the headset. Positions may need tuning: `Quick Menu` at `(0, -1.5, 2.75)` under `Video Window` (the status text moved from `-1.75` to `-1.85` to make room), the tour card 1.5 m in front of the eye (`Tutorial.Distance`).
 
 ## Room panorama (Phase 4)
 
