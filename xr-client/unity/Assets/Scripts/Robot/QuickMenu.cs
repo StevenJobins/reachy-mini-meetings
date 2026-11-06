@@ -1,5 +1,5 @@
-// The app's few settings, as a column of tiles at the left edge of the video, always visible. Look at a tile (it
-// gets a yellow frame) and pinch left (RobotControl):
+// The app's few settings, as a column of tiles at the left edge of the video, always visible. Look at a tile (with
+// the eyes when the headset tracks them, see XrInput; it gets a yellow frame) and pinch left (RobotControl):
 //   Translate me  on / off: your voice goes to the backend, Reachy says it in the room's language (MicSender)
 //   Language      opens a short list next to it: the language the room is translated into (bubbles and notes);
 //                 starts as the headset's system language
@@ -17,8 +17,8 @@ public class QuickMenu : MonoBehaviour
     public static readonly string[] Langs = { "de", "en", "fr", "it", "es" };
     public static readonly string[] LangNames = { "Deutsch", "English", "Français", "Italiano", "Español" };
 
-    // Place in the video window's frame (origin at the eye): just left of the image, which spans ±44°
-    const float SideDeg = -49f, Distance = 2.6f;
+    // Place in the video window's frame (origin at the eye): on the left edge of the image, which spans ±44°
+    const float SideDeg = -37f, Distance = 2.5f;
     const float TileW = 0.27f, TileH = 0.19f, Gap = 0.022f, Pad = 0.026f, Frame = 0.008f;
     const float RowW = 0.3f, RowH = 0.085f;
     const float ListCloseS = 3f, MeS = 6f, FlashS = 4f;

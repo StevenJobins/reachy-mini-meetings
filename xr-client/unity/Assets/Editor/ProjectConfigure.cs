@@ -19,6 +19,7 @@ using UnityEngine.XR.Management;
 using UnityEngine.XR.OpenXR;
 using UnityEngine.XR.OpenXR.Features.Android;
 using UnityEngine.XR.OpenXR.Features.Interactions;
+using UnityEngine.XR.Hands.OpenXR;
 
 public static class ProjectConfigure
 {
@@ -112,6 +113,8 @@ public static class ProjectConfigure
         openxr.renderMode = OpenXRSettings.RenderMode.SinglePassInstanced;
         openxr.GetFeature<AndroidXRSupportFeature>().enabled = true;
         openxr.GetFeature<HandInteractionProfile>().enabled = true;       // Galaxy XR hands
+        openxr.GetFeature<HandTracking>().enabled = true;                 // hand joints (XR Hands): pinch fallback, adds HAND_TRACKING
+        openxr.GetFeature<EyeGazeInteraction>().enabled = true;           // eye gaze for picking, adds EYE_TRACKING_FINE
         openxr.GetFeature<KHRSimpleControllerProfile>().enabled = true;
         openxr.GetFeature<OculusTouchControllerProfile>().enabled = true; // Galaxy XR controllers report Touch-compatible input
         EditorUtility.SetDirty(openxr);
@@ -181,6 +184,7 @@ public static class ProjectConfigure
         video.control = video.gameObject.AddComponent<RobotControl>();
         video.control.video = video;
         video.control.head = camGo.transform;
+        video.gameObject.AddComponent<XrInput>().head = camGo.transform;
         video.gameObject.AddComponent<AppLifecycle>();
         video.mic = video.gameObject.AddComponent<MicSender>();
         video.mic.control = video.control;

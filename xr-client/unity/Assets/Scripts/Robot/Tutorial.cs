@@ -256,7 +256,7 @@ public class Tutorial : MonoBehaviour
                 else if (menu.LanguageGazed) Hint(De ? "Genau, jetzt links pinchen." : "That's it, now pinch left.");
                 break;
             case Task.LookNotes:
-                if (notes != null && Vector3.Angle(head.forward, notes.Card.position - head.position) < NotesDeg)
+                if (notes != null && Vector3.Angle(XrInput.Gaze(head).direction, notes.Card.position - head.position) < NotesDeg)
                     Succeed(De ? "Hier sind sie. Am Griff unten kannst du sie verschieben: anschauen, links pinchen und halten."
                                : "Here they are. Drag them by the handle below: look at it, pinch left and hold.");
                 break;

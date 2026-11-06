@@ -82,10 +82,10 @@ public static class Ui
         return new Rect { T = go.transform, M = m };
     }
 
-    /// <summary>Where the gaze ray meets the plane of `t`, in its local coordinates; null if it does not.</summary>
+    /// <summary>Where the gaze (eyes, else head: XrInput) meets the plane of `t`, in its local coordinates; null if not.</summary>
     public static Vector3? GazeOn(Transform t, Transform head)
     {
-        var ray = new Ray(head.position, head.forward);
+        var ray = XrInput.Gaze(head);
         if (!new Plane(t.forward, t.position).Raycast(ray, out float d)) return null;
         return t.InverseTransformPoint(ray.GetPoint(d));
     }

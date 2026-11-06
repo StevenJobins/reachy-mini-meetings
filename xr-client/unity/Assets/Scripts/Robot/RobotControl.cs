@@ -139,7 +139,7 @@ public class RobotControl : MonoBehaviour
 
     void HandlePress()
     {
-        float level = talk.ReadValue<float>();
+        float level = Mathf.Max(talk.ReadValue<float>(), XrInput.PinchRight);   // profile or hand joints
         RightLevel = level;
         if (level > PressLevel) talking = true;
         else if (level < ReleaseLevel) talking = false;
@@ -151,7 +151,7 @@ public class RobotControl : MonoBehaviour
             Debug.Log($"[control] mic {(mic ? "on" : "off")}");
         }
 
-        float left = recenterPress.ReadValue<float>();
+        float left = Mathf.Max(recenterPress.ReadValue<float>(), XrInput.PinchLeft);
         LeftLevel = left;
         bool down = left > PressLevel || recenterDown && left > ReleaseLevel;
         bool pressed = down && !recenterDown;
