@@ -26,6 +26,7 @@ dependencies = [
 [project.optional-dependencies]
 claude = ["anthropic>=1.0"]  # paid alternative to DeepL
 depth = ["torch", "transformers>=4.45", "pillow"]  # room-scan depth (Depth Anything V2 metric), depth.py
+speakers = ["torch", "transformers>=4.45"]  # subtitle colours: who talks, from the voice (WavLM), speakers.py
 dev = ["pytest", "ruff"]
 
 [project.scripts]

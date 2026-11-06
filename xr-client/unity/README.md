@@ -8,7 +8,7 @@ The headset app. Since 2026-10-30 this is the way forward ([docs/xr-client-strat
 | 1 | Video spike: robot camera via `com.unity.webrtc` (daemon signalling on the LAN), fps + latency against the web app (34 fps, 233 ms) | done (2026-10-30, real robot): **VR 72 fps**, video 60 fps, latency **median 141 ms** with the flash test, over Wi-Fi ([latency.md](../../docs/measurements/latency.md)). The web app's 233 ms came from the QR method on one Mac, so the two numbers are not a strict comparison |
 | 2 | Head-pose loop: port `pose.js`, targets and measured pose directly from the daemon | done (2026-10-30, real robot): Reachy follows the head, targets sent at 72 Hz. Follow lag not measured yet |
 | 3 | World-locked reprojection: port `camera.js` (video sphere, lens model) | done (2026-10-30, real robot): tried in the headset, comfortable after the pose fix below |
-| 4 | Feature parity, in this order: audio, captions, panorama with a short scan, notes, sign-in, depth. Speaker following is postponed (see below) | audio and speech bubbles working (2026-10-30), both still to be tried with the headset in another room |
+| 4 | Feature parity, in this order: audio, captions, panorama with a short scan, notes, sign-in, depth. Speaker following is postponed (see below) | audio working (2026-10-30); speech bubbles replaced by subtitles with speaker colours (2026-11-06), still to be tried on the robot |
 
 ## Setup
 
@@ -122,22 +122,21 @@ It listens on the Wi-Fi with a secret (`~/.config/reachy-meetings/lan_secret`), 
 $ADB shell am start -n ch.ethz.reachymeetings/com.unity3d.player.UnityPlayerGameActivity -e secret $(cat ~/.config/reachy-meetings/lan_secret)
 ```
 
-**If the room sound is silent:** check `curl localhost:8000/api/audio/config/parameter/AUDIO_MGR_MIC_GAIN`. If it fails (`status 68`, `exceeds 100 times`), the robot's mic chip is stuck and sends digital silence: put Reachy to sleep and power-cycle it. Seen once on 2026-10-30, cause unknown.
+**If the room sound is silent:** check `curl localhost:8000/api/audio/config/parameter/AUDIO_MGR_MIC_GAIN`. If it fails (`status 68`, `exceeds 100 times`), the robot's mic chip is stuck and sends digital silence: put Reachy to sleep and power-cycle it, then restart the backend. Seen on 2026-10-30 and again on 2026-11-06 (only "You" subtitles, no room captions; `/api/state/doa` then read exactly 50° all the time), cause unknown.
 
-## Speech bubbles (Phase 4)
+## Subtitles (Phase 4)
 
-Live captions from the backend appear above the speaker's head (`CaptionView.cs`, `Assets/Shaders/Bubble.shader`). Italic text is still changing; upright text is final. A bubble stays 8 s after its last update.
+Live captions from the backend and your own words, on a panel low in front of you (`CaptionView.cs`, what is shown when in `Subtitles.cs`). The panel stays put while you look around and glides after you once you look clearly elsewhere. The last 3 lines, newest at the bottom; a line fades 10 s after its last update. Italic text is still changing.
 
-- **Who said it** (`FaceSpeakers.Talker`): the face whose mouth moved most *while the words were said* (the caption's `t_start`–`t_end`; the caption itself arrives 1–2 s later), judged again with every update, so a wrong first guess gets corrected. The mic direction only breaks ties. If no mouth in view clearly moved, nobody in the picture gets the bubble: it waits at the top of the window, towards the voice, until the speaker comes into view.
-- **Stays on the person:** the bubble is fixed in the room (Reachy's measured head pose when the face was seen + the face direction), not on a spot in the video. When Reachy looks elsewhere it stays where the person is, over the panorama. Bubbles that would cover each other stack.
-- **Speaking marker:** from the backend's voice detection (~0.1 s, long before any text), an orange ring pulses around the face that is talking. When someone talks but no mouth in the picture moves, an arrow at the window edge points towards the voice (mic direction, so only roughly). Off while you hold the talk pinch.
-- **No speaker numbers or colours for now:** telling people apart was not reliable enough. `logcat` shows each decision: `[speakers] #12: p2 (mouth p1 0.011, p2 0.074)` and `[speaking] ...`, for counting right and wrong picks.
+- **Who said it:** each line starts with "Speaker A", "B", … in its own colour. The backend tells people apart by their **voice** (`backend/.../speakers.py`), so it works for people out of the picture and doesn't depend on where Reachy looks. Utterances under ~1 s stay grey (too short to tell), and a new person's first sentence may take the wrong colour until their voice is known.
+- **You:** while you hold the right pinch, your mic also goes to the backend, which transcribes it: a "You ● …" line while you talk, then your words about 1 s after you stop. The room mic is ignored for captions while you talk (+0.8 s), so your voice from Reachy's speaker doesn't show up a second time as a room speaker.
+- **Translation:** the translation is the main text, the original small underneath. Needs `DEEPL_AUTH_KEY` on the backend; without it, lines are in the original language.
 
-The marker's arrow needs the backend from 2026-11-06 or later (mic direction in its `vad` messages); with an older one only the ring shows.
+Needs the backend from 2026-11-06 or later (speaker ids, transcribe-only mode for your voice); it downloads its voice model (~380 MB) on the first start.
 
-The backend needs a `DEEPL_AUTH_KEY` to translate; without one, bubbles show the original language. With one, they show the translation with the original underneath.
+Speech bubbles above the speaker's head came first: picking the face from mouth movement and the mic direction failed on the robot (2026-11-06: no mouth in view ever moved enough, the mic direction sat at 40–53° left for everyone). That version is in git at `130ee11`.
 
-**Testing with the headset in the same room as Reachy:** keep your mic off. With the mic on, your voice comes out of Reachy's speaker, and the mic chip's echo cancelling seems to remove your real voice too: no captions then. Not an issue when the headset is in another room. Speech played from the Mac at low volume is unreliable as a test.
+**Testing with the headset in the same room as Reachy:** with the mic on, your voice comes out of Reachy's speaker, and the mic chip's echo cancelling seems to remove your real voice too: you get "You" lines, but no room captions while you talk. Not an issue when the headset is in another room. Speech played from the Mac at low volume is unreliable as a test.
 
 ## Room panorama (Phase 4)
 

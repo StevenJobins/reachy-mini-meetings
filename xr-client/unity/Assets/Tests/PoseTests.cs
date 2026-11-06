@@ -208,87 +208,41 @@ public class PoseTests
     }
 
     [Test]
-    public void FaceSpeakersMatchesSpeakersJs()
+    public void SubtitleLinesUpdateByIdAndKeepTheNewestThree()
     {
-        double D(string v) => double.Parse(v, CultureInfo.InvariantCulture);
-        var s = new FaceSpeakers(CameraModel.Calibrated());
-        foreach (var line in File.ReadAllLines("Assets/Tests/SpeakersGolden.txt").Where(l => l.StartsWith("step ")))
-        {
-            var p = line.Split(' ');
-            double? head = p[2] == "null" ? (double?)null : D(p[2]), doa = p[3] == "null" ? (double?)null : D(p[3]);
-            var faces = p[4] == "-" ? new Face[0] : p[4].Split(';').Select(f =>
-            {
-                var v = f.Split(',').Select(D).ToArray();
-                return new Face { Cx = v[0], Cy = v[1], Top = v[2], W = v[3], H = v[4], Mouth = v[5] < 0 ? (double?)null : v[5] };
-            }).ToArray();
-            s.Update(faces, D(p[1]), head);
-            var expected = p[5] == "-" ? new string[0] : p[5].Split(';');
-            Assert.That(s.Tracks.Count, Is.EqualTo(expected.Length), line);
-            for (int i = 0; i < expected.Length; i++)
-            {
-                var e = expected[i].Split(',');
-                Assert.That(s.Tracks[i].Id, Is.EqualTo(int.Parse(e[0])), line);
-                Assert.That(s.Tracks[i].Pid, Is.EqualTo(int.Parse(e[1])), line);
-                Assert.That(s.Tracks[i].Cx, Is.EqualTo(D(e[2])).Within(1e-8), line);
-            }
-            // the pick column (p[6]) is speakers.js's old live pick, replaced by Talker below
-        }
-    }
-
-    /// <summary>Two faces at 20/s from t = 0 to `until`; mouth(face, t) = jaw opening.</summary>
-    static FaceSpeakers TwoFaces(double until, Func<int, double, double> mouth)
-    {
-        var s = new FaceSpeakers(CameraModel.Calibrated());
-        for (double t = 0; t <= until + 1e-9; t += 0.05)
-            s.Update(new[]
-            {
-                new Face { Cx = 0.3, Cy = 0.4, Top = 0.3, W = 0.1, H = 0.2, Mouth = mouth(0, t) },
-                new Face { Cx = 0.7, Cy = 0.4, Top = 0.3, W = 0.1, H = 0.2, Mouth = mouth(1, t) },
-            }, t, 0);
-        return s;
-    }
-
-    static double Talking(double t, double amplitude = 0.08) => 0.1 + amplitude * Math.Sin(2 * Math.PI * 4 * t);
-    const double Silent = 0.02;
-
-    [Test]
-    public void TalkerIsWhoseMouthMovedWhileTheWordsWereSaidNotWhenTheCaptionCame()
-    {
-        // left face talks for 2 s, then the right one; the left one's caption arrives at 4 s (Whisper is late)
-        var s = TwoFaces(4, (f, t) => (f == 0) == (t < 2) ? Talking(t) : Silent);
-        Assert.That(s.Talker(0, 2, null).Cx, Is.EqualTo(0.3).Within(1e-6), "the utterance");
-        Assert.That(s.Talker(3.4, 4, null).Cx, Is.EqualTo(0.7).Within(1e-6), "now");
+        var s = new Subtitles();
+        s.Caption(1, false, "Hallo zusam", null, "de", null, 0);
+        s.Caption(1, true, "Hallo zusammen", null, "de", 2, 1);
+        s.Caption(1, true, "Hallo zusammen", "Hello everyone", "de", null, 2);
+        var l = s.Shown(2).Single();
+        Assert.That(l.Text, Is.EqualTo("Hello everyone"));
+        Assert.That(l.Original, Is.EqualTo("de: Hallo zusammen"));
+        Assert.That(l.Speaker, Is.EqualTo(2), "an update without a speaker keeps the one known");
+        Assert.That(l.Final, Is.True);
+        for (int id = 2; id <= 5; id++) s.Caption(id, true, $"line {id}", null, "en", id, 3);
+        Assert.That(s.Shown(3).Select(x => x.Text), Is.EqualTo(new[] { "line 3", "line 4", "line 5" }));
+        s.Caption(5, true, "", null, "en", null, 4);
+        Assert.That(s.Shown(4).Select(x => x.Text), Is.EqualTo(new[] { "line 2", "line 3", "line 4" }), "empty final: removed");
+        Assert.That(s.Shown(3 + Subtitles.FinalS + 0.1), Is.Empty, "faded out");
     }
 
     [Test]
-    public void NobodyIsTalkingWhenNoMouthInViewMoves()
+    public void YouLineIsLiveWhileTalkingAndUntilTheTextComes()
     {
-        // the speaker is out of the picture: a silent face must not get the bubble, also when it is the only one
-        var s = TwoFaces(2, (f, t) => Silent + 0.003 * Math.Sin(7 * t + f));
-        Assert.That(s.Talker(0, 2, null), Is.Null);
-        Assert.That(s.Talker(0, 2, s.AngleDeg(s.Tracks[0])), Is.Null, "the mic direction alone is not enough");
-        var one = new FaceSpeakers(CameraModel.Calibrated());
-        for (double t = 0; t <= 2; t += 0.05)
-            one.Update(new[] { new Face { Cx = 0.5, Cy = 0.4, Top = 0.3, W = 0.1, H = 0.2, Mouth = Silent } }, t, 0);
-        Assert.That(one.Talker(0, 2, 0), Is.Null);
-    }
-
-    [Test]
-    public void TalkerKeepsTheCurrentOneUnlessAnotherIsClearlyMoreActive()
-    {
-        var close = TwoFaces(2, (f, t) => Talking(t, f == 0 ? 0.06 : 0.07));
-        Assert.That(close.Talker(0, 2, null).Cx, Is.EqualTo(0.7).Within(1e-6), "no current: the more active one");
-        Assert.That(close.Talker(0, 2, null, close.Tracks[0]).Cx, Is.EqualTo(0.3).Within(1e-6), "close: kept");
-        var clear = TwoFaces(2, (f, t) => Talking(t, f == 0 ? 0.06 : 0.12));
-        Assert.That(clear.Talker(0, 2, null, clear.Tracks[0]).Cx, Is.EqualTo(0.7).Within(1e-6), "clearly more: switch");
-    }
-
-    [Test]
-    public void MicDirectionBreaksTiesBetweenTalkingFaces()
-    {
-        var s = TwoFaces(2, (f, t) => Talking(t));
-        Assert.That(s.Talker(0, 2, s.AngleDeg(s.Tracks[0])).Cx, Is.EqualTo(0.3).Within(1e-6));
-        Assert.That(s.Talker(0, 2, s.AngleDeg(s.Tracks[1])).Cx, Is.EqualTo(0.7).Within(1e-6));
+        var s = new Subtitles();
+        s.Caption(1, true, "room", null, "en", 1, 0);
+        s.Mic(true, 1);
+        Assert.That(s.Shown(1).Last().Live, Is.True, "talking: live line at the end");
+        s.Mic(false, 2);
+        s.Caption(2, false, "someone else", null, "en", 2, 2.5);
+        Assert.That(s.Shown(3).Last().Live, Is.True, "released, waiting for the text");
+        s.Me("Can you hear me?", 3.2);
+        var shown = s.Shown(3.2);
+        Assert.That(shown.Any(x => x.Live), Is.False);
+        Assert.That(shown.Last().You && shown.Last().Text == "Can you hear me?", Is.True);
+        s.Mic(true, 4);
+        s.Mic(false, 4.1);
+        Assert.That(s.Shown(4.1 + Subtitles.YouWaitS + 0.1).Any(x => x.Live), Is.False, "no text came: gone after a while");
     }
 
     [Test]
