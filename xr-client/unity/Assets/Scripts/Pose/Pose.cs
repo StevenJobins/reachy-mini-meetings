@@ -116,6 +116,28 @@ public struct HeadTarget
 }
 
 /// <summary>
+/// How far Reachy turns with the user: the front half only. Past MaxDeg it waits at the edge, and with the user's back
+/// to the room it comes back through the middle, so a full turn never swings it across its back (cables) and the
+/// yaw never jumps where the headset angle wraps at ±180. Continuous all the way round: the smoothing and rate
+/// limits after it keep every move gentle.
+/// </summary>
+public static class YawRange
+{
+    public const double MaxDeg = 100;   // head + body; the body turns at most MaxDeg − 65 = 35°
+    public const double HoldDeg = 140;  // user yaw up to which Reachy waits at MaxDeg, then back to 0 at 180
+
+    public static RobotAngles Fold(RobotAngles a) => new RobotAngles(a.Roll, a.Pitch, Fold(a.Yaw));
+
+    public static double Fold(double yaw)
+    {
+        double abs = Math.Abs(yaw), sign = Math.Sign(yaw);
+        if (abs <= MaxDeg) return yaw;
+        if (abs <= HoldDeg) return sign * MaxDeg;
+        return sign * MaxDeg * (180 - Math.Min(abs, 180)) / (180 - HoldDeg);
+    }
+}
+
+/// <summary>
 /// Same pipeline as robot/src/reachy_meetings_robot (head_mirror + safety): exponential smoothing -> clamp ->
 /// velocity/acceleration limit -> body follows (slower) when head yaw leaves the head/body window.
 /// </summary>

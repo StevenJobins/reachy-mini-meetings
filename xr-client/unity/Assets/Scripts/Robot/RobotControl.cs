@@ -1,6 +1,7 @@
 // Reachy follows the user's head. Starts by itself once the app has the robot: wake if needed, take the current head
 // direction as "straight ahead", follow. Hands: hold the right pinch (or trigger) to talk, like a walkie-talkie, so the
-// mic can never stay on by accident; left pinch recenters, or skips the room scan while it runs.
+// mic can never stay on by accident; left pinch recenters, or skips the room scan while it runs. Reachy only turns
+// across its front half (YawRange): a user turning all the way round does not drag it round its cables.
 
 using System.Collections;
 using System.Globalization;
@@ -114,7 +115,7 @@ public class RobotControl : MonoBehaviour
         {
             var raw = Sweeping
                 ? new RobotAngles(0, 0, SweepYawDeg * Mathf.Sin(2 * Mathf.PI * (Time.unscaledTime - sweepAt) / SweepPeriodS))
-                : Override ?? PoseMath.HeadsetToRobot(recenter.ToRelative(HeadNow()));
+                : Override ?? YawRange.Fold(PoseMath.HeadsetToRobot(recenter.ToRelative(HeadNow())));
             lastSent = mirror.Step(raw, Time.unscaledDeltaTime);
             daemon.SendTarget(lastSent);
             double nowS = DaemonClient.NowS();

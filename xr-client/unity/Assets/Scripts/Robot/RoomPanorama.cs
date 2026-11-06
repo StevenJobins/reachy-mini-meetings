@@ -2,9 +2,11 @@
 // taken with, so turning your head shows the room at once and only what moves waits for the live video on top. Fills
 // by itself as you look around; a short scan at the start gives it a head start (left pinch skips it). Patches are
 // placed by the measured pose: at rest it is accurate, while the head stops short of a command by its play.
+// Where no frame reaches (behind, straight down), the background is the mean colour of the saved frames, not blue.
 
 using System.Collections.Generic;
 using UnityEngine;
+using UnityEngine.Rendering;
 
 public class RoomPanorama : MonoBehaviour
 {
@@ -13,6 +15,8 @@ public class RoomPanorama : MonoBehaviour
     const double StillWindowS = 0.6, StillDeg = 1;
     const float RefreshS = 1f;           // at most one saved frame per this time, outside the scan
     const int QueueBase = 2010;          // below the live video (Geometry+100), newest on top
+    const int MeanW = 16, MeanH = 9;     // each saved frame shrunk to this for its mean colour
+    const float BackgroundDim = 0.8f;    // as dim as the patches (RoomPatch _Color)
 
     class Patch { public GameObject Go; public RenderTexture Frame; public Material Material; }
 
@@ -27,6 +31,9 @@ public class RoomPanorama : MonoBehaviour
     readonly PatchSlots slots = new PatchSlots();
     readonly Dictionary<int, Patch> patches = new Dictionary<int, Patch>();
     readonly List<int> order = new List<int>();   // oldest first
+    readonly Dictionary<int, Color> means = new Dictionary<int, Color>();
+    RenderTexture small;
+    Camera eye;
     bool scanned;
     float nextRefresh;
 
@@ -87,6 +94,7 @@ public class RoomPanorama : MonoBehaviour
             patch = patches[evicted.Value];
             patches.Remove(evicted.Value);
             order.Remove(evicted.Value);
+            means.Remove(evicted.Value);
         }
         else if (!patches.TryGetValue(slot.Id, out patch)) patch = Create();
         patches[slot.Id] = patch;
@@ -97,6 +105,29 @@ public class RoomPanorama : MonoBehaviour
         order.Add(slot.Id);
         for (int i = 0; i < order.Count; i++) patches[order[i]].Material.renderQueue = QueueBase + i;
         if (floor != null) floor.enabled = false;   // the scanned room replaces the virtual floor
+        SampleMean(slot.Id, patch.Frame);
+    }
+
+    void SampleMean(int id, RenderTexture frame)
+    {
+        if (small == null) small = new RenderTexture(MeanW, MeanH, 0, RenderTextureFormat.ARGB32);
+        Graphics.Blit(frame, small);
+        AsyncGPUReadback.Request(small, 0, TextureFormat.RGBA32, r => OnMean(r, id));
+    }
+
+    void OnMean(AsyncGPUReadbackRequest r, int id)
+    {
+        if (r.hasError || this == null || !patches.ContainsKey(id)) return;
+        var pixels = r.GetData<Color32>();
+        float red = 0, green = 0, blue = 0;
+        foreach (var c in pixels) { red += c.r; green += c.g; blue += c.b; }
+        float n = pixels.Length * 255f;
+        means[id] = new Color(red / n, green / n, blue / n);
+
+        var mean = Color.black;
+        foreach (var m in means.Values) mean += m;
+        if (eye == null) eye = head.GetComponent<Camera>();
+        if (eye != null) eye.backgroundColor = mean / means.Count * BackgroundDim;
     }
 
     Patch Create()
@@ -116,5 +147,6 @@ public class RoomPanorama : MonoBehaviour
     void OnDestroy()
     {
         foreach (var p in patches.Values) { p.Frame.Release(); Destroy(p.Material); }
+        if (small != null) small.Release();
     }
 }

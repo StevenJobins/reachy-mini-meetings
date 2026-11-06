@@ -246,6 +246,46 @@ public class PoseTests
     }
 
     [Test]
+    public void YawRangeKeepsTheFrontHalfAndIsContinuousAllTheWayRound()
+    {
+        Assert.That(YawRange.Fold(70), Is.EqualTo(70), "inside: unchanged");
+        Assert.That(YawRange.Fold(-100), Is.EqualTo(-100));
+        Assert.That(YawRange.Fold(130), Is.EqualTo(YawRange.MaxDeg), "past the edge: waits there");
+        Assert.That(YawRange.Fold(-140), Is.EqualTo(-YawRange.MaxDeg));
+        Assert.That(YawRange.Fold(160), Is.EqualTo(YawRange.MaxDeg / 2).Within(Tol), "back to the room: towards the middle");
+        Assert.That(YawRange.Fold(180), Is.EqualTo(0).Within(Tol));
+        Assert.That(YawRange.Fold(-180), Is.EqualTo(0).Within(Tol), "same at both ends of the wrap: no jump");
+        double prev = YawRange.Fold(-180);
+        for (double y = -179.5; y <= 180; y += 0.5)
+        {
+            double f = YawRange.Fold(y);
+            Assert.That(Math.Abs(f), Is.LessThanOrEqualTo(YawRange.MaxDeg));
+            Assert.That(Math.Abs(f - prev), Is.LessThan(1.5), $"no jump at {y}");
+            prev = f;
+        }
+    }
+
+    [Test]
+    public void AFullTurnOfTheUserDoesNotDragReachyRound()
+    {
+        // The user turns left twice all the way round at 90°/s, the headset yaw wrapping at ±180 like atan2
+        var m = new HeadMirror();
+        const double dt = 1 / 72.0;
+        HeadTarget prev = m.Step(new RobotAngles(), dt);
+        for (double t = 0; t < 8; t += dt)
+        {
+            double user = (90 * t + 180) % 360 - 180;
+            var o = m.Step(YawRange.Fold(new RobotAngles(0, 0, user)), dt);
+            // the rate limiters brake in steps of dt, so they may overshoot the edge by up to ~0.5°
+            Assert.That(Math.Abs(o.Yaw), Is.LessThanOrEqualTo(YawRange.MaxDeg + 1), $"head at t={t:0.00}");
+            Assert.That(Math.Abs(o.BodyYaw), Is.LessThanOrEqualTo(YawRange.MaxDeg - 65 + 1), $"body at t={t:0.00}");
+            Assert.That(Math.Abs(o.Yaw - prev.Yaw) / dt, Is.LessThanOrEqualTo(150 + 1e-6), "head speed limit");
+            Assert.That(Math.Abs(o.BodyYaw - prev.BodyYaw) / dt, Is.LessThanOrEqualTo(90 + 1e-6), "body speed limit");
+            prev = o;
+        }
+    }
+
+    [Test]
     public void BacklashSwallowsSmallMovesAndFollowsBigOnes()
     {
         var b = new Backlash(3);
