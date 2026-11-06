@@ -383,9 +383,10 @@
 • Frame rate: 34 → 72 fps. Chrome copied every frame and halved it with video. Unity keeps 72
 • Delay: 141 ms in the headset, over Wi-Fi, real camera. Measured with a flashing screen
 • Was 302 ms: video waited for unused audio. Removed it
-• Reprojection: frame shown where robot looked. Head turns feel instant
+• Reprojection: we treat the video like a poster fixed in the room instead of a screen strapped to your face, so when you turn your head the picture stays in place instantly and the robot's delay only shows as fresh video arriving a moment later
 • Panorama fills the edges
-• Shake caused motion sickness: head pose arrives unevenly. Now use commanded pose, 5× less shake, feels much better
+• Shake caused motion sickness, now feels much better
+• The measured head pose arrives unevenly over Wi-Fi, so instead we place the video using our own smooth commanded pose, delayed to match the robot and slowly corrected towards the measurement, which cut the jitter by about five times
 • Head play: 3° command barely moves it, small moves don't reach the robot. Found with photos, app accounts for it
 • Open: speaker following turned too far. Removed until we know why</aside>
 </section>
