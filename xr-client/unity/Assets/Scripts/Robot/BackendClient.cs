@@ -1,5 +1,6 @@
 // Connection to the caption backend on the laptop (backend/, ws://<laptop>:8766, protocol in captions.py).
 // Binary frames are the room sound; JSON messages wait in a queue for the main thread. Reconnects by itself.
+// Outgoing: JSON and binary frames (your voice for Translate me) in one queue, so they keep their order.
 //
 // Address and secret are set once and remembered on the headset:
 //   adb shell am start -n ch.ethz.reachymeetings/com.unity3d.player.UnityPlayerGameActivity -e secret <lan-secret>
@@ -23,11 +24,13 @@ public class BackendClient : IDisposable
     readonly string secret;
     readonly CancellationTokenSource cts = new CancellationTokenSource();
     readonly ConcurrentQueue<string> messages = new ConcurrentQueue<string>();
-    readonly ConcurrentQueue<string> outgoing = new ConcurrentQueue<string>();
+    readonly ConcurrentQueue<(byte[] data, bool binary)> outgoing = new ConcurrentQueue<(byte[] data, bool binary)>();
 
     public AudioJitterBuffer Audio { get; } = new AudioJitterBuffer();
     public bool Connected { get; private set; }
     public string LastError { get; private set; }
+    /// <summary>Counts up on every new connection, so settings can be sent again after a reconnect.</summary>
+    public int Connects { get; private set; }
 
     public BackendClient(string host, string secret)
     {
@@ -39,7 +42,10 @@ public class BackendClient : IDisposable
     public bool TryGetMessage(out string json) => messages.TryDequeue(out json);
 
     /// <summary>JSON to the backend, sent in order.</summary>
-    public void Send(string json) => outgoing.Enqueue(json);
+    public void Send(string json) => outgoing.Enqueue((Encoding.UTF8.GetBytes(json), false));
+
+    /// <summary>Binary frame to the backend, in order with the JSON messages.</summary>
+    public void SendBinary(byte[] data) => outgoing.Enqueue((data, true));
 
     async Task Loop()
     {
@@ -52,7 +58,9 @@ public class BackendClient : IDisposable
                 await ws.ConnectAsync(uri, cts.Token);
                 if (!string.IsNullOrEmpty(secret))
                     await SendText(ws, JsonUtility.ToJson(new AuthMsg { secret = secret }));
+                while (outgoing.TryDequeue(out _)) { }   // nothing stale from the last connection
                 Connected = true;
+                Connects++;
                 LastError = null;
                 _ = SendLoop(ws);
                 var text = new StringBuilder();
@@ -89,7 +97,9 @@ public class BackendClient : IDisposable
         {
             while (ws.State == WebSocketState.Open)
             {
-                if (outgoing.TryDequeue(out var json)) await SendText(ws, json);
+                if (outgoing.TryDequeue(out var m))
+                    await ws.SendAsync(new ArraySegment<byte>(m.data),
+                        m.binary ? WebSocketMessageType.Binary : WebSocketMessageType.Text, true, cts.Token);
                 else await Task.Delay(20, cts.Token);
             }
         }
