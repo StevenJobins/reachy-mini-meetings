@@ -2,6 +2,10 @@
 
 Every `every_s` seconds, if new final utterances arrived, the transcript goes to Gemini's
 OpenAI-compatible endpoint and comes back as JSON. Key from aistudio.google.com in GEMINI_API_KEY.
+
+One meeting at a time: after `gap_s` without speech (default 20 min) the next utterance starts a new meeting,
+and a client can start one with {"type": "new_meeting"}. Then the transcript is dropped and empty notes are
+published, so the headset clears its card; a summary still being written for the old meeting is thrown away.
 Note: on the free tier Google may use the content to improve its products, so it suits the course
 project but not confidential meetings.
 """
@@ -58,16 +62,31 @@ def parse_summary(text: str) -> dict | None:
 
 
 class Summarizer:
-    def __init__(self, target: str, model: str, every_s: float = 60.0) -> None:
+    def __init__(self, target: str, model: str, every_s: float = 60.0, gap_s: float = 20 * 60) -> None:
         self.key = os.environ.get("GEMINI_API_KEY")
         if not self.key:
             raise RuntimeError("GEMINI_API_KEY is not set (free key: aistudio.google.com/apikey)")
         self.set_target(target)
         self.model = model
         self.every_s = every_s
+        self.gap_s = gap_s
         self.lines: list[str] = []
         self.new = 0
         self.latest: dict | None = None
+        self.meeting = 0                    # counts up with every new meeting
+        self.last_t: float | None = None    # end of the last utterance
+        self.publish = None                 # set by run()
+
+    def reset(self, reason: str) -> None:
+        """New meeting: forget the transcript and the notes, tell the clients (empty notes)."""
+        self.lines.clear()
+        self.new = 0
+        self.last_t = None
+        self.meeting += 1
+        self.latest = {"summary": [], "actions": [], "next_steps": [], "t": round(time.time(), 3), "new_meeting": True}
+        log.info("summary: new meeting (%s)", reason)
+        if self.publish:
+            self.publish(self.latest)
 
     def set_target(self, target: str) -> None:
         """Language of the notes (the bubble language, switchable from the page)."""
@@ -76,6 +95,9 @@ class Summarizer:
     def add(self, caption: dict) -> None:
         if not caption["text"]:
             return
+        if self.lines and self.last_t is not None and caption["t_start"] - self.last_t > self.gap_s:
+            self.reset(f"{(caption['t_start'] - self.last_t) / 60:.0f} min without speech")
+        self.last_t = caption.get("t_end") or caption["t_start"]
         line = f"[{time.strftime('%H:%M', time.localtime(caption['t_start']))}] {caption['text']}"
         if caption.get("translation"):
             line += f"  ({caption['translation']})"
@@ -94,11 +116,13 @@ class Summarizer:
             return json.loads(r.read())["choices"][0]["message"]["content"]
 
     async def run(self, publish) -> None:
+        self.publish = publish
         while True:
             await asyncio.sleep(self.every_s)
             if not self.new:
                 continue
             self.new = 0
+            meeting = self.meeting
             transcript = "\n".join(self.lines[-MAX_LINES:])
             try:
                 reply = await asyncio.to_thread(self._request, transcript)
@@ -107,6 +131,8 @@ class Summarizer:
                 continue
             except (OSError, KeyError, ValueError) as e:
                 log.warning("summary failed: %s", e)
+                continue
+            if meeting != self.meeting:   # a new meeting began while Gemini was writing
                 continue
             notes = parse_summary(reply)
             if notes is None:

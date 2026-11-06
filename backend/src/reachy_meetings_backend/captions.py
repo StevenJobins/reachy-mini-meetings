@@ -13,6 +13,7 @@ Protocol (server -> headset, one JSON per message; keep in sync with xr-client):
             "target": str, "doa_deg": float | null, "azimuth_deg": float | null,
             "t_start": s, "t_end": s}
   summary  {"summary": [str], "actions": [{"who": str, "what": str, "when": str}], "next_steps": [str], "t": s}
+           all lists empty and "new_meeting": true when a new meeting began (clear the notes)
   faces    {"people": [{"cx", "cy", "top", "w", "h", "mouth"}], "t": s}   faces in the robot camera found here
            (vision.py, ~20/s): the page uses them instead of its own, much slower detector
   me       {"text": str, "lang": str, "translation": str | null, "target": str, "t": s}   what the remote
@@ -31,6 +32,7 @@ the language Reachy speaks for the remote user ("auto" = --meeting-lang, else th
 room lately) and the bubble language (caption translations, notes; default --target); sent by the page on
 every (re)connect, applies to everyone connected;
 {"type": "log", "lines": [str]} appends the page's log to ~/Library/Logs/reachy-headset.log;
+{"type": "new_meeting"} drops the transcript and the notes (summary.py; also after 20 min without speech);
 {"type": "time", "id": any} -> {"type": "time", "id", "t": server wall clock in ms}, answered at once: clock sync
 for the latency test across devices (QR shown on one computer, decoded in the headset, xr-client/pages/qr.html);
 {"type": "depth", "id": str, "w": int, "h": int, "jpeg": base64} = a room-scan frame: answered (to that client
@@ -354,7 +356,7 @@ class Pipeline:
             from .summary import Summarizer
 
             try:
-                self.summarizer = Summarizer(args.target, args.summary_model, args.summary_every)
+                self.summarizer = Summarizer(args.target, args.summary_model, args.summary_every, args.meeting_gap * 60)
             except RuntimeError as e:
                 log.warning("No summary: %s", e)
 
@@ -428,6 +430,8 @@ class Pipeline:
             if self.voice.gender != msg["gender"]:
                 self.voice.gender = msg["gender"]
                 log.info("Reachy's voice: %s (%s)", msg["gender"], self.voice.voice(self.meeting_lang()) or "system voice")
+        if msg.get("type") == "new_meeting" and self.summarizer:   # the headset clears the notes
+            self.summarizer.reset("asked by the headset")
         if msg.get("type") == "voice_end" and self.voice:   # the page stopped sending the remote user's voice
             self.me_queue.put_nowait(None)
         if msg.get("type") == "lang":
@@ -650,6 +654,8 @@ def cli() -> None:
     ap.add_argument("--summary-model", default="gemini-flash-lite-latest",
                     help="has free quota for new accounts (gemini-flash-latest ran into 429)")
     ap.add_argument("--summary-every", type=float, default=60, help="seconds between summaries")
+    ap.add_argument("--meeting-gap", type=float, default=20,
+                    help="minutes without speech after which the next utterance starts new meeting notes")
     ap.add_argument("--pause-db", type=float, default=-14,
                     help="room sound level between utterances (noise gate, needs the neural VAD); 0 = off")
     ap.add_argument("--no-focus-mic", dest="focus_mic", action="store_false",

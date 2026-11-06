@@ -118,6 +118,48 @@ def test_parse_summary_tolerates_shapes_and_rejects_garbage():
 
 
 # ---------------------------------------------------------------- hallucination filter
+def _summarizer(monkeypatch, published):
+    from reachy_meetings_backend.summary import Summarizer
+    monkeypatch.setenv("GEMINI_API_KEY", "test")
+    s = Summarizer("en", "model", gap_s=20 * 60)
+    s.publish = published.append
+    return s
+
+
+def test_new_meeting_after_a_long_pause_clears_the_notes(monkeypatch):
+    published = []
+    s = _summarizer(monkeypatch, published)
+    s.add({"text": "Budget first", "t_start": 1000.0, "t_end": 1002.0})
+    s.add({"text": "Then the timeline", "t_start": 1600.0, "t_end": 1603.0})   # 10 min: same meeting
+    assert len(s.lines) == 2 and published == [] and s.meeting == 0
+    s.add({"text": "Good morning", "t_start": 1603.0 + 21 * 60, "t_end": 1605.0 + 21 * 60})
+    assert s.meeting == 1 and len(s.lines) == 1 and "Good morning" in s.lines[0]
+    assert published == [s.latest] and published[0]["summary"] == [] and published[0]["new_meeting"] is True
+
+
+def test_new_meeting_on_request_and_old_summary_dropped(monkeypatch):
+    import asyncio
+    from reachy_meetings_backend import summary as summary_mod
+    published = []
+    s = _summarizer(monkeypatch, published)
+    s.every_s = 0
+    s.add({"text": "Budget first", "t_start": 1000.0, "t_end": 1002.0})
+
+    def slow_reply(_transcript):   # the user starts a new meeting while Gemini is still writing
+        s.reset("test")
+        return '{"summary": ["Budget first"], "actions": [], "next_steps": []}'
+    monkeypatch.setattr(s, "_request", slow_reply)
+
+    async def one_round():
+        task = asyncio.create_task(s.run(published.append))
+        await asyncio.sleep(0.05)
+        task.cancel()
+    asyncio.run(one_round())
+    assert s.meeting == 1 and s.lines == []
+    assert all(p["summary"] == [] for p in published)   # only the empty notes, not the old meeting's summary
+    assert summary_mod.MAX_LINES > 0
+
+
 def test_plausible_filters_whisper_hallucinations():
     assert plausible("Wie heißt deine Mutter?", 0.01, -0.3, 1.2)
     assert not plausible("Untertitelung des ZDF, 2020", 0.01, -0.2, 1.1)

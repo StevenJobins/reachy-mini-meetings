@@ -156,6 +156,8 @@ The page sends each room-scan frame (JPEG) over the caption WebSocket; `depth.py
 
 Every 45–60 s (`--summary-every`), if something new was said, the transcript goes to **Google Gemini** (free tier, `gemini-flash-lite-latest`; `gemini-flash-latest` ran out of free quota) and comes back as summary bullets, action items (who, what, by when) and next steps (open questions, decisions still to take), in the target language. It takes ~10 s and runs in the background.
 
+**One meeting at a time:** after 20 min without speech (`--meeting-gap`, minutes) the next utterance starts a new meeting, and a client can start one with `{"type": "new_meeting"}` (the headset's *New meeting* button). The transcript is dropped, a summary still being written for the old meeting is thrown away, and the clients get empty notes with `"new_meeting": true`. Tests: `test_new_meeting_*` in `tests/test_logic.py`.
+
 Key from https://aistudio.google.com/apikey → `export GEMINI_API_KEY="..."` (macOS/Linux, e.g. in `~/.zshrc`) or `setx GEMINI_API_KEY "..."` (Windows). Without a key the captions run as before, just without notes. Note: on the free tier Google may use the content to improve its products — fine for the course project, not for confidential meetings.
 
 **Speaker direction:** read from the daemon (`--daemon http://localhost:8000`, `GET /api/state/doa` + head yaw), no robot bridge needed.
