@@ -134,13 +134,14 @@ The backend needs a `DEEPL_AUTH_KEY` to translate; without one, bubbles show the
 
 ## How to use it (in the headset)
 
-On the first start a short guided tour explains everything, one card per control (`Tutorial.cs`). It is German when the headset is set to German, otherwise English. *Pinch left* shows the next card, and *Help* in the settings row opens it again.
+On the first start a short guided tour explains everything, one card per control or feature (`Tutorial.cs`: welcome, talking, translation, meeting notes, settings, recenter). It is German when the headset is set to German, otherwise English. *Pinch left* shows the next card, and *Help* in the settings row opens it again.
 
 | You do | What happens |
 |---|---|
 | Turn your head | Reachy looks along (Phase 2) |
 | **Hold the right pinch** (thumb + index finger) | Talk, like a walkie-talkie; let go = mic off. With *Translate me* on, Reachy says your sentences in the room's language, otherwise your own voice comes out of Reachy |
 | **Pinch left** | Your current view direction becomes "straight ahead"; skips the room scan while it runs |
+| **Look to your right** | The meeting notes: summary, action items (who, what, by when), next steps |
 | **Look below the video** | The settings row appears: *Translate me: on/off*, *Bubbles: <language> >*, *Help*. Look at an entry (it turns yellow) and pinch left |
 
 With controllers instead of hands: the trigger does what the pinch does.
@@ -157,6 +158,12 @@ Both directions, with as few buttons as possible. Most of it is automatic:
 The backend needs `DEEPL_AUTH_KEY`: without it nothing is translated, and Reachy says your words as they are. Echo: test Translate me with the headset in another room, see *Speech bubbles*.
 
 Built 2026-11-06 (Unity 6000.6.7f1, no compile errors), not yet tried in the headset. Positions may need tuning: `Quick Menu` at `(0, -1.5, 2.75)` under `Video Window` (the status text moved from `-1.75` to `-1.85` to make room), the tour card 1.5 m in front of the eye (`Tutorial.Distance`).
+
+## Meeting notes (Phase 4)
+
+The backend writes live notes with Google Gemini every 45–60 s when something new was said (`GEMINI_API_KEY`, free tier; backend/README.md *Meeting notes*), in the bubble language, and sends them as `summary`: summary bullets, action items (who, what, by when) and next steps. `NotesPanel.cs` shows them on a card in the room, **45° to the right of straight ahead**, 1.7 m away and slightly below eye height, like the web app (`../pages/notes.js`). It follows recenter (heading only, so it stays upright). No button: look right to read it. When new notes arrive, *Meeting notes updated →* shows for 4 s under the video.
+
+Per section at most 5 items, each item at most 3 lines (cut with …). Before the first notes the card says when they will appear. A new connection gets the latest notes right after `hello`, so they are there again after an app restart.
 
 ## Room panorama (Phase 4)
 
