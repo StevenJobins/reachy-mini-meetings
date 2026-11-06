@@ -53,6 +53,7 @@ public class CaptionView : MonoBehaviour
     public Transform window;
     public Material textMaterial, panelMaterial;
     public QuickMenu menu;
+    public NotesPanel notes;
 
     readonly Dictionary<int, Bubble> bubbles = new Dictionary<int, Bubble>();
     readonly CameraModel cam = CameraModel.Calibrated();
@@ -120,6 +121,9 @@ public class CaptionView : MonoBehaviour
                 var c = JsonUtility.FromJson<CaptionMsg>(json);
                 c.Doa = json.Contains("\"doa_deg\": null") ? (double?)null : c.doa_deg;
                 OnCaption(c);
+                break;
+            case "summary":   // meeting notes; the latest also comes right after hello
+                if (notes != null) notes.Show(JsonUtility.FromJson<NotesPanel.SummaryMsg>(json));
                 break;
             case "me":   // what Reachy said for you (Translate me)
                 if (menu != null) menu.ShowMe(JsonUtility.FromJson<QuickMenu.MeMsg>(json));

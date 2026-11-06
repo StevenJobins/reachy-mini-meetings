@@ -1,4 +1,4 @@
-// Short guided tour on the first start: a card in front of you, one control per card, with a small animated pinch
+// Short guided tour on the first start: a card in front of you, one control or feature per card, with a small animated pinch
 // for the hand it is about. Left pinch = next card (RobotControl). Shown again from "Help" in the QuickMenu.
 // German if the headset is set to German, else English. Reachy keeps following your head meanwhile.
 
@@ -38,6 +38,8 @@ public class Tutorial : MonoBehaviour
                 "Rechte Hand: Daumen und Zeigefinger zusammen und halten, solange du sprichst, wie bei einem Walkie-Talkie. Loslassen schaltet das Mikrofon aus.", Hand.Right),
             new Card("Übersetzung",
                 "Was im Raum gesagt wird, erscheint als Sprechblase über der Person, in deiner Sprache. Mit «Translate me» sagt Reachy deine Sätze übersetzt in der Sprache des Raums.", Hand.None),
+            new Card("Meeting-Notizen",
+                "Schau nach rechts: Dort steht laufend, worum es geht, wer was bis wann erledigt und was als Nächstes ansteht. Sie werden jede Minute neu geschrieben.", Hand.None),
             new Card("Einstellungen",
                 "Schau unter das Video: Dort erscheint eine kleine Leiste. Eintrag anschauen und mit der linken Hand pinchen, um ihn umzuschalten.", Hand.Left),
             new Card("Geradeaus neu setzen",
@@ -51,6 +53,8 @@ public class Tutorial : MonoBehaviour
                 "Right hand: touch thumb and index finger and hold while you talk, like a walkie-talkie. Let go and the mic is off.", Hand.Right),
             new Card("Translation",
                 "What is said in the room appears as a speech bubble above the person, in your language. With \"Translate me\", Reachy says your sentences in the room's language.", Hand.None),
+            new Card("Meeting notes",
+                "Look to your right: a live summary of what is being discussed, who does what by when, and what comes next. Rewritten every minute.", Hand.None),
             new Card("Settings",
                 "Look below the video: a small row appears. Look at an entry and pinch with your left hand to switch it.", Hand.Left),
             new Card("Recenter",

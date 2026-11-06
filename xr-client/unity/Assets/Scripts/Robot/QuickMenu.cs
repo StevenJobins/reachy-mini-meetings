@@ -145,6 +145,14 @@ public class QuickMenu : MonoBehaviour
         room.Backend.Send($"{{\"type\": \"lang\", \"meeting\": \"auto\", \"target\": \"{Target}\"}}");
     }
 
+    /// <summary>A short note in the same place as the "me" line, e.g. new meeting notes (NotesPanel).</summary>
+    public void Flash(string message)
+    {
+        me.text = $"<color=#ff9500>{message}</color>";
+        me.gameObject.SetActive(true);
+        meUntil = Time.unscaledTime + 4f;
+    }
+
     /// <summary>What Reachy just said for you (from CaptionView).</summary>
     public void ShowMe(MeMsg m)
     {

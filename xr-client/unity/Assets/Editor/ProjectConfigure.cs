@@ -207,6 +207,17 @@ public static class ProjectConfigure
         video.mic.room = video.room;
         video.mic.menu = quick;
 
+        // Meeting notes in the room, right of straight ahead
+        var notes = new GameObject("Meeting Notes");
+        notes.transform.SetParent(offset.transform, false);
+        var notesPanel = notes.AddComponent<NotesPanel>();
+        notesPanel.control = video.control;
+        notesPanel.head = camGo.transform;
+        notesPanel.menu = quick;
+        notesPanel.textMaterial = hud.textMaterial;
+        notesPanel.panelMaterial = video.captions.panelMaterial;
+        video.captions.notes = notesPanel;
+
         // Guided tour on the first start, again from "Help" in the row
         var tour = new GameObject("Tutorial");
         tour.transform.SetParent(offset.transform, false);
