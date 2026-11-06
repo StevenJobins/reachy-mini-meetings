@@ -52,6 +52,7 @@ public class CaptionView : MonoBehaviour
     public RobotControl control;
     public Transform window;
     public Material textMaterial, panelMaterial;
+    public QuickMenu menu;
 
     readonly Dictionary<int, Bubble> bubbles = new Dictionary<int, Bubble>();
     readonly CameraModel cam = CameraModel.Calibrated();
@@ -120,6 +121,9 @@ public class CaptionView : MonoBehaviour
                 c.Doa = json.Contains("\"doa_deg\": null") ? (double?)null : c.doa_deg;
                 OnCaption(c);
                 break;
+            case "me":   // what Reachy said for you (Translate me)
+                if (menu != null) menu.ShowMe(JsonUtility.FromJson<QuickMenu.MeMsg>(json));
+                break;
         }
     }
 
@@ -184,7 +188,7 @@ public class CaptionView : MonoBehaviour
     }
 
     /// <summary>Word wrap; keeps the end, that is what is being said now.</summary>
-    static IEnumerable<string> Wrap(string s, int width, int maxLines)
+    internal static IEnumerable<string> Wrap(string s, int width, int maxLines)
     {
         var lines = new List<string>();
         var line = new StringBuilder();
@@ -198,7 +202,7 @@ public class CaptionView : MonoBehaviour
         return lines.Skip(Math.Max(0, lines.Count - maxLines));
     }
 
-    static string Escape(string s) => s.Replace('<', '‹').Replace('>', '›');
+    internal static string Escape(string s) => s.Replace('<', '‹').Replace('>', '›');
 
     void Redraw(Bubble b)
     {

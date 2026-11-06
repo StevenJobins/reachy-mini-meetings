@@ -1,6 +1,7 @@
 // Reachy follows the user's head. Starts by itself once the app has the robot: wake if needed, take the current head
 // direction as "straight ahead", follow. Hands: hold the right pinch (or trigger) to talk, like a walkie-talkie, so the
-// mic can never stay on by accident; left pinch recenters, or skips the room scan while it runs.
+// mic can never stay on by accident; left pinch recenters, or skips the room scan while it runs, or, while you look
+// at an entry of the QuickMenu, switches that.
 
 using System.Collections;
 using System.Globalization;
@@ -21,6 +22,7 @@ public class RobotControl : MonoBehaviour
 
     public RobotVideo video;
     public Transform head;
+    public QuickMenu menu;
 
     readonly Recenter recenter = new Recenter();
     InputAction talk, recenterPress;
@@ -141,7 +143,8 @@ public class RobotControl : MonoBehaviour
 
         float left = recenterPress.ReadValue<float>();
         bool down = left > PressLevel || recenterDown && left > ReleaseLevel;
-        if (down && !recenterDown && mode == Mode.Following)
+        if (down && !recenterDown && menu != null && menu.Gazed) menu.Select();
+        else if (down && !recenterDown && mode == Mode.Following)
         {
             if (Override != null) skip = true;
             else

@@ -165,7 +165,7 @@ public static class ProjectConfigure
         // Status text below the image, moves with the window
         var label = new GameObject("Fps Label");
         label.transform.SetParent(window.transform, false);
-        label.transform.localPosition = new Vector3(0, -1.75f, 2.75f);
+        label.transform.localPosition = new Vector3(0, -1.85f, 2.75f);   // room for the Quick Menu above
         label.transform.localScale = Vector3.one * 1.6f;
         var hud = label.AddComponent<FpsLabel>();
         hud.textMaterial = SaveMaterial("WorldText", Shader.Find("Reachy/WorldText"), Color.white);
@@ -192,6 +192,20 @@ public static class ProjectConfigure
         video.captions.window = window.transform;
         video.captions.textMaterial = hud.textMaterial;
         video.captions.panelMaterial = SaveMaterial("Bubble", Shader.Find("Reachy/Bubble"), Color.white);
+
+        // Settings row just under the image, shown while you look at it (Translate me, bubble language)
+        var menu = new GameObject("Quick Menu");
+        menu.transform.SetParent(window.transform, false);
+        menu.transform.localPosition = new Vector3(0, -1.5f, 2.75f);
+        menu.transform.localScale = Vector3.one * 1.6f;
+        var quick = menu.AddComponent<QuickMenu>();
+        quick.room = video.room;
+        quick.head = camGo.transform;
+        quick.textMaterial = hud.textMaterial;
+        video.captions.menu = quick;
+        video.control.menu = quick;
+        video.mic.room = video.room;
+        video.mic.menu = quick;
 
         video.view = window.AddComponent<VideoWindow>();
         video.view.control = video.control;
