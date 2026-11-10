@@ -85,6 +85,10 @@ Unplugging and re-plugging the robot: the mic callback just stops (no exception)
 
 Tests, without models, mic or network: `pytest -q`
 
+### Recording a test meeting
+
+`python scripts/record_meeting.py --people 3 --note "table, 1.5 m"` records the robot camera (1080p), the room sound (channel 0 as the backend hears it, plus all channels), and the daemon's mic direction and head pose about 10 times a second, into `~/reachy-data/<date_time>/` (never into the repo: the recordings show people). It only reads, the robot is not moved. It leads through three parts and writes the labels: everyone reads sentences in English and German (who spoke when, and the reference text for word errors), one person talks from one spot with the head at 0°, +30°, −30° (is the mic direction relative to the head or the body?), then free discussion. Stop the caption backend first if the camera is busy. Checked on the robot on 2026-11-10: 56 frames/s, 2 audio channels, 9 state readings/s.
+
 ### Your voice in the meeting language ("Translate" button)
 
 With 🌐 *Translate* on, the headset sends your voice to this server (binary frames, int16 PCM, 16 kHz mono) instead of straight to the robot. A second VAD cuts it into sentences; Whisper transcribes each one (your language is detected per sentence, `--lang` does not apply to your voice), DeepL translates it into the **meeting language**, and macOS speech synthesis speaks it on the Reachy speaker, played straight to the USB audio device (`voice.py`). Sentences are spoken strictly in the order you said them. The page shows what Reachy said above the dock (`me` message). While Reachy speaks, the room mic is ignored for captions and speech detection (+0.4 s echo), so its own voice neither becomes a bubble nor turns the head, and the room sound sent to the headset is silent, so the headset mic cannot pick Reachy's voice up again and translate it in a loop. When the page stops sending (Translate off, muted: `voice_end`, or 1 s without frames), the sentence you were saying ends there instead of being glued in front of the next one.
