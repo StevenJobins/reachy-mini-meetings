@@ -26,6 +26,7 @@ public class CaptionView : MonoBehaviour
         public string text, lang, translation;
         public int speaker;
         public double t_end;
+        public SpeakerBubbles.At at;
     }
     [Serializable] class MeMsg { public string text; }
 
@@ -44,6 +45,7 @@ public class CaptionView : MonoBehaviour
     public Material textMaterial, panelMaterial;
     public QuickMenu menu;
     public NotesPanel notes;
+    public SpeakerBubbles bubbles;
 
     readonly Subtitles subs = new Subtitles();
     Font font;
@@ -128,7 +130,11 @@ public class CaptionView : MonoBehaviour
                 var c = JsonUtility.FromJson<CaptionMsg>(json);
                 if (c.final && c.t_end < WallS() - clockOffsetS - Subtitles.FinalS) return;   // replayed history
                 int? speaker = json.Contains("\"speaker\": ") && !json.Contains("\"speaker\": null") ? c.speaker : (int?)null;
-                subs.Caption(c.id, c.final, c.text, c.translation, c.lang, speaker, now);
+                // next to the speaker when the backend knows where they are (SpeakerBubbles), else on the panel
+                var who = Who(new SubtitleLine { Speaker = speaker }, out var color);
+                bool there = bubbles != null && bubbles.Show(c.id, c.final, c.text, c.translation, c.lang, who, color,
+                    json.Contains("\"at\": {") ? c.at : null, now);
+                subs.Caption(c.id, c.final, there ? "" : c.text, c.translation, c.lang, speaker, now);
                 Debug.Log($"[captions] {(c.final ? "final" : "partial")} #{c.id} speaker {speaker?.ToString() ?? "?"} {c.lang}: {c.text}");
                 break;
             case "me":

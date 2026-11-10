@@ -244,6 +244,14 @@ public static class ProjectConfigure
         video.view.head = camGo.transform;
         video.captions.view = video.view;
 
+        // Speech bubbles next to the speaker, when the backend knows where they are
+        var bubbles = video.room.gameObject.AddComponent<SpeakerBubbles>();
+        bubbles.view = video.view;
+        bubbles.video = video;
+        bubbles.textMaterial = hud.textMaterial;
+        bubbles.panelMaterial = video.captions.panelMaterial;
+        video.captions.bubbles = bubbles;
+
         var panorama = new GameObject("Room Panorama");
         panorama.transform.SetParent(offset.transform, false);
         video.panorama = panorama.AddComponent<RoomPanorama>();
