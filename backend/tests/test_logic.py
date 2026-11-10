@@ -8,7 +8,7 @@ import numpy as np
 
 from reachy_meetings_backend.captions import CaptionServer, NoiseGate
 from reachy_meetings_backend.doa import DoaTracker, circular_mean_deg, doa_to_head_deg
-from reachy_meetings_backend.people import People, image_to_angles
+from reachy_meetings_backend.people import People, image_to_angles, to_base
 from reachy_meetings_backend.segmenter import SAMPLE_RATE, Segmenter, SegmenterCfg
 from reachy_meetings_backend.speakers import SpeakerClusters
 from reachy_meetings_backend.stt import pick_language, plausible
@@ -449,6 +449,14 @@ def test_image_angles_centre_and_signs():
     assert abs(yaw) < 0.01 and abs(pitch) < 0.01
     assert image_to_angles(0.2, 0.5)[0] > 20      # left in the image = positive yaw
     assert image_to_angles(0.5, 0.2)[1] > 10      # up in the image = positive pitch
+
+
+def test_camera_direction_to_the_robot_base_frame():
+    assert np.allclose(to_base(10, 5, (0, 0, 30)), (40, 5))            # head turned left: yaw adds up
+    assert np.allclose(to_base(0, 0, (0, 20, 0)), (0, -20))            # head looks down (pitch +): straight ahead is lower
+    assert np.allclose(to_base(0, 10, (0, 10, 0)), (0, 0))
+    yaw, up = to_base(20, 0, (15, 0, 0))                               # head tilted right: its left side is higher
+    assert 0 < yaw < 20 and up > 0
 
 
 def test_people_are_known_by_their_direction_in_the_room():

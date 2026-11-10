@@ -50,6 +50,20 @@ def image_to_angles(u: float, v: float) -> tuple[float, float]:
     return -math.degrees(math.atan2(x, 1)), -math.degrees(math.atan2(y, math.hypot(x, 1)))
 
 
+def to_base(yaw: float, pitch: float, head: tuple[float, float, float]) -> tuple[float, float]:
+    """A direction relative to the camera axis to the robot base frame. head = (roll, pitch, yaw) of the head as
+    the daemon gives it, in degrees (R = Rz(yaw) Ry(pitch) Rx(roll), pitch + = look down); the camera looks
+    along the head's x axis."""
+    y, p = math.radians(yaw), math.radians(pitch)
+    d = np.array([math.cos(p) * math.cos(y), math.cos(p) * math.sin(y), math.sin(p)])   # x forward, y left, z up
+    r, q, w = (math.radians(a) for a in head)
+    rx = np.array([[1, 0, 0], [0, math.cos(r), -math.sin(r)], [0, math.sin(r), math.cos(r)]])
+    ry = np.array([[math.cos(q), 0, math.sin(q)], [0, 1, 0], [-math.sin(q), 0, math.cos(q)]])
+    rz = np.array([[math.cos(w), -math.sin(w), 0], [math.sin(w), math.cos(w), 0], [0, 0, 1]])
+    x, yy, z = rz @ ry @ rx @ d
+    return math.degrees(math.atan2(yy, x)), math.degrees(math.atan2(z, math.hypot(x, yy)))
+
+
 def angle_diff(a: float, b: float) -> float:
     return (a - b + 180) % 360 - 180
 
@@ -74,16 +88,17 @@ class People:
         self.votes: dict[int, dict[int, float]] = {}   # voice -> person -> votes
         self.next_pid = 1
 
-    def update(self, faces: list[dict], t: float, head_yaw_deg: float, key: str = "mouth") -> None:
-        """Faces of one camera frame (vision.py), taken at wall clock t with the head at head_yaw_deg."""
+    def update(self, faces: list[dict], t: float, head_yaw_deg: float, head_pitch_deg: float = 0.0,
+               head_roll_deg: float = 0.0, key: str = "mouth") -> None:
+        """Faces of one camera frame (vision.py), taken at wall clock t with the head at these angles."""
+        head = (head_roll_deg, head_pitch_deg, head_yaw_deg)
         self.people = [p for p in self.people if t - p.seen < MEMORY_S]
         self.candidates = [p for p in self.candidates if t - p.first < CANDIDATE_S]
         taken: set[int] = set()
         for f in faces:
-            yaw, pitch = self.angles(f["cx"], f["cy"])
-            _, top = self.angles(f["cx"], f["top"])
-            _, bottom = self.angles(f["cx"], f["top"] + f["h"])
-            yaw += head_yaw_deg
+            yaw, pitch = to_base(*self.angles(f["cx"], f["cy"]), head)
+            _, top = to_base(*self.angles(f["cx"], f["top"]), head)
+            _, bottom = to_base(*self.angles(f["cx"], f["top"] + f["h"]), head)
             near = [p for p in self.people + self.candidates
                     if id(p) not in taken and abs(angle_diff(p.yaw, yaw)) < REID_DEG]
             p = min(near, key=lambda q: abs(angle_diff(q.yaw, yaw)), default=None)

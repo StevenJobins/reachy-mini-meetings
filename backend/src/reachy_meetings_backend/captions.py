@@ -627,7 +627,8 @@ class Pipeline:
             self.people = People()
 
             def faces(people: list, t: float) -> None:
-                self.people.update(people, t, self.doa.head_yaw_deg if self.doa else 0.0)
+                d = self.doa
+                self.people.update(people, t, *((d.head_yaw_deg, d.head_pitch_deg, d.head_roll_deg) if d else (0.0,)))
                 self.server.send_faces(people, t)
 
             loop = asyncio.get_running_loop()

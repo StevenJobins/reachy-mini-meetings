@@ -42,6 +42,7 @@ class DoaTracker:
         self.keep_s = keep_s
         self.samples: deque[tuple[float, float, float]] = deque()
         self.head_yaw_deg = 0.0
+        self.head_pitch_deg = self.head_roll_deg = 0.0
 
     def add(self, doa: dict, head_yaw_deg: float, now: float | None = None) -> None:
         # The chip's own speech flag is false most of the time even while someone talks (measured on the page:
@@ -68,9 +69,11 @@ class DoaTracker:
 
     def _poll(self, n: int) -> None:
         if n % 2 == 0:  # 5 Hz: people.py turns face directions into room directions with it
-            yaw = (self._get("/api/state/full").get("head_pose") or {}).get("yaw")
-            if yaw is not None:
-                self.head_yaw_deg = math.degrees(yaw)
+            pose = self._get("/api/state/full").get("head_pose") or {}
+            if pose.get("yaw") is not None:
+                self.head_yaw_deg = math.degrees(pose["yaw"])
+                self.head_pitch_deg = math.degrees(pose.get("pitch") or 0.0)
+                self.head_roll_deg = math.degrees(pose.get("roll") or 0.0)
         self.add(self._get("/api/state/doa"), self.head_yaw_deg)
 
     async def run(self) -> None:
