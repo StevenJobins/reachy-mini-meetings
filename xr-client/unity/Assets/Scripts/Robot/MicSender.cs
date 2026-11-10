@@ -1,11 +1,12 @@
 // Your voice -> Reachy's speaker, over the same WebRTC connection as the video. The audio transceiver is send-only:
 // receiving the robot's audio would hold the video back (see RobotVideo.Answer), and the room sound comes another way.
 // Push to talk: on only while the user holds the right pinch (RobotControl), so it can never stay on by accident.
-// Translate me (QuickMenu): the voice goes to the backend instead (int16 PCM, 16 kHz mono, 40 ms frames, like
-// xr-client/pages/mic.js), which translates it and lets Reachy say it; the WebRTC track stays off meanwhile.
+// While it is on, the same mic also goes to the backend (16 kHz PCM), which transcribes it for the "You" subtitles.
+// Translate me (QuickMenu): the WebRTC track stays off and the backend translates your words and lets Reachy say
+// them (the menu tells the backend which of the two, "me_mode").
 
-using System;
 using System.Collections;
+using System.Collections.Generic;
 using Unity.WebRTC;
 using UnityEngine;
 using UnityEngine.Android;
@@ -13,7 +14,8 @@ using UnityEngine.Android;
 public class MicSender : MonoBehaviour
 {
     const int SampleRate = 48000;
-    const int VoiceRate = 16000, VoiceFrame = 640;
+    const int BackendRate = 16000, FrameSamples = 640;   // 40 ms frames, as the room sound
+    const string VoiceEnd = "{\"type\": \"voice_end\"}";
 
     public RobotControl control;
     public RoomSound room;
@@ -22,14 +24,13 @@ public class MicSender : MonoBehaviour
     AudioSource source;
     AudioStreamTrack track;
     RTCRtpSender sender;
-    float[] clipData;
+    // to the backend: read position in the looping mic clip, box-filter decimation state, samples not sent yet
     int readPos;
-    double step, acc, sum;
-    int count;
-    readonly short[] frame = new short[VoiceFrame];
-    int frameN;
-    bool voiceOn;
-    int framesSent;
+    bool teeing;
+    float sum;
+    int count, phase;
+    float[] read = new float[0];
+    readonly List<short> pcm = new List<short>();
 
     public string Status { get; private set; } = "mic starting";
     public double Kbps { get; set; }
@@ -51,9 +52,6 @@ public class MicSender : MonoBehaviour
         source.clip = Microphone.Start(null, true, 1, SampleRate);
         if (source.clip == null) { Status = "mic: none found"; yield break; }
         while (Microphone.GetPosition(null) <= 0) yield return null;
-        clipData = new float[source.clip.samples];
-        step = (double)source.clip.frequency / VoiceRate;
-        readPos = Microphone.GetPosition(null);
         source.loop = true;
         source.Play();
         track = new AudioStreamTrack(source) { Loopback = false, Enabled = false };   // not to our own ears
@@ -71,63 +69,64 @@ public class MicSender : MonoBehaviour
     void Update()
     {
         if (track == null) return;
-        bool translate = menu != null && menu.Translate;
         bool on = control.MicOn;
+        bool translate = menu != null && menu.Translate;
         if (track.Enabled != (on && !translate)) track.Enabled = on && !translate;
-        UpdateVoice(on && translate);
+        Tee(on);
         var backend = room != null ? room.Backend : null;
         Status = translate
             ? backend == null || !backend.Connected ? "translate: no backend"
-              : on ? $"translate: speaking, {framesSent} frames" : "translate on, hold right pinch to talk"
+              : on ? "translate: speaking" : "translate on, hold right pinch to talk"
             : sender == null ? "mic: no connection" : on ? $"mic on {Kbps:0} kbps" : "mic off, hold right pinch to talk";
     }
 
-    /// <summary>New mic samples, 16 kHz, in 40 ms frames to the backend while `send`; voice_end when it stops.</summary>
-    void UpdateVoice(bool send)
+    /// <summary>The mic since the last frame, down to 16 kHz, to the backend while talking; "voice_end" on release.</summary>
+    void Tee(bool on)
     {
         var backend = room != null ? room.Backend : null;
+        var clip = source.clip;
         int pos = Microphone.GetPosition(null);
-        if (!send || backend == null || !backend.Connected)
+        if (!on || backend == null || !backend.Connected)
         {
-            readPos = pos;
-            if (voiceOn)
+            if (teeing)
             {
-                voiceOn = false;
-                frameN = 0;
-                backend?.Send("{\"type\": \"voice_end\"}");   // the backend ends your sentence now
-                Debug.Log($"[mic] translate: voice_end after {framesSent} frames");
+                Flush(backend, true);
+                backend?.Send(VoiceEnd);
+                teeing = false;
             }
+            readPos = pos;
             return;
         }
-        if (!voiceOn)
+        teeing = true;
+        int n = (pos - readPos + clip.samples) % clip.samples;
+        if (n == 0) return;
+        if (read.Length < n) read = new float[n];
+        clip.GetData(read, readPos);   // wraps around the end of the clip
+        readPos = pos;
+        for (int i = 0; i < n; i++)
         {
-            voiceOn = true;
-            framesSent = 0;
-            acc = sum = 0;
-            count = 0;
-            Debug.Log("[mic] translate: sending to the backend");
-        }
-        source.clip.GetData(clipData, 0);
-        int n = clipData.Length;
-        for (int i = readPos; i != pos; i = (i + 1) % n)
-        {
-            // average over each 1/16000 s: low-pass and decimate in one
-            sum += clipData[i];
+            sum += read[i];
             count++;
-            acc += 1;
-            if (acc < step) continue;
-            acc -= step;
-            frame[frameN++] = (short)Mathf.Clamp((float)(sum / count) * 32767f, -32768f, 32767f);
+            phase += BackendRate;
+            if (phase < clip.frequency) continue;
+            phase -= clip.frequency;
+            pcm.Add((short)(Mathf.Clamp(sum / count, -1, 1) * 32767));
             sum = 0;
             count = 0;
-            if (frameN < VoiceFrame) continue;
-            var bytes = new byte[VoiceFrame * 2];
-            Buffer.BlockCopy(frame, 0, bytes, 0, bytes.Length);   // little-endian on ARM and x86
-            backend.SendBinary(bytes);
-            framesSent++;
-            frameN = 0;
         }
-        readPos = pos;
+        Flush(backend, false);
+    }
+
+    void Flush(BackendClient backend, bool all)
+    {
+        while (pcm.Count >= FrameSamples || (all && pcm.Count > 0))
+        {
+            int k = Mathf.Min(FrameSamples, pcm.Count);
+            var bytes = new byte[2 * k];
+            for (int i = 0; i < k; i++) { bytes[2 * i] = (byte)pcm[i]; bytes[2 * i + 1] = (byte)(pcm[i] >> 8); }
+            pcm.RemoveRange(0, k);
+            backend?.SendBinary(bytes);
+        }
     }
 
     void OnDestroy()

@@ -10,16 +10,19 @@ Protocol (server -> headset, one JSON per message; keep in sync with xr-client):
   hello    {"version": str, "target": str, "session": str, "t": s}   session changes on every backend start
            (caption ids restart then); t = server clock, for mapping backend times onto the page's clock
   caption  {"id": int, "final": bool, "text": str, "lang": str, "translation": str | null,
-            "target": str, "doa_deg": float | null, "azimuth_deg": float | null,
-            "t_start": s, "t_end": s}
+            "target": str, "doa_deg": float | null, "azimuth_deg": float | null, "speaker": int | null,
+            "t_start": s, "t_end": s}   speaker = 1, 2, ... from the voice (speakers.py); null = not known
+            (short utterance, no model); on a partial only a voice heard before
   summary  {"summary": [str], "actions": [{"who": str, "what": str, "when": str}], "next_steps": [str], "t": s}
            all lists empty and "new_meeting": true when a new meeting began (clear the notes)
   faces    {"people": [{"cx", "cy", "top", "w", "h", "mouth"}], "t": s}   faces in the robot camera found here
            (vision.py, ~20/s): the page uses them instead of its own, much slower detector
   me       {"text": str, "lang": str, "translation": str | null, "target": str, "t": s}   what the remote
            user said (their headset mic, see below) and what Reachy said for them in the meeting language
-  vad      {"speaking": bool, "t": s}   instantly from the neural VAD (~0.1 s), long before any text:
-           sent when speech starts/ends and every 0.25 s while it lasts (speaker following uses it)
+           (translation null in transcribe-only mode)
+  vad      {"speaking": bool, "doa_deg": float | null, "azimuth_deg": float | null, "t": s}   instantly from
+           the neural VAD (~0.1 s), long before any text: sent when speech starts/ends and every 0.25 s while it
+           lasts; directions = the mic over the last second (headset: "someone is speaking over there")
   binary   the room audio itself: int16 little-endian PCM, 16 kHz mono, ~40 ms per frame. The robot's own
            WebRTC audio drops ~55 % of the sound (daemon bug, 0 packets lost); the page plays this instead.
            Between utterances it is turned down by --pause-db (noise gate driven by the neural VAD).
@@ -27,6 +30,10 @@ Protocol (server -> headset, one JSON per message; keep in sync with xr-client):
 Client -> server: {"type": "auth", "hf_token": str} first (checked through the tunnel only);
 {"type": "auth", "secret": str} first from another machine when the server runs with --lan-secret;
 {"type": "voice", "gender": "male" | "female"} picks Reachy's voice (voice.py GENDER_VOICES, per language);
+{"type": "me_mode", "speak": false} = the remote user's voice is only transcribed (subtitles), not spoken by
+Reachy: the Unity app sends its own voice to Reachy over WebRTC and this copy only for "You" lines. The room
+sound is then muted for captions while it comes in (+ ECHO_S), or Reachy's speaker would caption it again;
+default true (the web page's "Translate me"), applies to everyone connected;
 {"type": "lang", "meeting": "auto" | "de" | "en" | ..., "target": "en" | ...} (both optional, ISO 639-1):
 the language Reachy speaks for the remote user ("auto" = --meeting-lang, else the one most spoken in the
 room lately) and the bubble language (caption translations, notes; default --target); sent by the page on
@@ -81,7 +88,8 @@ from .stt import AUTO
 
 log = logging.getLogger("reachy_captions")
 
-PROTOCOL_VERSION = "0.2"
+PROTOCOL_VERSION = "0.3"
+ECHO_S = 0.8   # the remote user's voice from Reachy's speaker: room captions muted this long after its last frame
 HEADSET_LOG = Path.home() / "Library/Logs/reachy-headset.log"   # the page's log lines ({"type": "log"})
 
 
@@ -274,9 +282,9 @@ class CaptionServer:
             pcm = (np.clip(chunk, -1, 1) * 32767).astype("<i2").tobytes()
             websockets.broadcast(self.clients, pcm)
 
-    def send_vad(self, speaking: bool) -> None:
-        websockets.broadcast(self.clients, json.dumps({"type": "vad", "speaking": speaking,
-                                                       "t": round(time.time(), 3)}))
+    def send_vad(self, speaking: bool, doa_deg: float | None, azimuth_deg: float | None) -> None:
+        websockets.broadcast(self.clients, json.dumps({"type": "vad", "speaking": speaking, "doa_deg": doa_deg,
+                                                       "azimuth_deg": azimuth_deg, "t": round(time.time(), 3)}))
 
     def send_faces(self, people: list, t: float) -> None:
         if self.clients:
@@ -295,9 +303,14 @@ class Pipeline:
         from .stt import Transcriber
 
         self.args = args
-        self.stt = Transcriber(args.model, args.lang, args.engine)
-        self.stt_partial = (Transcriber(args.partial_model, args.lang, args.engine)
+        self.stt = Transcriber(args.model, args.lang, args.engine, args.langs)
+        self.stt_partial = (Transcriber(args.partial_model, args.lang, args.engine, args.langs)
                             if args.partial_model != "none" else None)
+        self.speakers = None
+        if args.speakers == "voice":
+            from .speakers import VoiceIds
+
+            self.speakers = VoiceIds(args.speaker_threshold)
         self.worker = Worker()  # Whisper runs one job at a time
         self.pending = 0
         self.finalized: set[int] = set()
@@ -332,21 +345,23 @@ class Pipeline:
         self.me_translators: dict = {}
         self.room_langs: deque[tuple[float, str]] = deque(maxlen=50)   # (time, lang) of room utterances
         self.speaking_until = 0.0   # Reachy talks: its own voice must not become captions or turn the head
+        self.me_speak = True        # Reachy speaks the remote user's words ({"type": "me_mode"})
+        self.me_until = 0.0         # the remote user talks through Reachy's speaker (transcribe-only mode)
         if args.voice_out != "none":
             from .voice import VoiceOut
 
             try:
                 self.voice = VoiceOut(args.voice_out, args.voice)
-                me_cfg = SegmenterCfg(silence_s=args.me_silence, early_s=args.me_early)
-                try:
-                    from .vad import SileroVad
-
-                    self.me_segmenter = Segmenter(me_cfg, vad=SileroVad())   # own VAD state for the second stream
-                except (ImportError, OSError):
-                    self.me_segmenter = Segmenter(me_cfg)
-                self.server.on_voice = self._me_voice
             except (OSError, subprocess.CalledProcessError) as e:
                 log.warning("No voice output: %s", e)
+        me_cfg = SegmenterCfg(silence_s=args.me_silence, early_s=args.me_early)
+        try:
+            from .vad import SileroVad
+
+            self.me_segmenter = Segmenter(me_cfg, vad=SileroVad())   # own VAD state for the second stream
+        except (ImportError, OSError):
+            self.me_segmenter = Segmenter(me_cfg)
+        self.server.on_voice = self._me_voice
         self.server.on_message = self._client_message
         self.depth = DepthEstimator()
         self.server.on_depth = self.depth.estimate
@@ -374,22 +389,30 @@ class Pipeline:
             self.pending -= 1
 
     def _caption(self, seg: Segment, wall_end: float, text: str, lang: str,
-                 translation: str | None = None) -> dict:
+                 translation: str | None = None, speaker: int | None = None) -> dict:
         t_start = wall_end - (seg.t_end - seg.t_start)
         doa_deg, azimuth_deg = self.doa.direction(t_start, wall_end) if self.doa else (None, None)
         return {
             "id": seg.id, "final": seg.final, "text": text, "lang": lang,
             "translation": translation, "target": self.target,
-            "doa_deg": doa_deg, "azimuth_deg": azimuth_deg,
+            "doa_deg": doa_deg, "azimuth_deg": azimuth_deg, "speaker": speaker,
             "t_start": round(t_start, 3), "t_end": round(wall_end, 3),
         }
 
+    def _speaker(self, seg: Segment) -> asyncio.Task | None:
+        """Who is talking, next to Whisper (CPU, its own thread)."""
+        if not self.speakers:
+            return None
+        return asyncio.create_task(self.speakers.identify(seg.audio, learn=seg.final))
+
     async def _partial(self, seg: Segment, wall_end: float) -> None:
+        speaker = self._speaker(seg)
         text, lang = await self._stt(self.stt_partial, seg.audio)
+        speaker = await speaker if speaker else None
         if not text or seg.id in self.finalized:
             return
         self.seg_lang[seg.id] = lang
-        cap = self._caption(seg, wall_end, text, lang)
+        cap = self._caption(seg, wall_end, text, lang, speaker=speaker)
         self.server.send(cap)
         # Translate live text too, so the bubble is readable while the person still talks. Throttled
         # (DeepL quota): only when enough new text came in since the last partial translation.
@@ -403,12 +426,14 @@ class Pipeline:
                 self.server.send({**cap, "translation": translation})
 
     async def _final(self, seg: Segment, wall_end: float) -> None:
+        speaker = self._speaker(seg)
         text, lang = await self._stt(self.stt, seg.audio, self.seg_lang.pop(seg.id, None))
+        speaker = await speaker if speaker else None
         self.finalized.add(seg.id)
         self.partial_tr.pop(seg.id, None)
-        cap = self._caption(seg, wall_end, text, lang)
+        cap = self._caption(seg, wall_end, text, lang, speaker=speaker)
         self.server.send(cap)
-        log.info("[%d %s] %s", seg.id, lang, text)
+        log.info("[%d %s speaker %s] %s", seg.id, lang, speaker or "?", text)
         if text:
             self.room_langs.append((time.time(), lang))
         target, translator = self.target, self.translator
@@ -432,8 +457,11 @@ class Pipeline:
                 log.info("Reachy's voice: %s (%s)", msg["gender"], self.voice.voice(self.meeting_lang()) or "system voice")
         if msg.get("type") == "new_meeting" and self.summarizer:   # the headset clears the notes
             self.summarizer.reset("asked by the headset")
-        if msg.get("type") == "voice_end" and self.voice:   # the page stopped sending the remote user's voice
+        if msg.get("type") == "voice_end":   # the page stopped sending the remote user's voice
             self.me_queue.put_nowait(None)
+        if msg.get("type") == "me_mode" and isinstance(msg.get("speak"), bool) and msg["speak"] != self.me_speak:
+            self.me_speak = msg["speak"]
+            log.info("Remote user's voice: %s", "spoken by Reachy" if self.me_speak else "transcribed only")
         if msg.get("type") == "lang":
             meeting, target = parse_lang(msg)
             if meeting and meeting != self.meeting_choice:
@@ -489,6 +517,9 @@ class Pipeline:
         t_stt = time.time()
         if not text:
             return None
+        if not (self.me_speak and self.voice):   # subtitles only: Reachy already played the voice itself
+            return {"text": text, "lang": lang, "translation": None, "target": lang, "audio": None,
+                    "times": (t0, t_stt), "audio_s": len(seg.audio) / 16000}
         target = self.meeting_lang()
         tr = self._translator_to(target) if lang != target else None
         translation = await tr(text, remember=False) if tr else None
@@ -500,8 +531,13 @@ class Pipeline:
                 "times": (t0, t_stt, t_tr, time.time(), timing.get("wait", 0.0))}
 
     async def _me_play(self, r: dict, t_end: float) -> None:
-        log.info("[me %s->%s] %s -> %s", r["lang"], r["out_lang"], r["text"], r["say"])
         self.server.send_me({k: r[k] for k in ("text", "lang", "translation", "target")} | {"t": round(time.time(), 3)})
+        if r["audio"] is None:
+            t0, t_stt = r["times"]
+            log.info("[me %s] %s  (stt %.2f s, %.2f s after speech end)", r["lang"], r["text"], t_stt - t0,
+                     time.time() - t_end)
+            return
+        log.info("[me %s->%s] %s -> %s", r["lang"], r["out_lang"], r["text"], r["say"])
         t0, t_stt, t_tr, t_syn, wait = r["times"]
 
         def started(dur: float) -> None:
@@ -561,6 +597,8 @@ class Pipeline:
                         prepared.pop(sid)[1].cancel()
 
     def _me_voice(self, frame: bytes | None) -> None:
+        if frame is not None and not self.me_speak:
+            self.me_until = time.time() + ECHO_S
         self.me_queue.put_nowait(None if frame is None else np.frombuffer(frame, "<i2").astype(np.float32) / 32768)
 
     async def run(self) -> None:
@@ -573,8 +611,7 @@ class Pipeline:
             tasks.append(asyncio.create_task(self.doa.run()))
         if self.summarizer:
             tasks.append(asyncio.create_task(self.summarizer.run(self.server.send_summary)))
-        if self.voice:
-            tasks += [asyncio.create_task(self._me_loop()), asyncio.create_task(self._me_player())]
+        tasks += [asyncio.create_task(self._me_loop()), asyncio.create_task(self._me_player())]
         if self.args.vision_camera != "none" and not self.args.file:
             from .vision import FaceStream
 
@@ -603,21 +640,23 @@ class Pipeline:
             if chunks.qsize() > 25 and time.time() - lag_logged > 5:   # > 1 s of audio waiting
                 lag_logged = time.time()
                 log.warning("Audio processing %.1f s behind", chunks.qsize() * len(chunk) / 16000)
-            if time.time() < self.speaking_until:   # Reachy is talking: its own voice is no room speech
+            # Reachy is talking (the remote user's words, synthesized or their own voice): no room speech
+            reachy_talks = time.time() < max(self.speaking_until, self.me_until)
+            if reachy_talks:
                 segs = self.segmenter.push(np.zeros_like(chunk))
             else:
                 segs = self.segmenter.push(chunk)
             speaking = self.segmenter.active or self.segmenter.prob > 0.4
-            if time.time() < self.speaking_until:
-                # Reachy speaks the remote user's words: keep its voice out of the stream to the headset, or
-                # the headset mic (Translate me) could pick it up again and translate it in a loop
+            if reachy_talks:
+                # keep Reachy's voice out of the stream to the headset too: the remote user would hear
+                # themselves late, and the headset mic (Translate me) could translate it again in a loop
                 self.server.send_audio(np.zeros_like(chunk))
             else:
                 self.server.send_audio(self.gate(chunk, speaking, time.time()) if self.gate else chunk)
             now = time.time()
             if self.segmenter.active != vad_on or (vad_on and now - vad_sent > 0.25):
                 vad_on, vad_sent = self.segmenter.active, now
-                self.server.send_vad(vad_on)
+                self.server.send_vad(vad_on, *(self.doa.direction(now - 1.0, now) if self.doa else (None, None)))
             for seg in segs:
                 if seg.final:
                     spawn(self._final(seg, time.time()))
@@ -643,6 +682,13 @@ def cli() -> None:
     ap.add_argument("--engine", choices=["mlx", "faster-whisper"],
                     help="Whisper engine; default: mlx on Apple Silicon, faster-whisper elsewhere")
     ap.add_argument("--lang", help="spoken language (ISO code); default: auto-detect per utterance")
+    ap.add_argument("--langs", default="de,en",
+                    help="auto-detection picks only among these (comma-separated ISO codes); 'any' = all")
+    ap.add_argument("--speakers", choices=["voice", "none"], default="voice",
+                    help="speaker ids from the voice (speakers.py, needs torch + transformers: the [speakers] "
+                         "extra); none = off")
+    ap.add_argument("--speaker-threshold", type=float, default=0.80,
+                    help="voice similarity above which an utterance counts as a known speaker")
     ap.add_argument("--target", default="en", help="bubble language (ISO code)")
     ap.add_argument("--translator", choices=["deepl", "claude", "none"], default="deepl",
                     help="deepl needs DEEPL_AUTH_KEY, claude needs ANTHROPIC_API_KEY (paid)")
@@ -710,6 +756,7 @@ def cli() -> None:
             log.error("No input device matching %r", args.mic)
             raise SystemExit(1)
     args.allow_hf = {u.strip() for u in args.allow_hf.split(",") if u.strip()}
+    args.langs = () if args.langs == "any" else tuple(x.strip() for x in args.langs.split(",") if x.strip())
     if args.tunnel and not args.allow_hf:
         try:
             from huggingface_hub import whoami

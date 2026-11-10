@@ -8,11 +8,13 @@ using System.Linq;
 /// <summary>Where Reachy looks during the scan, and when to take the picture.</summary>
 public class RoomScan
 {
-    // 6 stops, 50° apart, in 2 rows. The ~88° wide camera overlaps by ~38°, the ~57° tall frames reach ~46° up, ~43° down.
-    // All inside the ±65° head/body window, so the body stays still. Snake order: every move is short.
+    // 9 stops, 60° apart, in 3 rows at the meeting pitch limits (35 up, 20 down, HeadMirror). The ~88° wide camera
+    // overlaps by ~28° and reaches ±104°; the ~57° tall frames overlap by ~29° and reach ~63° up, ~48° down. All inside
+    // the ±65° head/body window, so the body stays still. Snake order: every move is short. Past the edges the
+    // background takes the room's colour (RoomPanorama).
     static readonly (double pitch, double yaw)[] Stops =
     {
-        (-18, -50), (-18, 0), (-18, 50), (15, 50), (15, 0), (15, -50),
+        (-35, -60), (-35, 0), (-35, 60), (-8, 60), (-8, 0), (-8, -60), (20, -60), (20, 0), (20, 60),
     };
 
     const double NearDeg = 7;        // within this of the stop: the head stops short of a command by its play

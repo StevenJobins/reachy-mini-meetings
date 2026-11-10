@@ -1,6 +1,7 @@
 // Connection to the caption backend on the laptop (backend/, ws://<laptop>:8766, protocol in captions.py).
 // Binary frames are the room sound; JSON messages wait in a queue for the main thread. Reconnects by itself.
-// Outgoing: JSON and binary frames (your voice for Translate me) in one queue, so they keep their order.
+// Out: JSON, and binary frames = the headset mic while push to talk is held (MicSender), for the "You" subtitles
+// and for Translate me; one queue, so they keep their order.
 //
 // Address and secret are set once and remembered on the headset:
 //   adb shell am start -n ch.ethz.reachymeetings/com.unity3d.player.UnityPlayerGameActivity -e secret <lan-secret>
@@ -24,7 +25,8 @@ public class BackendClient : IDisposable
     readonly string secret;
     readonly CancellationTokenSource cts = new CancellationTokenSource();
     readonly ConcurrentQueue<string> messages = new ConcurrentQueue<string>();
-    readonly ConcurrentQueue<(byte[] data, bool binary)> outgoing = new ConcurrentQueue<(byte[] data, bool binary)>();
+    readonly ConcurrentQueue<object> outgoing = new ConcurrentQueue<object>();   // string = JSON, byte[] = binary
+    readonly string onConnect;
 
     public AudioJitterBuffer Audio { get; } = new AudioJitterBuffer();
     public bool Connected { get; private set; }
@@ -32,20 +34,25 @@ public class BackendClient : IDisposable
     /// <summary>Counts up on every new connection, so settings can be sent again after a reconnect.</summary>
     public int Connects { get; private set; }
 
-    public BackendClient(string host, string secret)
+    /// <summary>onConnect: JSON sent after the sign-in on every (re)connect (settings the backend forgets).</summary>
+    public BackendClient(string host, string secret, string onConnect = null)
     {
         uri = new Uri($"ws://{host}:8766");
         this.secret = secret;
+        this.onConnect = onConnect;
         _ = Loop();
     }
 
     public bool TryGetMessage(out string json) => messages.TryDequeue(out json);
 
     /// <summary>JSON to the backend, sent in order.</summary>
-    public void Send(string json) => outgoing.Enqueue((Encoding.UTF8.GetBytes(json), false));
+    public void Send(string json) => outgoing.Enqueue(json);
 
-    /// <summary>Binary frame to the backend, in order with the JSON messages.</summary>
-    public void SendBinary(byte[] data) => outgoing.Enqueue((data, true));
+    /// <summary>A binary frame; dropped while disconnected, so no stale audio arrives after a reconnect.</summary>
+    public void SendBinary(byte[] data)
+    {
+        if (Connected) outgoing.Enqueue(data);
+    }
 
     async Task Loop()
     {
@@ -59,6 +66,7 @@ public class BackendClient : IDisposable
                 if (!string.IsNullOrEmpty(secret))
                     await SendText(ws, JsonUtility.ToJson(new AuthMsg { secret = secret }));
                 while (outgoing.TryDequeue(out _)) { }   // nothing stale from the last connection
+                if (onConnect != null) await SendText(ws, onConnect);
                 Connected = true;
                 Connects++;
                 LastError = null;
@@ -97,10 +105,9 @@ public class BackendClient : IDisposable
         {
             while (ws.State == WebSocketState.Open)
             {
-                if (outgoing.TryDequeue(out var m))
-                    await ws.SendAsync(new ArraySegment<byte>(m.data),
-                        m.binary ? WebSocketMessageType.Binary : WebSocketMessageType.Text, true, cts.Token);
-                else await Task.Delay(20, cts.Token);
+                if (!outgoing.TryDequeue(out var item)) await Task.Delay(20, cts.Token);
+                else if (item is string json) await SendText(ws, json);
+                else await ws.SendAsync(new ArraySegment<byte>((byte[])item), WebSocketMessageType.Binary, true, cts.Token);
             }
         }
         catch (Exception) { }   // the receive loop sees the closed socket and reconnects

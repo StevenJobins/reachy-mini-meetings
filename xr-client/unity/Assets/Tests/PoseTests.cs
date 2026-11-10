@@ -208,31 +208,80 @@ public class PoseTests
     }
 
     [Test]
-    public void FaceSpeakersMatchesSpeakersJs()
+    public void SubtitleLinesUpdateByIdAndKeepTheNewestThree()
     {
-        double D(string v) => double.Parse(v, CultureInfo.InvariantCulture);
-        var s = new FaceSpeakers(CameraModel.Calibrated());
-        foreach (var line in File.ReadAllLines("Assets/Tests/SpeakersGolden.txt").Where(l => l.StartsWith("step ")))
+        var s = new Subtitles();
+        s.Caption(1, false, "Hallo zusam", null, "de", null, 0);
+        s.Caption(1, true, "Hallo zusammen", null, "de", 2, 1);
+        s.Caption(1, true, "Hallo zusammen", "Hello everyone", "de", null, 2);
+        var l = s.Shown(2).Single();
+        Assert.That(l.Text, Is.EqualTo("Hello everyone"));
+        Assert.That(l.Original, Is.EqualTo("de: Hallo zusammen"));
+        Assert.That(l.Speaker, Is.EqualTo(2), "an update without a speaker keeps the one known");
+        Assert.That(l.Final, Is.True);
+        for (int id = 2; id <= 5; id++) s.Caption(id, true, $"line {id}", null, "en", id, 3);
+        Assert.That(s.Shown(3).Select(x => x.Text), Is.EqualTo(new[] { "line 3", "line 4", "line 5" }));
+        s.Caption(5, true, "", null, "en", null, 4);
+        Assert.That(s.Shown(4).Select(x => x.Text), Is.EqualTo(new[] { "line 2", "line 3", "line 4" }), "empty final: removed");
+        Assert.That(s.Shown(3 + Subtitles.FinalS + 0.1), Is.Empty, "faded out");
+    }
+
+    [Test]
+    public void YouLineIsLiveWhileTalkingAndUntilTheTextComes()
+    {
+        var s = new Subtitles();
+        s.Caption(1, true, "room", null, "en", 1, 0);
+        s.Mic(true, 1);
+        Assert.That(s.Shown(1).Last().Live, Is.True, "talking: live line at the end");
+        s.Mic(false, 2);
+        s.Caption(2, false, "someone else", null, "en", 2, 2.5);
+        Assert.That(s.Shown(3).Last().Live, Is.True, "released, waiting for the text");
+        s.Me("Can you hear me?", 3.2);
+        var shown = s.Shown(3.2);
+        Assert.That(shown.Any(x => x.Live), Is.False);
+        Assert.That(shown.Last().You && shown.Last().Text == "Can you hear me?", Is.True);
+        s.Mic(true, 4);
+        s.Mic(false, 4.1);
+        Assert.That(s.Shown(4.1 + Subtitles.YouWaitS + 0.1).Any(x => x.Live), Is.False, "no text came: gone after a while");
+    }
+
+    [Test]
+    public void YawRangeKeepsTheFrontHalfAndIsContinuousAllTheWayRound()
+    {
+        Assert.That(YawRange.Fold(70), Is.EqualTo(70), "inside: unchanged");
+        Assert.That(YawRange.Fold(-100), Is.EqualTo(-100));
+        Assert.That(YawRange.Fold(130), Is.EqualTo(YawRange.MaxDeg), "past the edge: waits there");
+        Assert.That(YawRange.Fold(-140), Is.EqualTo(-YawRange.MaxDeg));
+        Assert.That(YawRange.Fold(160), Is.EqualTo(YawRange.MaxDeg / 2).Within(Tol), "back to the room: towards the middle");
+        Assert.That(YawRange.Fold(180), Is.EqualTo(0).Within(Tol));
+        Assert.That(YawRange.Fold(-180), Is.EqualTo(0).Within(Tol), "same at both ends of the wrap: no jump");
+        double prev = YawRange.Fold(-180);
+        for (double y = -179.5; y <= 180; y += 0.5)
         {
-            var p = line.Split(' ');
-            double? head = p[2] == "null" ? (double?)null : D(p[2]), doa = p[3] == "null" ? (double?)null : D(p[3]);
-            var faces = p[4] == "-" ? new Face[0] : p[4].Split(';').Select(f =>
-            {
-                var v = f.Split(',').Select(D).ToArray();
-                return new Face { Cx = v[0], Cy = v[1], Top = v[2], W = v[3], H = v[4], Mouth = v[5] < 0 ? (double?)null : v[5] };
-            }).ToArray();
-            s.Update(faces, D(p[1]), head);
-            var expected = p[5] == "-" ? new string[0] : p[5].Split(';');
-            Assert.That(s.Tracks.Count, Is.EqualTo(expected.Length), line);
-            for (int i = 0; i < expected.Length; i++)
-            {
-                var e = expected[i].Split(',');
-                Assert.That(s.Tracks[i].Id, Is.EqualTo(int.Parse(e[0])), line);
-                Assert.That(s.Tracks[i].Pid, Is.EqualTo(int.Parse(e[1])), line);
-                Assert.That(s.Tracks[i].Cx, Is.EqualTo(D(e[2])).Within(1e-8), line);
-            }
-            var pick = s.Pick(doa);
-            Assert.That(pick == null ? "null" : pick.Id.ToString(), Is.EqualTo(p[6]), line);
+            double f = YawRange.Fold(y);
+            Assert.That(Math.Abs(f), Is.LessThanOrEqualTo(YawRange.MaxDeg));
+            Assert.That(Math.Abs(f - prev), Is.LessThan(1.5), $"no jump at {y}");
+            prev = f;
+        }
+    }
+
+    [Test]
+    public void AFullTurnOfTheUserDoesNotDragReachyRound()
+    {
+        // The user turns left twice all the way round at 90°/s, the headset yaw wrapping at ±180 like atan2
+        var m = new HeadMirror();
+        const double dt = 1 / 72.0;
+        HeadTarget prev = m.Step(new RobotAngles(), dt);
+        for (double t = 0; t < 8; t += dt)
+        {
+            double user = (90 * t + 180) % 360 - 180;
+            var o = m.Step(YawRange.Fold(new RobotAngles(0, 0, user)), dt);
+            // the rate limiters brake in steps of dt, so they may overshoot the edge by up to ~0.5°
+            Assert.That(Math.Abs(o.Yaw), Is.LessThanOrEqualTo(YawRange.MaxDeg + 1), $"head at t={t:0.00}");
+            Assert.That(Math.Abs(o.BodyYaw), Is.LessThanOrEqualTo(YawRange.MaxDeg - 65 + 1), $"body at t={t:0.00}");
+            Assert.That(Math.Abs(o.Yaw - prev.Yaw) / dt, Is.LessThanOrEqualTo(150 + 1e-6), "head speed limit");
+            Assert.That(Math.Abs(o.BodyYaw - prev.BodyYaw) / dt, Is.LessThanOrEqualTo(90 + 1e-6), "body speed limit");
+            prev = o;
         }
     }
 

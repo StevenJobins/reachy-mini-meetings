@@ -9,7 +9,8 @@ import numpy as np
 from reachy_meetings_backend.captions import CaptionServer, NoiseGate
 from reachy_meetings_backend.doa import DoaTracker, circular_mean_deg, doa_to_head_deg
 from reachy_meetings_backend.segmenter import SAMPLE_RATE, Segmenter, SegmenterCfg
-from reachy_meetings_backend.stt import plausible
+from reachy_meetings_backend.speakers import SpeakerClusters
+from reachy_meetings_backend.stt import pick_language, plausible
 from reachy_meetings_backend.summary import parse_summary
 
 rng = np.random.default_rng(0)
@@ -385,3 +386,36 @@ def test_lan_secret_keeps_other_machines_out():
 
 def test_no_lan_secret_changes_nothing_for_local_use():
     assert asyncio.run(CaptionServer("127.0.0.1", 0, "en")._lan_authorized(FakeClient("127.0.0.1", "")))
+
+
+def test_language_detection_only_picks_among_the_meeting_languages():
+    probs = {"cs": 0.4, "de": 0.35, "en": 0.2, "pl": 0.05}
+    assert pick_language(probs) == "cs"
+    assert pick_language(probs, ("de", "en")) == "de"
+    assert pick_language({"cs": 0.9, "pl": 0.1}, ("de", "en")) == "cs", "none of them scored: the best one"
+
+
+def voice(base: np.ndarray, spread: float = 0.3) -> np.ndarray:
+    return base + spread * rng.standard_normal(base.shape)
+
+
+def test_speaker_clusters_tell_voices_apart_and_learn_them():
+    a, b = rng.standard_normal(512), rng.standard_normal(512)
+    c = SpeakerClusters(threshold=0.8)
+    assert c.match(voice(a)) == (None, 0.0), "nobody known yet"
+    assert c.add(voice(a)) == 1
+    assert c.add(voice(b)) == 2, "a different voice: a new speaker"
+    assert [c.add(voice(a)) for _ in range(5)] == [1] * 5
+    assert c.add(voice(b)) == 2
+    sid, sim = c.match(voice(a))
+    assert sid == 1 and sim > 0.8
+    assert c.counts == [6, 2]
+
+
+def test_speaker_clusters_match_does_not_learn_and_stops_at_the_limit():
+    c = SpeakerClusters(threshold=0.8, max_speakers=2)
+    voices = [rng.standard_normal(256) for _ in range(3)]
+    assert c.match(voices[0])[0] is None and not c.means, "a partial adds nobody"
+    assert [c.add(v) for v in voices[:2]] == [1, 2]
+    assert c.add(voices[2]) in (1, 2), "full: the closest one"
+    assert len(c.means) == 2

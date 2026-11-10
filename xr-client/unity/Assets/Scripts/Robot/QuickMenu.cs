@@ -142,6 +142,7 @@ public class QuickMenu : MonoBehaviour
         {
             sentConnects = backend.Connects;
             SendLang();
+            SendMeMode();
         }
 
         Place();
@@ -201,6 +202,7 @@ public class QuickMenu : MonoBehaviour
                 Translate = !Translate;
                 PlayerPrefs.SetInt(TranslateKey, Translate ? 1 : 0);
                 PlayerPrefs.Save();
+                SendMeMode();
                 Debug.Log($"[menu] translate {(Translate ? "on" : "off")}");
                 break;
             case Item.Language:
@@ -226,6 +228,13 @@ public class QuickMenu : MonoBehaviour
         if (room.Backend == null) return;
         // what Reachy speaks stays "auto": the language most spoken in the room (backend/README.md)
         room.Backend.Send($"{{\"type\": \"lang\", \"meeting\": \"auto\", \"target\": \"{Target}\"}}");
+    }
+
+    /// <summary>Translate me: Reachy says your words; else it plays your voice and the backend only transcribes it.</summary>
+    void SendMeMode()
+    {
+        if (room.Backend == null) return;
+        room.Backend.Send($"{{\"type\": \"me_mode\", \"speak\": {(Translate ? "true" : "false")}}}");
     }
 
     /// <summary>What Reachy just said for you (from CaptionView).</summary>

@@ -44,6 +44,12 @@ def plausible(text: str, no_speech: float, logprob: float, compression: float) -
     return not (t in FAKE_IF_UNSURE and (no_speech > 0.2 or logprob < -0.5))
 
 
+def pick_language(probs: dict[str, float], langs: tuple[str, ...] = ()) -> str:
+    """Most likely language, among `langs` if given."""
+    allowed = [lang for lang in probs if lang in langs] if langs else list(probs)
+    return max(allowed or probs, key=probs.get)
+
+
 def has_cuda() -> bool:
     try:
         import ctranslate2
@@ -61,9 +67,13 @@ def default_engine() -> str:
 
 
 class Transcriber:
-    def __init__(self, model: str, language: str | None = None, engine: str | None = None) -> None:
+    def __init__(self, model: str, language: str | None = None, engine: str | None = None,
+                 langs: tuple[str, ...] = ()) -> None:
         self.engine = engine or default_engine()
         self.language = language
+        # Auto-detection only picks among these (empty = any). Short far-away clips came out as Czech or
+        # Polish in a German/English meeting (robot test 2026-11-06).
+        self.langs = langs
         t0 = time.time()
         if self.engine == "mlx":
             import mlx_whisper
@@ -98,6 +108,8 @@ class Transcriber:
         """Returns (text, language). `language` overrides the fixed one (e.g. detected by the partials);
         AUTO detects it in any case."""
         language = None if language == AUTO else language or self.language
+        if language is None and self.langs:
+            language = self.detect_language(audio)
         if self.engine == "mlx":
             self._holder.model, self._holder.model_path = self._model, self.repo   # no reload (see top)
             r = self._mlx.transcribe(audio, path_or_hf_repo=self.repo, language=language,
@@ -121,6 +133,7 @@ class Transcriber:
 
             mel = pad_or_trim(log_mel_spectrogram(audio, n_mels=self._model.dims.n_mels), N_FRAMES, axis=-2)
             _, probs = self._model.detect_language(mel.astype(mx.float16))
-            return max(probs, key=probs.get)
-        lang, _, _ = self._fw.detect_language(audio)
-        return lang
+        else:
+            _, _, ranked = self._fw.detect_language(audio)
+            probs = dict(ranked)
+        return pick_language(probs, self.langs)

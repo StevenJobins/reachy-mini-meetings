@@ -72,7 +72,8 @@ src/reachy_meetings_robot/
 └── bridge/
     ├── protocol.py      JSON messages (keep in sync with xr-client / backend)
     └── server.py        WebSocket server
-scripts/                 check_connection, demo_gestures, mock_headset, fake_camera (video stand-in), flash_clock (latency)
+scripts/                 check_connection, demo_gestures, mock_headset, fake_camera (video stand-in), flash_clock (latency),
+                         daemon_lan_relay (daemon API on the Wi-Fi for the headset)
 tests/                   pure-logic tests
 ```
 
@@ -94,6 +95,8 @@ tests/                   pure-logic tests
 ## Sharper video: `scripts/patch_daemon_video.py`
 
 The daemon gives the camera (1080p60) to webrtcsink without settings: start 2 Mbit/s, max 8, and below 2 Mbit/s webrtcsink scales the picture down to 720p/360p, which looked washed out in the headset. There is no daemon option, so the script patches `media_server.py` of the installed desktop app (backup `media_server.py.orig`): bitrate 3–15 Mbit/s (start 6). `--fps 30` adds a `videorate` to 30 fps in the WebRTC branch, but **don't use it**: with it, every headset session hung "stuck mid-negotiation" (daemon log: `signaling_state have-local-offer`, ICE `new`) about a minute after connecting, 4 times in 6 minutes, none with the bitrate-only patch. Why it was tried: with full 1080p60 arriving, VR dropped to ~19 fps (debug panel: video rx 60 fps, tex 19 fps, send 19 Hz); the page now limits the texture uploads to 30/s instead (`videosource.js`). The script always starts from the backup, so running it again with other options replaces the old patch. `--h264` also forces H264 (Apple hardware encoder `vtenc_h264_hw` is available; VP8 runs in software at its fastest/lowest setting). `--revert` restores the original. Restart the daemon afterwards (quit and reopen Reachy Mini Control); run it again after an app update. Check the result in the VR debug panel (incoming resolution, fps, bitrate, codec).
+
+**Not after the 1.14 update yet (2026-11-06):** the update replaced `media_server.py` and dropped the patch, but `media_server.py.orig` is still the 1.11 file from 2026-10-16. The script starts from that backup, so as it is it would put the 1.11 media server into the 1.14 daemon. Delete the old backup first, or fix the script to notice a stale one. Unpatched 1.14 gives the headset 1080p60 VP8 at ~8.5 Mbit/s.
 
 ## Fake camera for headset tests: `scripts/fake_camera.py`
 

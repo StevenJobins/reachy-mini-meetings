@@ -1,11 +1,13 @@
 // Plays the room sound from the backend. Unity pulls samples on the audio thread and resamples the 16 kHz clip itself.
-// Its own GameObject: MicSender silences everything played on its object.
+// Its own GameObject: MicSender silences everything played on its object. Owns the backend connection.
 
 using UnityEngine;
 
 public class RoomSound : MonoBehaviour
 {
     const string SecretKey = "secret";
+    // The headset voice the backend gets is only transcribed ("You" subtitles): Reachy already plays it over WebRTC
+    const string MeMode = "{\"type\": \"me_mode\", \"speak\": false}";
 
     public RobotVideo video;
 
@@ -27,7 +29,7 @@ public class RoomSound : MonoBehaviour
         if (backend == null)
         {
             if (string.IsNullOrEmpty(video.SignallingUrl)) return;
-            backend = new BackendClient(new System.Uri(video.SignallingUrl).Host, PlayerPrefs.GetString(SecretKey, ""));
+            backend = new BackendClient(new System.Uri(video.SignallingUrl).Host, PlayerPrefs.GetString(SecretKey, ""), MeMode);
             buffer = backend.Audio;
             var source = gameObject.AddComponent<AudioSource>();
             source.clip = AudioClip.Create("Room", AudioJitterBuffer.SampleRate, 1, AudioJitterBuffer.SampleRate, true, OnRead);
