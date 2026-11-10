@@ -8,6 +8,7 @@ import numpy as np
 
 from reachy_meetings_backend.captions import CaptionServer, NoiseGate
 from reachy_meetings_backend.doa import DoaTracker, circular_mean_deg, doa_to_head_deg
+from reachy_meetings_backend.people import People, image_to_angles
 from reachy_meetings_backend.segmenter import SAMPLE_RATE, Segmenter, SegmenterCfg
 from reachy_meetings_backend.speakers import SpeakerClusters
 from reachy_meetings_backend.stt import pick_language, plausible
@@ -419,3 +420,73 @@ def test_speaker_clusters_match_does_not_learn_and_stops_at_the_limit():
     assert [c.add(v) for v in voices[:2]] == [1, 2]
     assert c.add(voices[2]) in (1, 2), "full: the closest one"
     assert len(c.means) == 2
+
+
+def _flat(u, v):   # a simple camera for the tests: 90 x 50 degrees, no distortion
+    return (0.5 - u) * 90, (0.5 - v) * 50
+
+
+def _face(u, mouth=0.0):
+    return {"cx": u, "cy": 0.5, "top": 0.4, "w": 0.1, "h": 0.2, "mouth": mouth}
+
+
+def _watch(people, t0, t1, faces, head_yaw=0.0):
+    """faces: u -> mouth opening as a function of the frame number, 20 frames a second."""
+    for i in range(int((t1 - t0) * 20)):
+        people.update([_face(u, m(i)) for u, m in faces.items()], t0 + i / 20, head_yaw)
+
+
+def _still(i):
+    return 0.01
+
+
+def _talking(i):
+    return 0.3 * (i % 4 < 2)
+
+
+def test_image_angles_centre_and_signs():
+    yaw, pitch = image_to_angles(946.0789 / 1920, 548.5234 / 1080)
+    assert abs(yaw) < 0.01 and abs(pitch) < 0.01
+    assert image_to_angles(0.2, 0.5)[0] > 20      # left in the image = positive yaw
+    assert image_to_angles(0.5, 0.2)[1] > 10      # up in the image = positive pitch
+
+
+def test_people_are_known_by_their_direction_in_the_room():
+    people = People(_flat)
+    _watch(people, 0, 1, {0.3: _still, 0.7: _still})
+    assert [(p.pid, round(p.yaw)) for p in people.people] == [(1, 18), (2, -18)]
+    _watch(people, 5, 6, {0.5: _still}, head_yaw=18)      # the head turned to person 1: now in the image centre
+    assert len(people.people) == 2 and people.people[0].seen > 5 and people.people[1].seen < 1
+
+
+def test_a_face_seen_for_a_moment_is_nobody():
+    people = People(_flat)
+    _watch(people, 0, 0.2, {0.3: _still})                  # 4 sightings, e.g. while the head turns
+    _watch(people, 5, 6, {0.7: _still})
+    assert [round(p.yaw) for p in people.people] == [-18]
+
+
+def test_voice_is_tied_to_the_person_whose_mouth_moves():
+    people = People(_flat)
+    _watch(people, 0, 2, {0.3: _talking, 0.7: _still})
+    assert people.heard(1, 0, 2).pid == 1                 # seen talking: this caption is theirs
+    assert people.owner(1) is None                        # one utterance does not tie the voice yet
+    _watch(people, 2, 4, {0.3: _still, 0.7: _talking})
+    assert people.heard(2, 2, 4).pid == 2
+    _watch(people, 4, 6, {0.3: _talking, 0.7: _still})
+    assert people.heard(1, 4, 6).pid == 1 and people.owner(1).pid == 1
+    _watch(people, 6, 8, {0.3: _still, 0.7: _still})       # mouth not seen moving: the voice still says who
+    assert people.heard(1, 6, 8).pid == 1
+    assert people.heard(2, 6, 8) is None                  # voice 2 has one vote only
+    _watch(people, 8, 10, {0.7: _still}, head_yaw=0)       # person 1 out of the picture
+    at = People.place(people.heard(1, 8, 10), 10)
+    assert at["person"] == 1 and round(at["yaw_deg"]) == 18 and at["seen_s"] >= 2
+
+
+def test_nobody_stands_out_no_answer():
+    people = People(_flat)
+    _watch(people, 0, 2, {0.3: _talking, 0.7: _talking})   # both mouths move
+    assert people.heard(1, 0, 2) is None
+    _watch(people, 2, 2.5, {0.3: _talking, 0.7: _still})
+    assert people.heard(None, 2, 2.5) is None             # too short to judge
+

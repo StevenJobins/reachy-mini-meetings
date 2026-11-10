@@ -13,6 +13,9 @@ Protocol (server -> headset, one JSON per message; keep in sync with xr-client):
             "target": str, "doa_deg": float | null, "azimuth_deg": float | null, "speaker": int | null,
             "t_start": s, "t_end": s}   speaker = 1, 2, ... from the voice (speakers.py); null = not known
             (short utterance, no model); on a partial only a voice heard before
+            "at": {"person": int, "yaw_deg", "pitch_deg", "top_deg", "h_deg", "seen_s"} | null   where the
+            speaker's face is, in the robot base frame (people.py: yaw + = left, pitch + = up, top_deg = top of
+            the face, h_deg = its height, seen_s = how long ago the camera saw it); null = not known who
   summary  {"summary": [str], "actions": [{"who": str, "what": str, "when": str}], "next_steps": [str], "t": s}
            all lists empty and "new_meeting": true when a new meeting began (clear the notes)
   faces    {"people": [{"cx", "cy", "top", "w", "h", "mouth"}], "t": s}   faces in the robot camera found here
@@ -332,6 +335,7 @@ class Pipeline:
         self.meeting_choice = "auto"
         self.translator = self._new_translator(self.target)   # room captions, with context
         self.doa = None
+        self.people = None   # faces as people in the room, voices tied to them (people.py)
         if args.daemon:
             from .doa import DoaTracker
 
@@ -392,10 +396,14 @@ class Pipeline:
                  translation: str | None = None, speaker: int | None = None) -> dict:
         t_start = wall_end - (seg.t_end - seg.t_start)
         doa_deg, azimuth_deg = self.doa.direction(t_start, wall_end) if self.doa else (None, None)
+        at = None
+        if self.people and text:   # a final utterance also counts as a vote for who owns this voice
+            who = self.people.heard(speaker, t_start, wall_end) if seg.final else self.people.owner(speaker)
+            at = self.people.place(who, time.time())
         return {
             "id": seg.id, "final": seg.final, "text": text, "lang": lang,
             "translation": translation, "target": self.target,
-            "doa_deg": doa_deg, "azimuth_deg": azimuth_deg, "speaker": speaker,
+            "doa_deg": doa_deg, "azimuth_deg": azimuth_deg, "speaker": speaker, "at": at,
             "t_start": round(t_start, 3), "t_end": round(wall_end, 3),
         }
 
@@ -613,11 +621,18 @@ class Pipeline:
             tasks.append(asyncio.create_task(self.summarizer.run(self.server.send_summary)))
         tasks += [asyncio.create_task(self._me_loop()), asyncio.create_task(self._me_player())]
         if self.args.vision_camera != "none" and not self.args.file:
+            from .people import People
             from .vision import FaceStream
+
+            self.people = People()
+
+            def faces(people: list, t: float) -> None:
+                self.people.update(people, t, self.doa.head_yaw_deg if self.doa else 0.0)
+                self.server.send_faces(people, t)
 
             loop = asyncio.get_running_loop()
             FaceStream(self.args.vision_camera, self.args.vision_hz).start(
-                lambda people, t: loop.call_soon_threadsafe(self.server.send_faces, people, t))
+                lambda people, t: loop.call_soon_threadsafe(faces, people, t))
         if self.args.tunnel:
             from . import tunnel
 

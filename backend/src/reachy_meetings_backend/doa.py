@@ -67,7 +67,7 @@ class DoaTracker:
             return json.loads(r.read())
 
     def _poll(self, n: int) -> None:
-        if n % 5 == 0:  # head pose changes slower than speech, 2 Hz is enough
+        if n % 2 == 0:  # 5 Hz: people.py turns face directions into room directions with it
             yaw = (self._get("/api/state/full").get("head_pose") or {}).get("yaw")
             if yaw is not None:
                 self.head_yaw_deg = math.degrees(yaw)
