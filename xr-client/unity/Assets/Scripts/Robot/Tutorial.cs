@@ -44,7 +44,12 @@ public class Tutorial : MonoBehaviour
     int index = -1;
     Transform root;
     TextMesh title, body, hint, footer;
-    Ui.Rect panel, strip, thumb, finger;
+    Ui.Rect panel, strip, thumb, finger, skipBtn, nextBtn;
+    TextMesh skipText, nextText;
+    Vector3 skipAt, nextAt;
+    readonly bool[] onSkip = new bool[2], onNext = new bool[2];   // per hand: left, right
+    readonly Ui.Cursor[] cursors = new Ui.Cursor[2];
+    const float BtnW = 0.3f, BtnH = 0.075f;
     Ui.Rect[] dots;
     bool following;
     float width, height;
@@ -75,6 +80,11 @@ public class Tutorial : MonoBehaviour
         body = Ui.Text(root, "Body", text, 52, BodyScale, TextAnchor.UpperLeft);
         hint = Ui.Text(root, "Hint", text, 52, BodyScale, TextAnchor.UpperLeft, FontStyle.Bold);
         footer = Ui.Text(root, "Footer", text, 46, BodyScale, TextAnchor.UpperLeft);
+        skipBtn = Ui.Quad(root, "Skip", panelMaterial, 3041);
+        nextBtn = Ui.Quad(root, "Next", panelMaterial, 3041);
+        skipText = Ui.Text(root, "SkipText", text, 44, BodyScale);
+        nextText = Ui.Text(root, "NextText", text, 44, BodyScale, TextAnchor.MiddleCenter, FontStyle.Bold);
+        for (int i = 0; i < 2; i++) cursors[i] = new Ui.Cursor(root, panelMaterial);
         root.gameObject.SetActive(false);
     }
 
@@ -87,50 +97,50 @@ public class Tutorial : MonoBehaviour
         ? new[]
         {
             new Card { Task = Task.Start, Hand = Hand.Left, Title = "Willkommen bei Reachy Meetings",
-                Body = "Du sitzt gleich durch Reachy mit am Tisch. Bedient wird alles mit einer Geste: Daumen und Zeigefinger zusammen, ein «Pinch». Reachy wartet, bis du hier fertig bist.",
-                Footer = "Links pinchen: los geht's" },
+                Body = "Du sitzt gleich durch Reachy mit am Tisch. Bedient wird alles mit einer Geste: Daumen und Zeigefinger zusammen, ein «Pinch». Reachy macht sich währenddessen bereit.",
+                Footer = "Auf «Weiter» zeigen und pinchen" },
             new Card { Task = Task.HoldRight, Hand = Hand.Right, Title = "Sprechen",
                 Body = "Rechte Hand: Daumen und Zeigefinger zusammen und halten, wie bei einem Walkie-Talkie. Probier es jetzt.",
                 Footer = "Rechts pinchen und halten" },
             new Card { Task = Task.Recenter, Hand = Hand.Left, Title = "Geradeaus festlegen",
                 Body = "Schau dorthin, wo für dich «geradeaus» sein soll, und halte den linken Pinch etwa eine Sekunde. Das geht später jederzeit wieder.",
-                Footer = "Links pinchen" },
+                Footer = "Links pinchen und halten" },
             new Card { Task = Task.PickLanguage, Hand = Hand.Left, Stay = true, DoneS = 2.5f, Title = "Menü und Sprache",
                 Body = "Unten am Bild ist das Menü. Zeig mit einer Hand auf «Sprache»: Ein Punkt zeigt, wohin du zeigst, und sein Ring schliesst sich beim Pinchen. Ist «Sprache» gelb umrandet, pinche mit dieser Hand.",
                 Footer = "Auf «Sprache» zeigen, pinchen" },
             new Card { Task = Task.Info, Hand = Hand.Left, Title = "Übersetzung",
-                Body = "Was im Raum gesagt wird, erscheint als Sprechblase über der Person, in deiner Sprache. Ist «Translate me» an (oben im Menü), sagt Reachy deine Sätze übersetzt in der Sprache des Raums. Ist es aus, hört man deine eigene Stimme.",
-                Footer = "Links pinchen: weiter" },
+                Body = "Was im Raum gesagt wird, erscheint als Sprechblase über der Person, in deiner Sprache. Ist «Translate me» an (im Menü), sagt Reachy deine Sätze übersetzt in der Sprache des Raums. Ist es aus, hört man deine eigene Stimme.",
+                Footer = "«Weiter»" },
             new Card { Task = Task.LookNotes, Hand = Hand.None, Stay = true, DoneS = 4f, Title = "Meeting-Notizen",
                 Body = "Schau nach rechts: Dort stehen laufend die Zusammenfassung, wer was bis wann erledigt, und die nächsten Schritte.",
                 Footer = "Nach rechts schauen" },
             new Card { Task = Task.Finish, Hand = Hand.Left, Title = "Bereit",
                 Body = "Das war's. Diese Anleitung findest du jederzeit unter «Hilfe» im Menü.",
-                Footer = "Links pinchen: Reachy aufwecken" },
+                Footer = "«Fertig»: los geht's" },
         }
         : new[]
         {
             new Card { Task = Task.Start, Hand = Hand.Left, Title = "Welcome to Reachy Meetings",
-                Body = "You are about to sit at the table through Reachy. Everything works with one gesture: thumb and index finger together, a \"pinch\". Reachy waits until you are done here.",
-                Footer = "Pinch left: let's go" },
+                Body = "You are about to sit at the table through Reachy. Everything works with one gesture: thumb and index finger together, a \"pinch\". Reachy gets ready meanwhile.",
+                Footer = "Point at \"Next\" and pinch" },
             new Card { Task = Task.HoldRight, Hand = Hand.Right, Title = "Talking",
                 Body = "Right hand: touch thumb and index finger and hold, like a walkie-talkie. Try it now.",
                 Footer = "Pinch right and hold" },
             new Card { Task = Task.Recenter, Hand = Hand.Left, Title = "Set straight ahead",
                 Body = "Look where \"straight ahead\" should be for you and hold the left pinch for about a second. You can do this again any time.",
-                Footer = "Pinch left" },
+                Footer = "Pinch left and hold" },
             new Card { Task = Task.PickLanguage, Hand = Hand.Left, Stay = true, DoneS = 2.5f, Title = "Menu and language",
                 Body = "The menu is at the foot of the picture. Point at \"Language\" with one hand: a dot shows where you point, and its ring closes as you pinch. Once \"Language\" has a yellow frame, pinch with that hand.",
                 Footer = "Point at \"Language\", pinch" },
             new Card { Task = Task.Info, Hand = Hand.Left, Title = "Translation",
-                Body = "What is said in the room appears as a speech bubble above the person, in your language. With \"Translate me\" on (top of the menu), Reachy says your sentences in the room's language. With it off, they hear your own voice.",
-                Footer = "Pinch left: next" },
+                Body = "What is said in the room appears as a speech bubble above the person, in your language. With \"Translate me\" on (in the menu), Reachy says your sentences in the room's language. With it off, they hear your own voice.",
+                Footer = "\"Next\"" },
             new Card { Task = Task.LookNotes, Hand = Hand.None, Stay = true, DoneS = 4f, Title = "Meeting notes",
                 Body = "Look to your right: a live summary, who does what by when, and the next steps.",
                 Footer = "Look to your right" },
             new Card { Task = Task.Finish, Hand = Hand.Left, Title = "Ready",
                 Body = "That's it. You find this guide again under \"Help\" in the menu.",
-                Footer = "Pinch left: wake Reachy up" },
+                Footer = "\"Done\": off you go" },
         };
 
     /// <summary>From the first card, in front of you. Reachy pauses until the end.</summary>
@@ -180,6 +190,16 @@ public class Tutorial : MonoBehaviour
         Redraw();
     }
 
+    /// <summary>That hand points at Skip or Next: its pinch goes here (RobotControl).</summary>
+    public bool Hovered(bool right) => Open && (onSkip[right ? 1 : 0] || onNext[right ? 1 : 0]);
+
+    public void Press(bool right)
+    {
+        int hand = right ? 1 : 0;
+        if (onSkip[hand]) { Debug.Log("[tutorial] skipped"); Close(); }
+        else if (onNext[hand]) Go(index + 1);
+    }
+
     /// <summary>Left pinch, when not on the menu (RobotControl).</summary>
     public void LeftPinch()
     {
@@ -223,6 +243,22 @@ public class Tutorial : MonoBehaviour
             if ((root.position - want).sqrMagnitude < 0.0004f) following = false;
         }
         DrawFingers(c);
+
+        // Skip and Next, picked with either hand's ray (or the gaze) and a pinch of that hand
+        for (int hand = 0; hand < 2; hand++)
+        {
+            bool right = hand == 1;
+            var aim = XrInput.Aim(right, head);
+            var p = Ui.PointOn(root, aim ?? XrInput.Gaze(head));
+            onSkip[hand] = Ui.Inside(p, skipAt, BtnW + 0.04f, BtnH + 0.04f);
+            onNext[hand] = Ui.Inside(p, nextAt, BtnW + 0.04f, BtnH + 0.04f);
+            if (aim != null && Ui.Inside(p, Vector3.zero, width + 0.1f, height + 0.1f))
+                cursors[hand].Show(p.Value, right ? control.RightLevel : control.LeftLevel);
+            else cursors[hand].Hide();
+        }
+        skipBtn.Set(BtnW, BtnH, BtnH / 2, skipAt, new Color(1, 1, 1, onSkip[0] || onSkip[1] ? 0.3f : 0.1f));
+        var accent = new Color(Left.r, Left.g, Left.b, onNext[0] || onNext[1] ? 1f : 0.75f);
+        nextBtn.Set(BtnW, BtnH, BtnH / 2, nextAt, accent);
     }
 
     /// <summary>Watches the task of the current card.</summary>
@@ -272,7 +308,7 @@ public class Tutorial : MonoBehaviour
         body.text = "<color=#cbd5e1>" + Wrap(c.Body) + "</color>";
         var good = done ? "#4ade80" : "#facc15";
         hint.text = hintText == null ? "" : $"<color={good}>{Wrap(hintText)}</color>";
-        var line = c.Task == Task.Finish && control.IsFollowing ? (De ? "Links pinchen: weiter mit Reachy" : "Pinch left: back to Reachy") : c.Footer;
+        var line = c.Task == Task.Finish && control.IsFollowing ? (De ? "«Fertig»: weiter mit Reachy" : "\"Done\": back to Reachy") : c.Footer;
         var col = c.Hand == Hand.Right ? "#ff9500" : "#38bdf8";
         footer.text = done ? "" : $"<color={col}><b>{CaptionView.Escape(line)}</b></color>";
 
@@ -283,7 +319,14 @@ public class Tutorial : MonoBehaviour
         float illus = c.Hand == Hand.None ? 0 : Illus;
         width = Mathf.Max(0.8f, Mathf.Max(tb.x + illus, Mathf.Max(bb.x, Mathf.Max(hb.x, fb.x))) + 2 * Pad);
         float gap = 0.03f, dotsH = Dot + gap;
-        height = Pad + dotsH + tb.y + gap + bb.y + (hintText == null ? 0 : gap + hb.y) + (done ? 0 : gap * 1.5f + fb.y) + Pad;
+        height = Pad + dotsH + tb.y + gap + bb.y + (hintText == null ? 0 : gap + hb.y) + (done ? 0 : gap * 1.5f + fb.y)
+                 + gap * 2 + BtnH + Pad;
+        skipAt = new Vector3(-width / 2 + Pad + BtnW / 2, -height / 2 + Pad + BtnH / 2, -0.001f);
+        nextAt = new Vector3(width / 2 - Pad - BtnW / 2, -height / 2 + Pad + BtnH / 2, -0.001f);
+        skipText.text = $"<color=#cbd5e1>{(De ? "Überspringen" : "Skip")}</color>";
+        nextText.text = $"<color=#0b1220>{(c.Task == Task.Finish ? (De ? "Fertig" : "Done") : (De ? "Weiter" : "Next"))}</color>";
+        skipText.transform.localPosition = skipAt + new Vector3(0, 0, -0.002f);
+        nextText.transform.localPosition = nextAt + new Vector3(0, 0, -0.002f);
 
         float left = -width / 2 + Pad, y = height / 2 - Pad;
         panel.Set(width, height, 0.04f, Vector3.zero, Panel);

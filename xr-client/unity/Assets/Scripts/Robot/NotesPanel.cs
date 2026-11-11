@@ -27,7 +27,7 @@ public class NotesPanel : MonoBehaviour
         public bool new_meeting;
     }
 
-    const string YawKey = "notes_yaw", UpKey = "notes_up";
+    const string YawKey = "notes_yaw", UpKey = "notes_up", FoldKey = "notes_folded";
     const float DefaultYaw = 45f, DefaultUp = -3.5f;   // degrees right of / above straight ahead
     const float Distance = 1.7f;                        // m from the eye
     const float Width = 0.95f, Pad = 0.06f, StripW = 0.012f;
@@ -47,8 +47,10 @@ public class NotesPanel : MonoBehaviour
     public Material textMaterial, panelMaterial;
 
     Transform card;
-    Ui.Rect panel, strip, handle, button;
-    TextMesh body, buttonText;
+    Ui.Rect panel, strip, handle, button, fold;
+    TextMesh body, buttonText, foldText;
+    bool folded;   // only the title: the notes take a lot of room
+    readonly bool[] onFold = new bool[2];
     float armedAt = -10f;   // first pinch on New meeting; the second within ConfirmS clears
     float w;
     SummaryMsg notes;
@@ -70,7 +72,7 @@ public class NotesPanel : MonoBehaviour
     /// <summary>The card, for the tutorial ("look to your right").</summary>
     public Transform Card => card;
     /// <summary>That hand points at the handle or the button: its pinch goes here (RobotControl).</summary>
-    public bool Hovered(bool right) => onHandle[right ? 1 : 0] || onButton[right ? 1 : 0];
+    public bool Hovered(bool right) => onHandle[right ? 1 : 0] || onButton[right ? 1 : 0] || onFold[right ? 1 : 0];
 
     void Awake()
     {
@@ -84,6 +86,9 @@ public class NotesPanel : MonoBehaviour
         handle = Ui.Quad(card, "Handle", panelMaterial, 3016);
         button = Ui.Quad(card, "NewMeeting", panelMaterial, 3016);
         buttonText = Ui.Text(card, "NewMeetingText", text, 36, TextScale);
+        fold = Ui.Quad(card, "Fold", panelMaterial, 3016);
+        foldText = Ui.Text(card, "FoldText", text, 44, TextScale, TextAnchor.MiddleCenter, FontStyle.Bold);
+        folded = PlayerPrefs.GetInt(FoldKey, 0) == 1;
         for (int i = 0; i < 2; i++) cursors[i] = new Ui.Cursor(card, panelMaterial);
         body = Ui.Text(card, "Text", text, 48, TextScale, TextAnchor.UpperLeft);
         Redraw();
@@ -144,7 +149,12 @@ public class NotesPanel : MonoBehaviour
         bool de = Ui.German;
         buttonText.text = armed ? (de ? "Wirklich? Nochmals pinchen" : "Sure? Pinch again") : (de ? "Neues Meeting" : "New meeting");
         var bs = Ui.Size(buttonText);
-        var buttonAt = new Vector3(w / 2 - Pad - bs.x / 2 - 0.02f, h / 2 - Pad - 0.025f, -0.003f);
+        // top right: fold / unfold, and left of it New meeting (not while folded)
+        var foldAt = new Vector3(w / 2 - Pad - 0.01f, h / 2 - Pad - 0.025f, -0.003f);
+        var buttonAt = foldAt + new Vector3(-0.07f - bs.x / 2, 0, 0);
+        foldText.text = folded ? "+" : "–";
+        button.Show(!folded);
+        buttonText.gameObject.SetActive(!folded);
         var handleAt = new Vector3(0, -h / 2 - HandleGap, -0.001f);
         for (int hand = 0; hand < 2; hand++)
         {
@@ -152,7 +162,8 @@ public class NotesPanel : MonoBehaviour
             var aim = XrInput.Aim(right, head);
             var p = Ui.PointOn(card, aim ?? XrInput.Gaze(head));
             onHandle[hand] = !dragging && Ui.Inside(p, handleAt, HandleW + 0.12f, 0.09f);
-            onButton[hand] = !dragging && Ui.Inside(p, buttonAt, bs.x + 0.06f, 0.08f);
+            onButton[hand] = !dragging && !folded && Ui.Inside(p, buttonAt, bs.x + 0.06f, 0.08f);
+            onFold[hand] = !dragging && Ui.Inside(p, foldAt, 0.09f, 0.09f);
             bool onCard = p is Vector3 q && Ui.Inside(q, new Vector3(0, -HandleGap / 2, 0), w + 0.1f, h + 2 * HandleGap + 0.1f);
             if (aim != null && onCard) cursors[hand].Show(p.Value, right ? control.RightLevel : control.LeftLevel);
             else cursors[hand].Hide();
@@ -163,6 +174,8 @@ public class NotesPanel : MonoBehaviour
         button.Set(bs.x + 0.04f, 0.055f, 0.0275f, buttonAt + new Vector3(0, 0, 0.001f),
             armed ? new Color(0.94f, 0.27f, 0.27f, 0.9f) : new Color(1, 1, 1, overButton ? 0.3f : 0.1f));
         buttonText.transform.localPosition = buttonAt;
+        fold.Set(0.06f, 0.055f, 0.0275f, foldAt + new Vector3(0, 0, 0.001f), new Color(1, 1, 1, onFold[0] || onFold[1] ? 0.3f : 0.1f));
+        foldText.transform.localPosition = foldAt;
     }
 
     /// <summary>Pinch (either hand) on the handle (drag while held) or on New meeting (twice).</summary>
@@ -170,6 +183,14 @@ public class NotesPanel : MonoBehaviour
     {
         int hand = right ? 1 : 0;
         if (onHandle[hand]) { BeginDrag(right); return; }
+        if (onFold[hand])
+        {
+            folded = !folded;
+            PlayerPrefs.SetInt(FoldKey, folded ? 1 : 0);
+            PlayerPrefs.Save();
+            Redraw();
+            return;
+        }
         if (!onButton[hand]) return;
         if (Time.unscaledTime - armedAt < ConfirmS)
         {
@@ -216,7 +237,8 @@ public class NotesPanel : MonoBehaviour
         bool de = Ui.German;
         var s = new StringBuilder();
         s.Append($"<size=60><b>{(de ? "Meeting-Notizen" : "Meeting notes")}</b></size>\n");
-        if (notes == null)
+        if (folded) { }
+        else if (notes == null)
         {
             s.Append($"\n<color=#9ca3af>{(de ? "Die Zusammenfassung erscheint nach der ersten Minute Gespräch." : "The summary appears after the first minute of talking.")}</color>");
         }
@@ -231,7 +253,7 @@ public class NotesPanel : MonoBehaviour
         body.text = s.ToString();
 
         var size = Ui.Size(body);
-        w = Mathf.Max(Width, size.x + 2 * Pad + StripW);
+        w = folded ? size.x + 2 * Pad + StripW + 0.12f : Mathf.Max(Width, size.x + 2 * Pad + StripW);
         h = size.y + 2 * Pad;
         panel.Set(w, h, 0.04f, Vector3.zero, Panel);
         strip.Set(StripW, h - 0.08f, StripW / 2, new Vector3(-w / 2 + 0.025f, 0, -0.001f), Accent);

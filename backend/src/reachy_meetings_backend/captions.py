@@ -443,8 +443,13 @@ class Pipeline:
         self.server.send(cap)
         log.info("[%d %s speaker %s] %s", seg.id, lang, speaker or "?", text)
         if self.people and text:
-            log.info("People: %s; caption at %s; votes %s", [(p.pid, round(p.yaw), round(time.time() - p.seen, 1))
-                     for p in self.people.people], cap["at"] and cap["at"]["person"], self.people.votes)
+            t1 = cap["t_end"]
+            t0 = cap["t_start"]
+            log.info("People: %s; caption at %s; votes %s; mouth (readings, movement) %s",
+                     [(p.pid, round(p.yaw), round(time.time() - p.seen, 1)) for p in self.people.people],
+                     cap["at"] and cap["at"]["person"], self.people.votes,
+                     [(p.pid, sum(t0 <= t <= t1 for t, _ in p.mouth), round(p.activity(t0, t1) or 0, 4))
+                      for p in self.people.people])
         if text:
             self.room_langs.append((time.time(), lang))
         target, translator = self.target, self.translator

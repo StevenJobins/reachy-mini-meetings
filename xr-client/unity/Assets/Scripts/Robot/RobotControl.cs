@@ -170,7 +170,8 @@ public class RobotControl : MonoBehaviour
         if (rightNow && !rightDown)
         {
             // a right pinch on the notes or a menu tile works them, like the left one, and does not talk
-            if (notes != null && notes.Hovered(true)) { notes.Press(true); rightUi = true; }
+            if (tutorial != null && tutorial.Hovered(true)) { tutorial.Press(true); rightUi = true; }
+            else if (notes != null && notes.Hovered(true)) { notes.Press(true); rightUi = true; }
             else if (menu != null && menu.Hovered(true)) { menu.Select(true); rightUi = true; }
         }
         if (!rightNow) rightUi = false;
@@ -192,7 +193,8 @@ public class RobotControl : MonoBehaviour
         {
             leftSince = Time.unscaledTime;
             leftUsed = true;
-            if (notes != null && notes.Hovered(false)) notes.Press(false);
+            if (tutorial != null && tutorial.Hovered(false)) tutorial.Press(false);
+            else if (notes != null && notes.Hovered(false)) notes.Press(false);
             else if (menu != null && menu.Hovered(false)) menu.Select(false);
             else if (Paused && !tutorial.WantsHold) tutorial.LeftPinch();
             else leftUsed = false;   // nothing under it: held long enough, it recenters
