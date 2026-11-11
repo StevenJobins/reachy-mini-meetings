@@ -5,7 +5,7 @@ to 1 kbit/s and up to 8 Mbit/s, and below 2 Mbit/s it scales the picture down to
 the headset. There is no daemon option for this, so this script edits media_server.py of the installed app
 (an app update overwrites it: run the script again). Restart the daemon (Reachy Mini Control) afterwards.
 
-    python robot/scripts/patch_daemon_video.py             # bitrate 3-15 Mbit/s (start 6)
+    python robot/scripts/patch_daemon_video.py             # bitrate 3-9 Mbit/s (start 6)
     python robot/scripts/patch_daemon_video.py --fps 30    # + videorate to 30 fps: DON'T, WebRTC sessions then hung
                                                            #   mid-negotiation after ~1 min (2026-10-08)
     python robot/scripts/patch_daemon_video.py --h264      # + H264 (Apple hardware encoder instead of VP8 software)
@@ -47,7 +47,9 @@ def block(h264: bool) -> str:
         "        # robot/scripts/patch_daemon_video.py: min 3 Mbit/s keeps webrtcsink from scaling down to 720p/360p\n",
         '        webrtcsink.set_property("start-bitrate", 6_000_000)\n',
         '        webrtcsink.set_property("min-bitrate", 3_000_000)\n',
-        '        webrtcsink.set_property("max-bitrate", 15_000_000)\n',
+        # 9, not 15: on the lab Wi-Fi (2026-11-11) the rate climbed to 15.2 Mbit/s, the link choked, 489 frames
+        # were dropped, the rate fell to 3.3 and the delay in the headset went from 33 to 150 ms; at 8.5 it was steady
+        '        webrtcsink.set_property("max-bitrate", 9_000_000)\n',
     ]
     if h264:
         lines.append('        webrtcsink.set_property("video-caps", Gst.Caps.from_string("video/x-h264"))\n')

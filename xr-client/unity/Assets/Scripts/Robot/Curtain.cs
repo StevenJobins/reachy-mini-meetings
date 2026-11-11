@@ -6,6 +6,7 @@
 
 using UnityEngine;
 
+[DefaultExecutionOrder(1000)]   // after RoomPanorama: a patch it saves this frame is hidden before it is drawn
 public class Curtain : MonoBehaviour
 {
     const float NoRobotS = 8f;       // nothing woke up within this: show the picture as it is
@@ -243,6 +244,6 @@ public class Curtain : MonoBehaviour
         // in front of you, yaw only, gliding after your gaze
         yaw = Mathf.LerpAngle(yaw, head.localEulerAngles.y, 1 - Mathf.Exp(-Time.unscaledDeltaTime * FollowRate));
         card.localRotation = Quaternion.Euler(0, yaw, 0);
-        card.localPosition = head.localPosition + card.localRotation * new Vector3(0, 0, Distance);
+        card.localPosition = head.localPosition + card.localRotation * new Vector3(0, -0.22f, Distance);   // a little below eye height
     }
 }

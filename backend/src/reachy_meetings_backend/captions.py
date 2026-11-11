@@ -92,6 +92,9 @@ from .stt import AUTO
 log = logging.getLogger("reachy_captions")
 
 PROTOCOL_VERSION = "0.3"
+# Live text is translated again once this much new text came in and this much time passed. It was 15 characters
+# and 1.2 s (DeepL quota); the headset shows only the translation while one is on its way, so that wait is seen.
+PARTIAL_TR_CHARS, PARTIAL_TR_S = 6, 0.5
 RESHOW_S = 12  # finals younger than this are still on show in the headset (it keeps a line 10 s)
 ECHO_S = 0.8   # the remote user's voice from Reachy's speaker: room captions muted this long after its last frame
 HEADSET_LOG = Path.home() / "Library/Logs/reachy-headset.log"   # the page's log lines ({"type": "log"})
@@ -430,8 +433,8 @@ class Pipeline:
         # (DeepL quota): only when enough new text came in since the last partial translation.
         last_t, last_len = self.partial_tr.get(seg.id, (0.0, 0))
         now = time.time()
-        if (self.translator and lang != self.target and len(text) - last_len >= 15
-                and now - last_t >= 1.2):
+        if (self.translator and lang != self.target and len(text) - last_len >= PARTIAL_TR_CHARS
+                and now - last_t >= PARTIAL_TR_S):
             self.partial_tr[seg.id] = (now, len(text))
             translation = await self.translator(text, remember=False)
             if translation and seg.id not in self.finalized:
@@ -541,7 +544,10 @@ class Pipeline:
         """The remote user's speech, in whatever language they speak (never --lang). The fast model finds the
         language (one encoder pass, ~0.1 s), so the big one needn't detect it again (~0.6 s)."""
         lang = self.stt_partial.detect_language(audio) if self.stt_partial else AUTO
-        return self.stt(audio, lang)
+        # --me-model fast: the small model, ~0.2 s instead of 0.8-2 s for the large one (measured 2026-10 and in the
+        # headset test of 2026-11-11: Reachy started 1.4-4 s after the end of a sentence, most of it this step)
+        fast = self.args.me_model == "fast" and self.stt_partial
+        return (self.stt_partial if fast else self.stt)(audio, lang)
 
     async def _me_prepare(self, seg: Segment) -> dict | None:
         """Transcribe, translate and synthesize one sentence of the remote user; played later, in order."""
@@ -755,7 +761,10 @@ def cli() -> None:
                                                 "(default: Viktor for German, else the best installed one)")
     ap.add_argument("--me-silence", type=float, default=0.8,
                     help="Translate me: silence (s) that ends a sentence of the remote user")
-    ap.add_argument("--me-early", type=float, default=0.3,
+    ap.add_argument("--me-model", choices=["fast", "final"], default="fast",
+                    help="Whisper model for the remote user's voice: fast = the live-text model (Reachy answers "
+                         "about a second sooner, a little less exact), final = the large one")
+    ap.add_argument("--me-early", type=float, default=0.2,
                     help="Translate me: start transcribing/translating after this much silence, before the "
                          "sentence is known to be over (0 = off)")
     ap.add_argument("--meeting-lang", help="language Reachy speaks for the remote user (default: the one most "
