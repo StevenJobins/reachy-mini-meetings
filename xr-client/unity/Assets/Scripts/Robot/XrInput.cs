@@ -20,7 +20,9 @@ public class XrInput : MonoBehaviour
 {
     const string HandPermission = "android.permission.HAND_TRACKING";
     const string EyePermission = "android.permission.EYE_TRACKING_FINE";
-    const float OpenM = 0.045f, ClosedM = 0.012f;   // thumb-index tip distance for pinch 0 and 1
+    // Thumb-index tip distance for pinch 0 and 1. The tip joints sit inside the fingers: touching tips are about
+    // 1.8 cm apart (headset test 2026-11-11: with 1.2 cm the left hand only reached 0.80-0.84, right at the threshold).
+    const float OpenM = 0.045f, ClosedM = 0.018f;
     const float GazeSmoothS = 0.06f;
     const float LogS = 2f;
 
@@ -32,7 +34,7 @@ public class XrInput : MonoBehaviour
     InputAction eyePos, eyeRot, eyeTracked;
     readonly InputAction[] aimPos = new InputAction[2], aimRot = new InputAction[2], aimTracked = new InputAction[2];
     Vector3 gazeDir;
-    float loggedAt;
+    float loggedAt, maxLeft, maxRight;
 
     public static float PinchLeft { get; private set; }
     public static float PinchRight { get; private set; }
@@ -105,6 +107,8 @@ public class XrInput : MonoBehaviour
         }
         PinchLeft = hands != null ? Pinch(hands.leftHand) : 0;
         PinchRight = hands != null ? Pinch(hands.rightHand) : 0;
+        maxLeft = Mathf.Max(maxLeft, PinchLeft);
+        maxRight = Mathf.Max(maxRight, PinchRight);
 
         // eye gaze comes in the tracking space, like the head: same parent as the camera
         EyesTracked = eyeTracked.ReadValue<float>() > 0.5f;
@@ -119,8 +123,9 @@ public class XrInput : MonoBehaviour
         if (Time.unscaledTime - loggedAt >= LogS)
         {
             loggedAt = Time.unscaledTime;
-            Debug.Log($"[input] joints L {PinchLeft:0.00} R {PinchRight:0.00} ({(hands == null ? "no hand subsystem" : $"tracked L {hands.leftHand.isTracked} R {hands.rightHand.isTracked}")}), "
+            Debug.Log($"[input] joints L {PinchLeft:0.00} R {PinchRight:0.00}, highest in 2 s L {maxLeft:0.00} R {maxRight:0.00} ({(hands == null ? "no hand subsystem" : $"tracked L {hands.leftHand.isTracked} R {hands.rightHand.isTracked}")}), "
                       + $"eyes {(EyesTracked ? "tracked" : "not tracked")}, aim rays L {Aim(false, head) != null} R {Aim(true, head) != null}, permissions hand {Allowed(HandPermission)} eye {Allowed(EyePermission)}");
+            maxLeft = maxRight = 0;
         }
     }
 

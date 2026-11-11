@@ -29,6 +29,8 @@ public class CaptionView : MonoBehaviour
         public SpeakerBubbles.At at;
     }
     [Serializable] class MeMsg { public string text; }
+    [Serializable] class FaceMsg { public float cx; }
+    [Serializable] class FacesMsg { public FaceMsg[] people; }
 
     const float Distance = 2f, PitchDeg = 20f;    // below eye height, over the lower part of the video
     const float GlideAwayDeg = 25f, GlideAfterS = 0.5f, GlideS = 0.25f;
@@ -57,6 +59,7 @@ public class CaptionView : MonoBehaviour
     double clockOffsetS;
     float frontYaw, awaySince = -1f, alpha;
     bool glide, haveFront;
+    int faces = -1;   // faces the backend sees in the robot camera now; -1 = no word from it yet
 
     public string Status { get; private set; } = "";
 
@@ -116,7 +119,7 @@ public class CaptionView : MonoBehaviour
         panel.color = new Color(0, 0, 0, 0.6f * alpha);
         meshRenderer.enabled = alpha > 0.5f;
         Place();
-        Status = backend == null ? "" : $"subtitles {lines.Count(l => !l.Live)}";
+        Status = backend == null ? "" : $"subtitles {lines.Count(l => !l.Live)}  faces {(faces < 0 ? "?" : faces.ToString())}  {bubbles?.Status}";
     }
 
     void Handle(string json, double now)
@@ -125,6 +128,9 @@ public class CaptionView : MonoBehaviour
         {
             case "hello":
                 clockOffsetS = WallS() - JsonUtility.FromJson<HelloMsg>(json).t;
+                break;
+            case "faces":   // only counted: no face in view = no speech bubble next to anyone
+                faces = JsonUtility.FromJson<FacesMsg>(json).people?.Length ?? 0;
                 break;
             case "caption":
                 var c = JsonUtility.FromJson<CaptionMsg>(json);

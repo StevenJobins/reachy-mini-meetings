@@ -38,6 +38,10 @@ public class RoomPanorama : MonoBehaviour
     float nextRefresh;
 
     public string Status { get; private set; } = "";
+    /// <summary>For the Curtain: the scan at the start, during which the picture stays hidden.</summary>
+    public bool Scanning => scan.Active;
+    public bool ScanStarted => scanned;
+    public (int done, int total) ScanProgress => (scan.Done, scan.Total);
 
     static Quaternion ToUnity(Quat q) => new Quaternion(-(float)q.X, -(float)q.Y, (float)q.Z, (float)q.W);
 

@@ -2,7 +2,8 @@
 // direction as "straight ahead", follow. Hands: hold the right pinch (or trigger) to talk, like a walkie-talkie, so the
 // mic can never stay on by accident (a right pinch on a menu tile or the notes works those instead); left pinch recenters, or skips the room scan while it runs, or, while you look
 // at an entry of the QuickMenu, switches that; on the notes card's handle, drags it; while the Tutorial is open, it
-// goes to the tutorial, and Reachy neither wakes nor follows nor hears you (practice). Reachy only turns
+// goes to the tutorial, and Reachy neither follows nor hears you (practice): it wakes up and scans the room meanwhile
+// (RoomPanorama, behind the Curtain), then waits looking straight ahead; closing the tutorial recenters. Reachy only turns
 // across its front half (YawRange): a user turning all the way round does not drag it round its cables.
 
 using System.Collections;
@@ -35,7 +36,7 @@ public class RobotControl : MonoBehaviour
     readonly HeadModel headModel = new HeadModel();
     HeadTarget lastSent;
     Mode mode = Mode.Idle;
-    bool talking, recenterDown, started, skip;
+    bool talking, recenterDown, started, skip, wasPaused;
     bool rightDown, rightUi;   // rightUi: this right pinch went to the menu or the notes, so it is not talking
     float talkReleasedAt = float.NegativeInfinity;
     int sent, sentAtMark;
@@ -47,6 +48,7 @@ public class RobotControl : MonoBehaviour
 
     public string Summary { get; private set; } = "";
     public bool IsFollowing => mode == Mode.Following;
+    public bool Waking => mode == Mode.Waking;
     public bool MicOn { get; private set; }
     /// <summary>Pinch strength 0..1, for the tutorial's live view of the fingers.</summary>
     public float RightLevel { get; private set; }
@@ -117,18 +119,21 @@ public class RobotControl : MonoBehaviour
             mirror = new HeadMirror();
             mode = Mode.Following;
         }
-        if (!sweep && !started && !Paused && Application.isFocused && daemon.TargetConnected && daemon.Latest?.head_pose != null
+        if (wasPaused && !Paused && mode == Mode.Following) Recenter();   // the tutorial closed: where you look is straight ahead
+        wasPaused = Paused;
+        if (!sweep && !started && Application.isFocused && daemon.TargetConnected && daemon.Latest?.head_pose != null
             && video.VideoTexture != null)
         {
             started = true;
             StartCoroutine(Wake());
         }
         if (Sweeping && Time.unscaledTime - sweepAt >= SweepS) { sweep = false; sweepAt = -1f; mode = Mode.Idle; }
-        if (mode == Mode.Following && !Paused && (Application.isFocused || Sweeping))
+        if (mode == Mode.Following && (Application.isFocused || Sweeping))
         {
             var raw = Sweeping
                 ? new RobotAngles(0, 0, SweepYawDeg * Mathf.Sin(2 * Mathf.PI * (Time.unscaledTime - sweepAt) / SweepPeriodS))
-                : Override ?? YawRange.Fold(PoseMath.HeadsetToRobot(recenter.ToRelative(HeadNow())));
+                : Override ?? (Paused ? new RobotAngles(0, 0, 0)
+                    : YawRange.Fold(PoseMath.HeadsetToRobot(recenter.ToRelative(HeadNow()))));
             lastSent = mirror.Step(raw, Time.unscaledDeltaTime);
             daemon.SendTarget(lastSent);
             double nowS = DaemonClient.NowS();

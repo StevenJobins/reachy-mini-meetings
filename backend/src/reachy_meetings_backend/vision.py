@@ -89,7 +89,7 @@ class FaceStream:
         landmarker = self._landmarker()
         self.lock, self.latest = threading.Lock(), None
         threading.Thread(target=self._grab, daemon=True, name="camera").start()
-        n, t_fps, t_ms, last_t = 0, time.time(), 0, 0.0
+        n, t_fps, t_ms, last_t, seen = 0, time.time(), 0, 0.0, 0
         while True:
             t0 = time.time()
             with self.lock:
@@ -112,7 +112,9 @@ class FaceStream:
                                "w": round(x1 - x0, 4), "h": round(y1 - y0, 4), "mouth": round(jaw, 3)})
             publish(people, t)
             n += 1
+            seen += len(people)
             if t0 - t_fps >= 5:
-                self.fps, n, t_fps = n / (t0 - t_fps), 0, t0
-                log.info("Vision: %.1f detections/s", self.fps)
+                log.info("Vision: %.1f detections/s, %.1f faces per frame, brightness %.0f/255", n / (t0 - t_fps),
+                         seen / n, float(small.mean()))
+                self.fps, n, t_fps, seen = n / (t0 - t_fps), 0, t0, 0
             time.sleep(max(0.0, self.period - (time.time() - t0)))   # cap the rate: the page needs no more

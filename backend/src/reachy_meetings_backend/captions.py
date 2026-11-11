@@ -442,6 +442,9 @@ class Pipeline:
         cap = self._caption(seg, wall_end, text, lang, speaker=speaker)
         self.server.send(cap)
         log.info("[%d %s speaker %s] %s", seg.id, lang, speaker or "?", text)
+        if self.people and text:
+            log.info("People: %s; caption at %s; votes %s", [(p.pid, round(p.yaw), round(time.time() - p.seen, 1))
+                     for p in self.people.people], cap["at"] and cap["at"]["person"], self.people.votes)
         if text:
             self.room_langs.append((time.time(), lang))
         target, translator = self.target, self.translator

@@ -262,6 +262,20 @@ public static class ProjectConfigure
         video.panorama.floor = floor.GetComponent<Renderer>();
         video.panorama.patchMaterial = SaveMaterial("RoomPatch", Shader.Find("Reachy/RoomPatch"), new Color(0.8f, 0.8f, 0.8f));
 
+        // No picture during the tutorial, the wake-up and the room scan at the start
+        var curtainGo = new GameObject("Curtain");
+        curtainGo.transform.SetParent(offset.transform, false);
+        var curtain = curtainGo.AddComponent<Curtain>();
+        curtain.control = video.control;
+        curtain.tutorial = tutorial;
+        curtain.panorama = video.panorama;
+        curtain.window = windowRenderer;
+        curtain.label = hud;
+        curtain.floor = floor.GetComponent<Renderer>();
+        curtain.head = camGo.transform;
+        curtain.textMaterial = hud.textMaterial;
+        curtain.panelMaterial = video.captions.panelMaterial;
+
         EditorSceneManager.SaveScene(scene, ScenePath);
         EditorBuildSettings.scenes = new[] { new EditorBuildSettingsScene(ScenePath, true) };
     }

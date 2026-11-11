@@ -179,7 +179,7 @@ The menu is no longer on the video window: it moved whenever Reachy turned, so l
 
 ### Guided tour (first start)
 
-`Tutorial.cs`, interactive, German when the headset is set to German, otherwise English. **Reachy waits meanwhile:** it does not wake up, does not follow the head, and the mic goes nowhere (`RobotControl`: no `Wake()`, no targets, `MicOn` stays false), so you can practise without anyone hearing you. Each card has a task, and the card turns green when it is done. The two dots top right are your real thumb and index finger (pinch strength from the hand tracking), so you see the pinch being recognised.
+`Tutorial.cs`, interactive, German when the headset is set to German, otherwise English. **No picture meanwhile** (`Curtain.cs`, 2026-11-11 after a headset test: the picture behind the card distracted, and the room scan after the tour moved the picture without your head, which makes you feel sick): the background is black, and Reachy uses the time: it wakes up and scans the room, then waits looking straight ahead. It does not follow the head and the mic goes nowhere (`MicOn` stays false), so you can practise without anyone hearing you; closing the tour takes where you look as straight ahead. On later starts without the tour the picture also stays hidden until the scan is over, and a card says what Reachy is doing (*waking up*, *looking around the room 3/9*). With no robot within 8 s (fake camera) the picture shows as it is. Each card has a task, and the card turns green when it is done. The two dots top right are your real thumb and index finger (pinch strength from the hand tracking), so you see the pinch being recognised.
 
 | Card | Task | The card answers |
 |---|---|---|
