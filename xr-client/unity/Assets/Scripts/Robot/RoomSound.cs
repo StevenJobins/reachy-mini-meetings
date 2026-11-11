@@ -14,6 +14,15 @@ public class RoomSound : MonoBehaviour
     readonly SpeechFilter filter = new SpeechFilter();
     BackendClient backend;
     volatile AudioJitterBuffer buffer;
+    AudioSource source;
+    bool muted;
+
+    /// <summary>Silent while there is no picture (Curtain): sound from a room you do not see, with Reachy's motors
+    /// in it while it looks around, only disturbs.</summary>
+    public bool Muted
+    {
+        set { muted = value; if (source != null) source.mute = value; }
+    }
 
     public BackendClient Backend => backend;
     public string Status { get; private set; } = "";
@@ -31,7 +40,8 @@ public class RoomSound : MonoBehaviour
             if (string.IsNullOrEmpty(video.SignallingUrl)) return;
             backend = new BackendClient(new System.Uri(video.SignallingUrl).Host, PlayerPrefs.GetString(SecretKey, ""), MeMode);
             buffer = backend.Audio;
-            var source = gameObject.AddComponent<AudioSource>();
+            source = gameObject.AddComponent<AudioSource>();
+            source.mute = muted;
             source.clip = AudioClip.Create("Room", AudioJitterBuffer.SampleRate, 1, AudioJitterBuffer.SampleRate, true, OnRead);
             source.loop = true;
             source.Play();

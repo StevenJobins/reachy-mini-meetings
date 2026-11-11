@@ -43,6 +43,9 @@ public class RobotControl : MonoBehaviour
     bool rightDown, rightUi;   // rightUi: this right pinch went to the menu or the notes, so it is not talking
     bool leftUsed;             // this left pinch already did something
     float leftSince;
+    float restartUntil;
+    int misses;
+    [System.Serializable] class DaemonStatus { public string state, error; }
     float talkReleasedAt = float.NegativeInfinity;
     int sent, sentAtMark;
     float markAt;
@@ -57,6 +60,11 @@ public class RobotControl : MonoBehaviour
     /// <summary>Sent to sleep from the menu: stays asleep until WakeUp().</summary>
     public bool Asleep { get; private set; }
     public bool GoingToSleep { get; private set; }
+    /// <summary>The daemon's own word on the robot, asked every 2 s: "running", "error", ..., "unreachable" (no
+    /// answer from the laptop), null before the first answer. DaemonError: its message, e.g. a motor fault.</summary>
+    public string DaemonState { get; private set; }
+    public string DaemonError { get; private set; }
+    public bool Restarting => Time.unscaledTime < restartUntil;
     public bool MicOn { get; private set; }
     /// <summary>Pinch strength 0..1, for the tutorial's live view of the fingers.</summary>
     public float RightLevel { get; private set; }
@@ -119,6 +127,7 @@ public class RobotControl : MonoBehaviour
         {
             if (string.IsNullOrEmpty(video.SignallingUrl)) return;
             daemon = new DaemonClient(new System.Uri(video.SignallingUrl).Host);
+            StartCoroutine(Health());
         }
         HandlePress();
         if (sweep && sweepAt < 0 && daemon.TargetConnected && daemon.Latest != null)
@@ -226,6 +235,50 @@ public class RobotControl : MonoBehaviour
             yield return r.SendWebRequest();
             if (r.result == UnityWebRequest.Result.Success && r.downloadHandler.text.Trim() == "[]") yield break;
         }
+    }
+
+    /// <summary>Is the robot there and well? A robot that fell out (motor fault, daemon restarted) starts again from
+    /// the beginning once it is back: wake-up if needed, straight ahead = where the user looks.</summary>
+    IEnumerator Health()
+    {
+        while (true)
+        {
+            using (var r = UnityWebRequest.Get(daemon.HttpBase + "/api/daemon/status"))
+            {
+                r.timeout = 3;
+                yield return r.SendWebRequest();
+                if (r.result != UnityWebRequest.Result.Success)
+                {
+                    if (++misses < 2) { yield return new WaitForSecondsRealtime(2f); continue; }   // one lost request is Wi-Fi
+                    DaemonState = "unreachable";
+                    DaemonError = r.error;
+                }
+                else
+                {
+                    misses = 0;
+                    var s = JsonUtility.FromJson<DaemonStatus>(r.downloadHandler.text);
+                    DaemonState = s.state;
+                    DaemonError = s.error;
+                }
+            }
+            if (DaemonState != "running" && mode == Mode.Following && !sweep)
+            {
+                Debug.Log($"[control] robot lost: {DaemonState} {DaemonError}");
+                mode = Mode.Idle;
+                started = false;
+                Override = null;
+            }
+            yield return new WaitForSecondsRealtime(2f);
+        }
+    }
+
+    /// <summary>From the menu, when the daemon reports an error: start it again.</summary>
+    public void RestartDaemon()
+    {
+        if (daemon == null || Restarting) return;
+        restartUntil = Time.unscaledTime + 20f;
+        Debug.Log("[control] restarting the daemon");
+        StartCoroutine(Post("/api/daemon/restart"));
     }
 
     /// <summary>From the menu: Reachy lies down and its motors go off, until WakeUp().</summary>

@@ -30,6 +30,8 @@ WIDTH, HEIGHT = 1920, 1080
 
 REID_DEG = 12.0       # a face within this of a known person's direction is that person
 CONFIRM = 8           # sightings before a new direction counts as a person (a turning head smears directions)
+MERGE_DEG = 20.0      # a new direction this close to a known person who is not in the picture is that person: the
+                      # head yaw lags while Reachy turns (2026-11-11: one person became two, 8 degrees apart)
 CANDIDATE_S = 2.0     # a direction not confirmed within this long is dropped
 MEMORY_S = 900.0      # forget people not seen for this long
 HISTORY_S = 30.0      # mouth readings kept, to judge a whole utterance
@@ -118,8 +120,15 @@ class People:
                 while p.mouth[0][0] < t - HISTORY_S:
                     p.mouth.popleft()
             if p.pid == 0 and p.sightings >= CONFIRM:
-                p.pid, self.next_pid = self.next_pid, self.next_pid + 1
                 self.candidates.remove(p)
+                known = min((q for q in self.people if q.seen < t and abs(angle_diff(q.yaw, p.yaw)) < MERGE_DEG),
+                            key=lambda q: abs(angle_diff(q.yaw, p.yaw)), default=None)
+                if known:   # the same person, seen at a slightly different direction
+                    known.yaw, known.pitch, known.top, known.h, known.seen = p.yaw, p.pitch, p.top, p.h, t
+                    known.mouth.extend(p.mouth)
+                    taken.add(id(known))
+                    continue
+                p.pid, self.next_pid = self.next_pid, self.next_pid + 1
                 self.people.append(p)
 
     def talker(self, t0: float, t1: float) -> Person | None:

@@ -268,6 +268,7 @@ public static class ProjectConfigure
         var curtain = curtainGo.AddComponent<Curtain>();
         curtain.control = video.control;
         curtain.tutorial = tutorial;
+        curtain.room = video.room;
         curtain.panorama = video.panorama;
         curtain.window = windowRenderer;
         curtain.label = hud;

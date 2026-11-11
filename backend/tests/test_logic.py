@@ -508,3 +508,12 @@ def test_a_short_clip_does_not_start_a_new_speaker():
     assert clusters.add(a + 0.05 * rng.normal(size=64), may_create=False) == 1    # a known voice: short is enough
     assert clusters.add(b, may_create=False) is None and len(clusters.means) == 1
 
+
+def test_a_person_seen_a_little_off_is_not_a_second_person():
+    people = People(_flat)
+    _watch(people, 0, 1, {0.3: _still})                    # at 18 degrees
+    _watch(people, 5, 6, {0.3: _still}, head_yaw=14)       # the head yaw lags: seems to be at 32
+    assert [(p.pid, round(p.yaw)) for p in people.people] == [(1, 32)]
+    _watch(people, 10, 11, {0.3: _still, 0.7: _still})     # two faces at once stay two people
+    assert len(people.people) == 2
+

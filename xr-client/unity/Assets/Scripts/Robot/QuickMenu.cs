@@ -42,6 +42,8 @@ public class QuickMenu : MonoBehaviour
     public Tutorial tutorial;
 
     enum Item { None = -1, Translate, Language, Robot, Help }
+    /// <summary>The laptop answers, but the robot behind it does not run (e.g. a motor fault).</summary>
+    bool RobotFault => control.DaemonState != null && control.DaemonState != "running" && control.DaemonState != "unreachable";
     const int Tiles = 4;
 
     Material text;
@@ -216,9 +218,10 @@ public class QuickMenu : MonoBehaviour
                 ShowList(!listOpen);
                 break;
             case Item.Robot:
-                if (control.Asleep) control.WakeUp();
+                if (RobotFault) control.RestartDaemon();
+                else if (control.Asleep) control.WakeUp();
                 else control.Sleep();
-                Debug.Log($"[menu] reachy {(control.Asleep ? "to sleep" : "wake up")}");
+                Debug.Log($"[menu] reachy {(RobotFault ? "restart" : control.Asleep ? "to sleep" : "wake up")}");
                 break;
             case Item.Help:
                 if (tutorial != null && !tutorial.Open) tutorial.Show();
@@ -281,7 +284,9 @@ public class QuickMenu : MonoBehaviour
         labels[1].text = $"<color=#cbd5e1>{(de ? "Sprache" : "Language")}</color>";
         values[1].text = $"{Target.ToUpper()} <size=40>{(listOpen ? "‹" : "›")}</size>";
         labels[2].text = "<color=#cbd5e1>Reachy</color>";
-        values[2].text = control.GoingToSleep ? "<size=40>…</size>"
+        values[2].text = control.Restarting ? $"<size=40>{(de ? "startet neu …" : "restarting …")}</size>"
+            : RobotFault ? $"<color=#ff9500><size=40>{(de ? "Fehler: neu starten" : "error: restart")}</size></color>"
+            : control.GoingToSleep ? "<size=40>…</size>"
             : control.Asleep ? $"<color=#94a3b8>{(de ? "SCHLÄFT" : "ASLEEP")}</color>"
             : control.IsFollowing ? (de ? "WACH" : "AWAKE")
             : control.Waking ? "<size=40>…</size>" : $"<color=#94a3b8><size=40>{(de ? "nicht da" : "not there")}</size></color>";

@@ -14,6 +14,7 @@ public class Curtain : MonoBehaviour
 
     public RobotControl control;
     public Tutorial tutorial;
+    public RoomSound room;
     public RoomPanorama panorama;
     public Renderer window, floor;
     public FpsLabel label;
@@ -70,9 +71,16 @@ public class Curtain : MonoBehaviour
                 foreach (var r in panorama.GetComponentsInChildren<Renderer>(true)) r.enabled = true;
             }
             window.enabled = !hide;
-            label.SetVisible(!hide && PlayerPrefs.GetString("hud", "on") != "off");   // as RobotVideo sets it
+            if (room != null) room.Muted = hide;
+            label.SetVisible(!hide && PlayerPrefs.GetString("hud", "off") == "on");   // as RobotVideo sets it
         }
-        if (!hide) { card.gameObject.SetActive(false); return; }
+        string problem = Problem();
+        if (!hide)
+        {
+            card.gameObject.SetActive(problem != null);
+            if (problem != null) Say(problem);
+            return;
+        }
 
         // the panorama keeps saving frames and its mean colour behind the curtain
         foreach (var r in panorama.GetComponentsInChildren<Renderer>(true)) r.enabled = false;
@@ -89,6 +97,30 @@ public class Curtain : MonoBehaviour
             : control.Waking ? (Ui.German ? "Reachy wacht auf …" : "Reachy is waking up …")
             : control.IsFollowing ? (Ui.German ? "Gleich geht es los …" : "Starting in a moment …")
             : (Ui.German ? "Verbinde mit Reachy …" : "Connecting to Reachy …");
+        Say(problem ?? say);
+    }
+
+    /// <summary>What keeps Reachy from working, in words for the user; null = nothing.</summary>
+    string Problem()
+    {
+        bool de = Ui.German;
+        if (string.IsNullOrEmpty(control.video.SignallingUrl))
+            return de ? "Diese Brille kennt den Laptop bei Reachy noch nicht.\nBitte einmal am Laptop einrichten."
+                      : "This headset does not know the laptop next to Reachy yet.\nPlease set it up once at the laptop.";
+        if (control.Restarting) return de ? "Reachy startet neu …" : "Reachy is restarting …";
+        if (control.DaemonState == "unreachable")
+            return de ? "Keine Verbindung zum Laptop bei Reachy.\nLäuft dort das Meeting-Programm?\nSind beide im gleichen WLAN?"
+                      : "No connection to the laptop next to Reachy.\nIs the meeting program running there?\nAre both on the same Wi-Fi?";
+        if (control.DaemonState != null && control.DaemonState != "running")
+            return (de ? "Reachy meldet ein Problem" : "Reachy reports a problem")
+                   + (string.IsNullOrEmpty(control.DaemonError) ? "." : $":\n{control.DaemonError}")
+                   + (de ? "\nZeig im Menü auf «Reachy» und pinche, um neu zu starten."
+                         : "\nPoint at \"Reachy\" in the menu and pinch to restart.");
+        return null;
+    }
+
+    void Say(string say)
+    {
         if (say != shown)
         {
             shown = say;
