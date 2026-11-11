@@ -9,6 +9,26 @@ public static class Ui
 {
     public static bool German => Application.systemLanguage == SystemLanguage.German;
 
+    // One look for every panel: dark glass with a fine light edge, cyan for what is on or to be pressed
+    public static readonly Color Glass = new Color(0.05f, 0.07f, 0.11f, 0.86f);
+    public static readonly Color Edge = new Color(1, 1, 1, 0.16f);
+    public static readonly Color Accent = new Color(0.30f, 0.76f, 1f);          // #4cc3ff
+    public const string AccentHex = "#4cc3ff", InkHex = "#0b1220", SoftHex = "#a9b4c6";
+    public const float EdgeW = 0.004f;
+
+    /// <summary>A white-on-clear picture from Resources/Icons, tinted, on a square of `size` metres.</summary>
+    public static Renderer Icon(Transform parent, string name, Material textMaterial, float size, int queue, Color tint)
+    {
+        var go = GameObject.CreatePrimitive(PrimitiveType.Quad);
+        go.name = "Icon " + name;
+        Object.Destroy(go.GetComponent<Collider>());
+        go.transform.SetParent(parent, false);
+        go.transform.localScale = new Vector3(size, size, 1);
+        var r = go.GetComponent<Renderer>();
+        r.sharedMaterial = new Material(textMaterial) { renderQueue = queue, mainTexture = Resources.Load<Texture2D>("Icons/" + name), color = tint };
+        return r;
+    }
+
     /// <summary>Three dots, one after the other lit: someone is talking, the text is coming.</summary>
     public static string Dots()
     {
@@ -78,6 +98,13 @@ public static class Ui
         }
 
         public void Show(bool on) => T.gameObject.SetActive(on);
+
+        /// <summary>A line along the inside of the edge.</summary>
+        public void Border(Color c, float w = EdgeW)
+        {
+            M.SetColor("_Border", c);
+            M.SetFloat("_BorderW", w);
+        }
     }
 
     public static Rect Quad(Transform parent, string name, Material panel, int queue)

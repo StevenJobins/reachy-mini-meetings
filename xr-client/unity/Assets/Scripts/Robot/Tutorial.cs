@@ -329,7 +329,8 @@ public class Tutorial : MonoBehaviour
         nextText.transform.localPosition = nextAt + new Vector3(0, 0, -0.002f);
 
         float left = -width / 2 + Pad, y = height / 2 - Pad;
-        panel.Set(width, height, 0.04f, Vector3.zero, Panel);
+        panel.Set(width, height, 0.07f, Vector3.zero, Panel);
+        panel.Border(Ui.Edge);
         strip.Set(width - 0.08f, StripH, StripH / 2, new Vector3(0, height / 2 - StripH / 2 - 0.004f, -0.001f),
             done ? Good : c.Hand == Hand.Right ? Right : Left);
         float x = left;

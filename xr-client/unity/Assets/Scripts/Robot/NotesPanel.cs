@@ -263,7 +263,8 @@ public class NotesPanel : MonoBehaviour
         var size = Ui.Size(body);
         w = folded ? size.x + 2 * Pad + StripW + 0.12f : Mathf.Max(Width, size.x + 2 * Pad + StripW);
         h = size.y + 2 * Pad;
-        panel.Set(w, h, 0.04f, Vector3.zero, Panel);
+        panel.Set(w, h, 0.06f, Vector3.zero, Ui.Glass);
+        panel.Border(Ui.Edge);
         strip.Set(StripW, h - 0.08f, StripW / 2, new Vector3(-w / 2 + 0.025f, 0, -0.001f), Accent);
         body.transform.localPosition = new Vector3(-w / 2 + Pad + StripW, h / 2 - Pad, -0.002f);
     }

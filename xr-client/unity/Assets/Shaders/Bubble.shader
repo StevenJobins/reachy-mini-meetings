@@ -1,11 +1,15 @@
 // Speech bubble parts: a rounded rectangle, drawn in the fragment shader so it stays sharp at any size.
 // _Rect = width, height, corner radius (metres). Always on top of the video, like the status text.
+// _Border / _BorderW: a line of that colour and width (metres) along the inside of the edge; width 0 = none.
+// With a clear _Color it is an outline only (the frame around a speaker's face).
 Shader "Reachy/Bubble"
 {
     Properties
     {
         _Color ("Color", Color) = (1, 1, 1, 1)
         _Rect ("Size and radius", Vector) = (1, 1, 0.05, 0)
+        _Border ("Border", Color) = (1, 1, 1, 0)
+        _BorderW ("Border width", Float) = 0
     }
     SubShader
     {
@@ -40,6 +44,8 @@ Shader "Reachy/Bubble"
             CBUFFER_START(UnityPerMaterial)
                 half4 _Color;
                 float4 _Rect;
+                half4 _Border;
+                float _BorderW;
             CBUFFER_END
 
             Varyings vert(Attributes v)
@@ -58,7 +64,10 @@ Shader "Reachy/Bubble"
                 float2 q = abs(p) - _Rect.xy * 0.5 + _Rect.z;
                 float d = length(max(q, 0)) + min(max(q.x, q.y), 0) - _Rect.z;
                 float aa = max(fwidth(d), 1e-5);
-                return half4(_Color.rgb, _Color.a * (1 - smoothstep(-aa, aa, d)));
+                half inside = 1 - smoothstep(-aa, aa, d);
+                half edge = _BorderW > 0 ? smoothstep(-_BorderW - aa, -_BorderW + aa, d) * _Border.a : 0;
+                half4 c = half4(lerp(_Color.rgb, _Border.rgb, edge), lerp(_Color.a, 1, edge));
+                return half4(c.rgb, c.a * inside);
             }
             ENDHLSL
         }

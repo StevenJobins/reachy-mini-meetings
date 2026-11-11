@@ -42,7 +42,7 @@ public class Curtain : MonoBehaviour
     readonly bool[] onWake = new bool[2];
     readonly Ui.Cursor[] cursors = new Ui.Cursor[2];
     const float WakeW = 0.62f, WakeH = 0.16f;
-    static readonly Vector3 WakeAt = new Vector3(0, -0.2f, -0.001f);
+    static readonly Vector3 WakeAt = new Vector3(0, -0.26f, -0.001f);
 
     /// <summary>That hand points at the wake-up button: its pinch goes here (RobotControl).</summary>
     public bool Hovered(bool right) => onWake[right ? 1 : 0];
@@ -65,7 +65,8 @@ public class Curtain : MonoBehaviour
     {
         mascot = new GameObject("Mascot").transform;
         mascot.SetParent(card, false);
-        mascot.localPosition = new Vector3(0, 0.2f, 0);
+        mascot.localPosition = new Vector3(0, 0.3f, 0);
+        mascot.localScale = Vector3.one * 1.5f;
         var white = new Color(0.93f, 0.95f, 0.98f);
         var dark = new Color(0.06f, 0.09f, 0.16f);
         for (int i = 0; i < 2; i++)
@@ -111,7 +112,8 @@ public class Curtain : MonoBehaviour
         card = new GameObject("Card").transform;
         card.SetParent(transform, false);
         panel = Ui.Quad(card, "Panel", panelMaterial, 3030);
-        text = Ui.Text(card, "Text", Ui.TextMaterial(textMaterial, 3031), 56, TextScale);
+        text = Ui.Text(card, "Text", Ui.TextMaterial(textMaterial, 3031), 64, TextScale, TextAnchor.MiddleCenter, FontStyle.Bold);
+        text.transform.localPosition = new Vector3(0, -0.04f, 0);
         BuildMascot();
         wake = Ui.Quad(card, "Wake", panelMaterial, 3030);
         wakeText = Ui.Text(card, "WakeText", Ui.TextMaterial(textMaterial, 3031), 64, TextScale, TextAnchor.MiddleCenter, FontStyle.Bold);
@@ -236,7 +238,7 @@ public class Curtain : MonoBehaviour
             var size = Ui.Size(text);
             panel.Show(boxed);
             panel.Set(size.x + 2 * Pad, size.y + 2 * Pad, 0.05f, Vector3.zero, new Color(0.06f, 0.09f, 0.16f, 0.95f));
-            text.transform.localPosition = new Vector3(0, 0, -0.002f);
+            text.transform.localPosition = new Vector3(0, boxed ? 0 : -0.04f, -0.002f);
         }
         // in front of you, yaw only, gliding after your gaze
         yaw = Mathf.LerpAngle(yaw, head.localEulerAngles.y, 1 - Mathf.Exp(-Time.unscaledDeltaTime * FollowRate));

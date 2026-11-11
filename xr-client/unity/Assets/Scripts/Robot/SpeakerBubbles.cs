@@ -39,7 +39,7 @@ public class SpeakerBubbles : MonoBehaviour
 
     const float Distance = 2.9f;                   // just inside the video sphere (3 m)
     const int RowChars = 34, MaxRows = 3;
-    const float Pad = 0.05f, TextScale = 1.2f, Gap = 0.1f, Line = 0.014f, MinFace = 0.2f;
+    const float Pad = 0.05f, TextScale = 1.2f, Gap = 0.1f, Line = 0.01f, MinFace = 0.2f;
 
     public VideoWindow view;
     public RobotVideo video;
@@ -68,7 +68,7 @@ public class SpeakerBubbles : MonoBehaviour
         ColorUtility.TryParseHtmlString(color, out b.Color);
 
         bool translated = !string.IsNullOrEmpty(translation);
-        var name = who.Length > 0 ? $"<color={color}><b>{who}</b></color>\n" : "";
+        var name = who.Length > 0 ? $"<color={color}>● <b>{who}</b></color>\n" : "";
         if (translating && !translated)
         {
             // not the original first and then the translation: an earlier translation stays, else dots
@@ -78,7 +78,7 @@ public class SpeakerBubbles : MonoBehaviour
         b.Waiting = null;
         b.Translated = translated;
         var rows = CaptionView.Wrap(CaptionView.Escape(translated ? translation : textNow), RowChars, MaxRows);
-        var body = (who.Length > 0 ? $"<color={color}><b>{who}</b></color>\n" : "")
+        var body = name
                    + string.Join("\n", rows.Select(r => final ? r : $"<color=#d1d5db><i>{r}</i></color>"));
         if (translated)
             foreach (var r in CaptionView.Wrap(CaptionView.Escape($"{lang}: {textNow}"), RowChars * 3 / 2, 1))
@@ -106,8 +106,11 @@ public class SpeakerBubbles : MonoBehaviour
         if (text == null) text = Ui.TextMaterial(textMaterial, 3013);
         var root = new GameObject("Speaker Bubble").transform;
         root.SetParent(view.transform, false);
-        var b = new Bubble { Root = root, Panel = Ui.Quad(root, "Panel", panelMaterial, 3011), Frame = new Ui.Rect[4] };
-        for (int i = 0; i < 4; i++) b.Frame[i] = Ui.Quad(root, "Frame", panelMaterial, 3010);
+        // Frame[0]: a rounded outline around the face; Frame[1]: the bubble's tip towards the head
+        var b = new Bubble { Root = root, Panel = Ui.Quad(root, "Panel", panelMaterial, 3011), Frame = new Ui.Rect[2] };
+        b.Frame[0] = Ui.Quad(root, "Face", panelMaterial, 3010);
+        b.Frame[1] = Ui.Quad(root, "Tip", panelMaterial, 3010);
+        b.Frame[1].T.localRotation = Quaternion.Euler(0, 0, 45);
         b.Text = Ui.Text(root, "Text", text, 64, TextScale, TextAnchor.LowerCenter);
         b.Text.alignment = TextAlignment.Left;
         return b;
@@ -121,14 +124,13 @@ public class SpeakerBubbles : MonoBehaviour
         float metres = Distance * Mathf.Deg2Rad;                                   // per degree, near the centre
         float faceH = Mathf.Max(MinFace, b.At.h_deg * metres), faceW = 0.8f * faceH;
         float top = Mathf.Max(faceH / 2, (b.At.top_deg - b.At.pitch_deg) * metres);
-        var c = new Color(b.Color.r, b.Color.g, b.Color.b, 0.9f);
-        b.Frame[0].Set(faceW + Line, Line, Line / 2, new Vector3(0, faceH / 2, 0), c);
-        b.Frame[1].Set(faceW + Line, Line, Line / 2, new Vector3(0, -faceH / 2, 0), c);
-        b.Frame[2].Set(Line, faceH + Line, Line / 2, new Vector3(-faceW / 2, 0, 0), c);
-        b.Frame[3].Set(Line, faceH + Line, Line / 2, new Vector3(faceW / 2, 0, 0), c);
+        b.Frame[0].Set(faceW, faceH, 0.25f * faceW, Vector3.zero, Color.clear);
+        b.Frame[0].Border(new Color(b.Color.r, b.Color.g, b.Color.b, 0.95f), Line);
         var size = Ui.Size(b.Text);
         float w = size.x + 2 * Pad, h = size.y + 2 * Pad, bottom = top + Gap;
-        b.Panel.Set(w, h, 0.04f, new Vector3(0, bottom + h / 2, 0), new Color(0, 0, 0, 0.6f));
+        b.Frame[1].Set(0.07f, 0.07f, 0.012f, new Vector3(0, bottom, 0.0005f), Ui.Glass);
+        b.Panel.Set(w, h, 0.07f, new Vector3(0, bottom + h / 2, 0), Ui.Glass);
+        b.Panel.Border(Ui.Edge);
         b.Text.transform.localPosition = new Vector3(0, bottom + Pad, -0.002f);
     }
 

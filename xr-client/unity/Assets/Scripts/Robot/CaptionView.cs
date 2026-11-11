@@ -119,7 +119,9 @@ public class CaptionView : MonoBehaviour
         if (body != shownText) Redraw(body);
         alpha = Mathf.MoveTowards(alpha, lines.Count > 0 ? 1 : 0, Time.unscaledDeltaTime / FadeS);
         root.gameObject.SetActive(alpha > 0 && !Hidden);
-        panel.color = new Color(0, 0, 0, 0.6f * alpha);
+        panel.color = new Color(Ui.Glass.r, Ui.Glass.g, Ui.Glass.b, Ui.Glass.a * alpha);
+        panel.SetColor("_Border", new Color(1, 1, 1, Ui.Edge.a * alpha));
+        panel.SetFloat("_BorderW", Ui.EdgeW);
         meshRenderer.enabled = alpha > 0.5f;
         Place();
         Status = backend == null ? "" : $"subtitles {lines.Count(l => !l.Live)}  faces {(faces < 0 ? "?" : faces.ToString())}  {bubbles?.Status}";
@@ -212,7 +214,7 @@ public class CaptionView : MonoBehaviour
         float w = Mathf.Max(MinWidth, size.x + 2 * Pad), h = size.y + 2 * Pad;
         panelT.localScale = new Vector3(w, h, 1);
         panelT.localPosition = new Vector3(0, h / 2, 0);
-        panel.SetVector("_Rect", new Vector4(w, h, 0.04f, 0));
+        panel.SetVector("_Rect", new Vector4(w, h, 0.06f, 0));
         mesh.transform.localPosition = new Vector3(0, Pad, -0.002f);
     }
 

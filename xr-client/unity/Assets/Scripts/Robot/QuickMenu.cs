@@ -33,8 +33,10 @@ public class QuickMenu : MonoBehaviour
     const float RowW = 0.3f, RowH = 0.085f;
     const float ListCloseS = 3f, MeS = 6f, FlashS = 4f;
     const int MeChars = 30, MeLines = 4;
-    static readonly Color Back = new Color(0.07f, 0.08f, 0.11f, 0.9f);
-    static readonly Color Tile = new Color(1, 1, 1, 0.08f);
+    static readonly Color Back = Ui.Glass;
+    static readonly Color Tile = new Color(1, 1, 1, 0.06f);
+    static readonly string[] IconNames = { "translate", "globe", "hand", "moon", "help" };
+    readonly Renderer[] icons = new Renderer[Tiles];
     static readonly Color On = new Color(0.22f, 0.74f, 0.97f, 0.9f);       // #38bdf8
     static readonly Color Gaze = new Color(0.98f, 0.8f, 0.08f);            // #facc15
 
@@ -90,7 +92,8 @@ public class QuickMenu : MonoBehaviour
         w = Tiles * TileW + (Tiles - 1) * Gap + 2 * Pad;
         h = TileH + 2 * Pad;
         back = Ui.Quad(transform, "Back", panelMaterial, 3030);
-        back.Set(w, h, 0.04f, Vector3.zero, Back);
+        back.Set(w, h, 0.07f, Vector3.zero, Back);
+        back.Border(Ui.Edge);
         tileAt = new Vector3[Tiles];
         for (int i = 0; i < Tiles; i++)
         {
@@ -98,8 +101,10 @@ public class QuickMenu : MonoBehaviour
             frames[i] = Ui.Quad(transform, $"Frame{i}", panelMaterial, 3031);
             frames[i].Set(TileW + 2 * Frame, TileH + 2 * Frame, 0.03f, tileAt[i], Gaze);
             tiles[i] = Ui.Quad(transform, $"Tile{i}", panelMaterial, 3032);
-            labels[i] = Ui.Text(transform, $"Label{i}", text, 34, 1f);
-            labels[i].transform.localPosition = tileAt[i] + new Vector3(0, 0.05f, -0.002f);
+            icons[i] = Ui.Icon(transform, IconNames[i], textMaterial, 0.075f, 3033, Color.white);
+            icons[i].transform.localPosition = tileAt[i] + new Vector3(0, 0.032f, -0.002f);
+            labels[i] = Ui.Text(transform, $"Label{i}", text, 30, 1f, TextAnchor.MiddleCenter, FontStyle.Bold);
+            labels[i].transform.localPosition = tileAt[i] + new Vector3(0, -0.055f, -0.002f);
             values[i] = Ui.Text(transform, $"Value{i}", text, 64, 1f, TextAnchor.MiddleCenter, FontStyle.Bold);
             values[i].transform.localPosition = tileAt[i] + new Vector3(0, -0.025f, -0.002f);
         }
@@ -108,7 +113,8 @@ public class QuickMenu : MonoBehaviour
         float listH = rows.Length * RowH + 2 * Pad * 0.6f;
         var listCentre = new Vector3(tileAt[1].x, h / 2 + 0.03f + listH / 2, -0.003f);
         listBack = Ui.Quad(transform, "ListBack", panelMaterial, 3034);
-        listBack.Set(RowW + 1.2f * Pad, listH, 0.03f, listCentre, Back);
+        listBack.Set(RowW + 1.2f * Pad, listH, 0.04f, listCentre, Back);
+        listBack.Border(Ui.Edge);
         rowAt = new Vector3[rows.Length];
         for (int i = 0; i < rows.Length; i++)
         {
@@ -302,26 +308,26 @@ public class QuickMenu : MonoBehaviour
     {
         bool de = Ui.German;
         int lang = System.Array.IndexOf(Langs, Target);
-        labels[0].text = "<color=#cbd5e1>Translate me</color>";
-        values[0].text = Translate
-            ? (de ? "AN" : "ON") + (meetingLang != null ? $" <size=40>→ {meetingLang.ToUpper()}</size>" : "")
-            : $"<color=#94a3b8>{(de ? "AUS" : "OFF")}</color>";
-        labels[1].text = $"<color=#cbd5e1>{(de ? "Sprache" : "Language")}</color>";
-        values[1].text = $"{Target.ToUpper()} <size=40>{(listOpen ? "‹" : "›")}</size>";
-        labels[2].text = $"<color=#cbd5e1>{(de ? "Ich möchte" : "I want to")}</color>";
-        values[2].text = $"<size=44>{(de ? "SPRECHEN" : "TALK")}</size>";
-        labels[3].text = "<color=#cbd5e1>Reachy</color>";
-        values[3].text = control.Restarting ? $"<size=40>{(de ? "startet neu …" : "restarting …")}</size>"
-            : RobotFault ? $"<color=#ff9500><size=40>{(de ? "Fehler: neu starten" : "error: restart")}</size></color>"
-            : control.GoingToSleep ? "<size=40>…</size>"
-            : control.Asleep ? $"<color=#94a3b8>{(de ? "SCHLÄFT" : "ASLEEP")}</color>"
-            : control.IsFollowing ? (de ? "WACH" : "AWAKE")
-            : control.Waking ? "<size=40>…</size>" : $"<color=#94a3b8><size=40>{(de ? "nicht da" : "not there")}</size></color>";
-        labels[4].text = $"<color=#cbd5e1>{(de ? "Hilfe" : "Help")}</color>";
-        values[4].text = "?";
+        // one line under each icon; the value arrays stay empty (the look of 2026-11-11: icon + line, glass, fine edge)
+        string soft = Ui.SoftHex;
+        labels[0].text = (de ? "Übersetzen" : "Translate") + (Translate
+            ? $" <color={Ui.AccentHex}>{(de ? "an" : "on")}{(meetingLang != null ? " → " + meetingLang.ToUpper() : "")}</color>"
+            : $" <color={soft}>{(de ? "aus" : "off")}</color>");
+        labels[1].text = (lang >= 0 ? LangNames[lang] : Target.ToUpper()) + $" <color={soft}>{(listOpen ? "‹" : "›")}</color>";
+        labels[2].text = de ? "Wortmeldung" : "Raise hand";
+        labels[3].text = control.Restarting ? (de ? "startet neu …" : "restarting …")
+            : RobotFault ? $"<color=#ff9500>{(de ? "Fehler: neu starten" : "error: restart")}</color>"
+            : control.GoingToSleep || control.Waking ? "Reachy …"
+            : control.Asleep ? $"Reachy <color={soft}>{(de ? "schläft" : "asleep")}</color>"
+            : control.IsFollowing ? $"Reachy <color={Ui.AccentHex}>{(de ? "wach" : "awake")}</color>"
+            : $"Reachy <color={soft}>{(de ? "nicht da" : "not there")}</color>";
+        labels[4].text = de ? "Hilfe" : "Help";
         for (int i = 0; i < Tiles; i++)
         {
-            tiles[i].Set(TileW, TileH, 0.025f, tileAt[i], i == 0 && Translate || i == 2 && control.Waving || i == 3 && control.IsFollowing ? On : Tile);
+            bool on = i == 0 && Translate || i == 2 && control.Waving;
+            tiles[i].Set(TileW, TileH, 0.04f, tileAt[i], on ? new Color(Ui.Accent.r, Ui.Accent.g, Ui.Accent.b, 0.2f) : Tile);
+            tiles[i].Border(on ? Ui.Accent : new Color(1, 1, 1, 0.12f), 0.003f);
+            icons[i].sharedMaterial.color = on ? Ui.Accent : Color.white;
             frames[i].Show(hover[0].Item == (Item)i || hover[1].Item == (Item)i);
         }
         if (!listOpen) return;
