@@ -195,10 +195,10 @@ public class Curtain : MonoBehaviour
         {
             bool right = hand == 1;
             var aim = XrInput.Aim(right, head);
-            var p = Ui.PointOn(card, aim ?? XrInput.Gaze(head));
+            var p = Ui.Pick(card, aim, head, q => Ui.Inside(q, WakeAt, WakeW + 0.06f, WakeH + 0.06f), out var byHand);
             onWake[hand] = button && Ui.Inside(p, WakeAt, WakeW + 0.06f, WakeH + 0.06f);
-            if (button && aim != null && Ui.Inside(p, new Vector3(0, -0.05f, 0), 1.2f, 0.9f))
-                cursors[hand].Show(p.Value, right ? control.RightLevel : control.LeftLevel);
+            if (button && aim != null && Ui.Inside(byHand, new Vector3(0, -0.05f, 0), 1.2f, 0.9f))
+                cursors[hand].Show(byHand.Value, right ? control.RightLevel : control.LeftLevel);
             else cursors[hand].Hide();
         }
         if (button)

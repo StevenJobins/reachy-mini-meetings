@@ -168,12 +168,13 @@ public class NotesPanel : MonoBehaviour
         {
             bool right = hand == 1;
             var aim = XrInput.Aim(right, head);
-            var p = Ui.PointOn(card, aim ?? XrInput.Gaze(head));
+            var p = Ui.Pick(card, aim, head, q => Ui.Inside(q, handleAt, HandleW + 0.12f, 0.09f)
+                || !folded && Ui.Inside(q, buttonAt, bs.x + 0.06f, 0.08f) || Ui.Inside(q, foldAt, 0.09f, 0.09f), out var byHand);
             onHandle[hand] = !dragging && Ui.Inside(p, handleAt, HandleW + 0.12f, 0.09f);
             onButton[hand] = !dragging && !folded && Ui.Inside(p, buttonAt, bs.x + 0.06f, 0.08f);
             onFold[hand] = !dragging && Ui.Inside(p, foldAt, 0.09f, 0.09f);
-            bool onCard = p is Vector3 q && Ui.Inside(q, new Vector3(0, -HandleGap / 2, 0), w + 0.1f, h + 2 * HandleGap + 0.1f);
-            if (aim != null && onCard) cursors[hand].Show(p.Value, right ? control.RightLevel : control.LeftLevel);
+            bool onCard = byHand is Vector3 hq && Ui.Inside(hq, new Vector3(0, -HandleGap / 2, 0), w + 0.1f, h + 2 * HandleGap + 0.1f);
+            if (aim != null && onCard) cursors[hand].Show(byHand.Value, right ? control.RightLevel : control.LeftLevel);
             else cursors[hand].Hide();
         }
         bool overHandle = onHandle[0] || onHandle[1], overButton = onButton[0] || onButton[1];

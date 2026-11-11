@@ -5,6 +5,7 @@ Shader "Reachy/VideoSphere"
     {
         _MainTex ("Video", 2D) = "white" {}
         _Color ("Color", Color) = (1, 1, 1, 1)
+        _Sharpen ("Sharpen", Range(0, 2)) = 0.7
     }
     SubShader
     {
@@ -42,6 +43,8 @@ Shader "Reachy/VideoSphere"
             CBUFFER_START(UnityPerMaterial)
                 float4 _MainTex_ST;
                 half4 _Color;
+                float4 _MainTex_TexelSize;
+                half _Sharpen;
             CBUFFER_END
 
             Varyings vert(Attributes v)
@@ -58,7 +61,16 @@ Shader "Reachy/VideoSphere"
             {
                 float2 e = min(i.uv, 1 - i.uv);
                 float edge = smoothstep(0, 0.03, e.x) * smoothstep(0, 0.04, e.y);
-                return half4(SAMPLE_TEXTURE2D(_MainTex, sampler_MainTex, i.uv).rgb * _Color.rgb, edge);
+                // Unsharp mask: the 1080p picture is spread over a wide angle and softened by the video coding; adding
+                // back the difference to the four neighbours makes edges (faces, text on a screen) crisper.
+                float2 d = _MainTex_TexelSize.xy;
+                half3 c = SAMPLE_TEXTURE2D(_MainTex, sampler_MainTex, i.uv).rgb;
+                half3 around = (SAMPLE_TEXTURE2D(_MainTex, sampler_MainTex, i.uv + float2(d.x, 0)).rgb
+                              + SAMPLE_TEXTURE2D(_MainTex, sampler_MainTex, i.uv - float2(d.x, 0)).rgb
+                              + SAMPLE_TEXTURE2D(_MainTex, sampler_MainTex, i.uv + float2(0, d.y)).rgb
+                              + SAMPLE_TEXTURE2D(_MainTex, sampler_MainTex, i.uv - float2(0, d.y)).rgb) * 0.25;
+                c = saturate(c + _Sharpen * (c - around));
+                return half4(c * _Color.rgb, edge);
             }
             ENDHLSL
         }

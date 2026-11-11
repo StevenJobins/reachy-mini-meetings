@@ -16,7 +16,7 @@ public class Tutorial : MonoBehaviour
     const int BodyChars = 42;
     const float Pad = 0.06f, StripH = 0.012f, Dot = 0.018f, Illus = 0.14f;
     const float HoldS = 1.5f, NotesDeg = 20f;
-    static readonly Color Panel = new Color(0.06f, 0.09f, 0.16f, 0.95f);
+    static readonly Color Panel = new Color(0.08f, 0.11f, 0.17f, 0.97f);
     static readonly Color Left = new Color(0.22f, 0.74f, 0.97f);           // #38bdf8
     static readonly Color Right = new Color(1f, 0.58f, 0f);                // #ff9500
     static readonly Color Good = new Color(0.29f, 0.87f, 0.5f);            // #4ade80
@@ -44,8 +44,8 @@ public class Tutorial : MonoBehaviour
     int index = -1;
     Transform root;
     TextMesh title, body, hint, footer;
-    Ui.Rect panel, strip, thumb, finger, skipBtn, nextBtn;
-    TextMesh skipText, nextText;
+    Ui.Rect panel, strip, thumb, finger, skipBtn, nextBtn, hintBox, fingerBack;
+    TextMesh skipText, nextText, stepText;
     Vector3 skipAt, nextAt;
     readonly bool[] onSkip = new bool[2], onNext = new bool[2];   // per hand: left, right
     readonly Ui.Cursor[] cursors = new Ui.Cursor[2];
@@ -80,6 +80,9 @@ public class Tutorial : MonoBehaviour
         body = Ui.Text(root, "Body", text, 52, BodyScale, TextAnchor.UpperLeft);
         hint = Ui.Text(root, "Hint", text, 52, BodyScale, TextAnchor.UpperLeft, FontStyle.Bold);
         footer = Ui.Text(root, "Footer", text, 46, BodyScale, TextAnchor.UpperLeft);
+        hintBox = Ui.Quad(root, "HintBox", panelMaterial, 3041);
+        fingerBack = Ui.Quad(root, "FingerBack", panelMaterial, 3041);
+        stepText = Ui.Text(root, "Step", text, 40, BodyScale, TextAnchor.MiddleRight);
         skipBtn = Ui.Quad(root, "Skip", panelMaterial, 3041);
         nextBtn = Ui.Quad(root, "Next", panelMaterial, 3041);
         skipText = Ui.Text(root, "SkipText", text, 44, BodyScale);
@@ -249,15 +252,17 @@ public class Tutorial : MonoBehaviour
         {
             bool right = hand == 1;
             var aim = XrInput.Aim(right, head);
-            var p = Ui.PointOn(root, aim ?? XrInput.Gaze(head));
+            var p = Ui.Pick(root, aim, head, q => Ui.Inside(q, skipAt, BtnW + 0.04f, BtnH + 0.04f)
+                || Ui.Inside(q, nextAt, BtnW + 0.04f, BtnH + 0.04f), out var byHand);
             onSkip[hand] = Ui.Inside(p, skipAt, BtnW + 0.04f, BtnH + 0.04f);
             onNext[hand] = Ui.Inside(p, nextAt, BtnW + 0.04f, BtnH + 0.04f);
-            if (aim != null && Ui.Inside(p, Vector3.zero, width + 0.1f, height + 0.1f))
-                cursors[hand].Show(p.Value, right ? control.RightLevel : control.LeftLevel);
+            if (aim != null && Ui.Inside(byHand, Vector3.zero, width + 0.1f, height + 0.1f))
+                cursors[hand].Show(byHand.Value, right ? control.RightLevel : control.LeftLevel);
             else cursors[hand].Hide();
         }
-        skipBtn.Set(BtnW, BtnH, BtnH / 2, skipAt, new Color(1, 1, 1, onSkip[0] || onSkip[1] ? 0.3f : 0.1f));
-        var accent = new Color(Left.r, Left.g, Left.b, onNext[0] || onNext[1] ? 1f : 0.75f);
+        skipBtn.Set(BtnW, BtnH, BtnH / 2, skipAt, new Color(1, 1, 1, onSkip[0] || onSkip[1] ? 0.22f : 0f));
+        skipBtn.Border(new Color(1, 1, 1, 0.3f), 0.003f);
+        var accent = new Color(Ui.Accent.r, Ui.Accent.g, Ui.Accent.b, onNext[0] || onNext[1] ? 1f : 0.85f);
         nextBtn.Set(BtnW, BtnH, BtnH / 2, nextAt, accent);
     }
 
@@ -320,19 +325,29 @@ public class Tutorial : MonoBehaviour
         width = Mathf.Max(0.8f, Mathf.Max(tb.x + illus, Mathf.Max(bb.x, Mathf.Max(hb.x, fb.x))) + 2 * Pad);
         float gap = 0.03f, dotsH = Dot + gap;
         height = Pad + dotsH + tb.y + gap + bb.y + (hintText == null ? 0 : gap + hb.y) + (done ? 0 : gap * 1.5f + fb.y)
-                 + gap * 2 + BtnH + Pad;
+                 + (hintText == null ? 0 : 0.04f) + gap * 2 + BtnH + Pad;
         skipAt = new Vector3(-width / 2 + Pad + BtnW / 2, -height / 2 + Pad + BtnH / 2, -0.001f);
         nextAt = new Vector3(width / 2 - Pad - BtnW / 2, -height / 2 + Pad + BtnH / 2, -0.001f);
         skipText.text = $"<color=#cbd5e1>{(De ? "Überspringen" : "Skip")}</color>";
-        nextText.text = $"<color=#0b1220>{(c.Task == Task.Finish ? (De ? "Fertig" : "Done") : (De ? "Weiter" : "Next"))}</color>";
+        nextText.text = $"<color={Ui.InkHex}>{(c.Task == Task.Finish ? (De ? "Fertig" : "Done") : (De ? "Weiter" : "Next"))}</color>";
         skipText.transform.localPosition = skipAt + new Vector3(0, 0, -0.002f);
         nextText.transform.localPosition = nextAt + new Vector3(0, 0, -0.002f);
 
         float left = -width / 2 + Pad, y = height / 2 - Pad;
         panel.Set(width, height, 0.07f, Vector3.zero, Panel);
         panel.Border(Ui.Edge);
-        strip.Set(width - 0.08f, StripH, StripH / 2, new Vector3(0, height / 2 - StripH / 2 - 0.004f, -0.001f),
-            done ? Good : c.Hand == Hand.Right ? Right : Left);
+        strip.Show(false);   // the look of 2026-11-11 has no bar at the top: the dots say where you are
+        stepText.text = $"<color={Ui.SoftHex}>{index + 1} {(De ? "von" : "of")} {cards.Length}</color>";
+        stepText.transform.localPosition = new Vector3(width / 2 - Pad, y - Dot / 2 - 0.012f, -0.002f);
+        // the hint on a tinted box: amber while it guides, green once the step is done
+        var tint = done ? Good : new Color(0.98f, 0.8f, 0.08f);
+        hintBox.Show(hintText != null);
+        fingerBack.Show(c.Hand != Hand.None);
+        if (c.Hand != Hand.None)
+        {
+            fingerBack.Set(0.16f, 0.16f, 0.08f, new Vector3(width / 2 - Pad - 0.05f, height / 2 - Pad - 0.1f, -0.001f), new Color(1, 1, 1, 0.05f));
+            fingerBack.Border(new Color(1, 1, 1, 0.12f), 0.003f);
+        }
         float x = left;
         for (int i = 0; i < dots.Length; i++)   // progress: the current card is a wider pill
         {
@@ -346,8 +361,14 @@ public class Tutorial : MonoBehaviour
         y -= tb.y + gap;
         body.transform.localPosition = new Vector3(left, y, -0.002f);
         y -= bb.y + gap;
-        hint.transform.localPosition = new Vector3(left, y, -0.002f);
-        if (hintText != null) y -= hb.y + gap * 1.5f;
+        if (hintText != null)
+        {
+            y -= 0.02f;
+            hintBox.Set(width - 2 * Pad, hb.y + 0.045f, 0.03f, new Vector3(0, y - hb.y / 2, -0.001f), new Color(tint.r, tint.g, tint.b, 0.14f));
+            hintBox.Border(new Color(tint.r, tint.g, tint.b, 0.5f), 0.003f);
+        }
+        hint.transform.localPosition = new Vector3(left + 0.02f, y, -0.002f);
+        if (hintText != null) y -= hb.y + 0.02f + gap * 1.5f;
         footer.transform.localPosition = new Vector3(left, y, -0.002f);
 
         thumb.Show(c.Hand != Hand.None);
@@ -364,7 +385,7 @@ public class Tutorial : MonoBehaviour
         var col = c.Hand == Hand.Right ? Right : Left;
         if (level > 0.8f) col = Color.Lerp(col, Color.white, 0.35f);
         float gap = 0.004f + 0.05f * (1 - Mathf.Clamp01(level)), r = 0.024f;
-        var centre = new Vector3(width / 2 - Pad - 0.05f, height / 2 - Pad - 0.07f, -0.002f);
+        var centre = new Vector3(width / 2 - Pad - 0.05f, height / 2 - Pad - 0.1f, -0.002f);
         thumb.Set(r * 1.15f, r * 1.15f, r * 0.575f, centre + new Vector3(-0.012f, -(gap + r) / 2, 0), col);
         finger.Set(r, r, r / 2, centre + new Vector3(0.012f, (gap + r) / 2, 0), new Color(col.r, col.g, col.b, 0.6f + 0.4f * level));
     }

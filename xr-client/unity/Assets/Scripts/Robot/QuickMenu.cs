@@ -188,7 +188,7 @@ public class QuickMenu : MonoBehaviour
         {
             bool right = hand == 1;
             var aim = XrInput.Aim(right, head);
-            var p = Ui.PointOn(transform, aim ?? XrInput.Gaze(head));
+            var p = Ui.Pick(transform, aim, head, OnSomething, out var byHand);
             var hv = hover[hand];
             var now = Item.None;
             for (int i = 0; i < Tiles; i++)
@@ -204,9 +204,9 @@ public class QuickMenu : MonoBehaviour
             onList |= hv.Row >= 0 || hv.Item == Item.Language;
 
             // the cursor, only for a real hand ray and only on the menu
-            bool onMenu = p is Vector3 q && (Ui.Inside(q, Vector3.zero, w + 0.1f, h + 0.1f)
+            bool onMenu = byHand is Vector3 q && (Ui.Inside(q, Vector3.zero, w + 0.1f, h + 0.1f)
                                              || listOpen && Ui.Inside(q, rowAt[2], RowW + 0.15f, rows.Length * RowH + 0.1f));
-            if (aim != null && onMenu) cursors[hand].Show(p.Value, right ? control.RightLevel : control.LeftLevel);
+            if (aim != null && onMenu) cursors[hand].Show(byHand.Value, right ? control.RightLevel : control.LeftLevel);
             else cursors[hand].Hide();
         }
         if (listOpen)
@@ -216,6 +216,17 @@ public class QuickMenu : MonoBehaviour
         }
         if (me.gameObject.activeSelf && Time.unscaledTime > meUntil) me.gameObject.SetActive(false);
         Redraw();
+    }
+
+    /// <summary>Is that point on a tile, or on a language while the list is open?</summary>
+    bool OnSomething(Vector3? p)
+    {
+        for (int i = 0; i < Tiles; i++)
+            if (Ui.Inside(p, tileAt[i], TileW + 2 * HitPad, TileH + Gap + HitPad)) return true;
+        if (listOpen)
+            for (int i = 0; i < rows.Length; i++)
+                if (Ui.Inside(p, rowAt[i], RowW + 2 * HitPad, RowH)) return true;
+        return false;
     }
 
     /// <summary>A pinch of the hand that points at a tile or a language.</summary>
