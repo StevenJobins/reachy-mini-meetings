@@ -151,3 +151,22 @@ class Summarizer:
             log.info("summary: %d bullets, %d actions, %d next steps",
                      len(notes["summary"]), len(notes["actions"]), len(notes["next_steps"]))
             publish(self.latest)
+
+
+def mail_draft(notes: dict, german: bool = False) -> str:
+    """The notes as a mailto: link (no recipient: chosen in the mail program), for a draft to check and send."""
+    import urllib.parse
+
+    day = time.strftime("%d.%m.%Y" if german else "%Y-%m-%d", time.localtime(notes.get("t", time.time())))
+    lines = []
+    for title, items in (("Zusammenfassung" if german else "Summary", notes.get("summary") or []),
+                         ("Aufgaben" if german else "Action items",
+                          [(f"{a['who']}: " if a.get("who") else "") + a.get("what", "") + (f" ({a['when']})" if a.get("when") else "")
+                           for a in notes.get("actions") or []]),
+                         ("Nächste Schritte" if german else "Next steps", notes.get("next_steps") or [])):
+        if items:
+            lines += [title, *[f"- {i}" for i in items], ""]
+    subject = ("Meeting-Notizen " if german else "Meeting notes ") + day
+    return "mailto:?" + urllib.parse.urlencode({"subject": subject, "body": "\n".join(lines).strip()},
+                                               quote_via=urllib.parse.quote)
+

@@ -12,7 +12,7 @@ from reachy_meetings_backend.people import People, image_to_angles, to_base
 from reachy_meetings_backend.segmenter import SAMPLE_RATE, Segmenter, SegmenterCfg
 from reachy_meetings_backend.speakers import SpeakerClusters
 from reachy_meetings_backend.stt import pick_language, plausible
-from reachy_meetings_backend.summary import parse_summary
+from reachy_meetings_backend.summary import mail_draft, parse_summary
 
 rng = np.random.default_rng(0)
 
@@ -534,4 +534,14 @@ def test_who_is_seen_talking_now_beats_an_old_tie_and_empty_places_get_no_bubble
     _watch(people, 20, 26, {0.7: _still})                  # person 1 left; the camera still looks there
     assert People.place(p1, 26, head_yaw_deg=0) is None
     assert People.place(p1, 26, head_yaw_deg=80)["person"] == 1, "not in view: still where they sat"
+
+
+def test_notes_as_a_mail_draft():
+    link = mail_draft({"summary": ["Budget geklärt & Termin offen"], "next_steps": ["Folien bis Donnerstag"], "t": 0,
+                       "actions": [{"who": "Anna", "what": "Offerte schicken", "when": "Freitag"}]}, german=True)
+    from urllib.parse import parse_qs, urlsplit
+    q = parse_qs(urlsplit(link).query)
+    assert link.startswith("mailto:?") and q["subject"][0].startswith("Meeting-Notizen ")
+    assert q["body"][0] == ("Zusammenfassung\n- Budget geklärt & Termin offen\n\nAufgaben\n- Anna: Offerte schicken (Freitag)"
+                            "\n\nNächste Schritte\n- Folien bis Donnerstag")
 

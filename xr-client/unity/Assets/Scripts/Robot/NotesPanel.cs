@@ -49,8 +49,9 @@ public class NotesPanel : MonoBehaviour
     public bool Hidden;
 
     Transform card;
-    Ui.Rect panel, strip, handle, button, fold;
-    TextMesh body, buttonText, foldText;
+    Ui.Rect panel, strip, handle, button, fold, mail;
+    TextMesh body, buttonText, foldText, mailText;
+    readonly bool[] onMail = new bool[2];
     bool folded;   // only the title: the notes take a lot of room
     readonly bool[] onFold = new bool[2];
     float armedAt = -10f;   // first pinch on New meeting; the second within ConfirmS clears
@@ -74,7 +75,7 @@ public class NotesPanel : MonoBehaviour
     /// <summary>The card, for the tutorial ("look to your right").</summary>
     public Transform Card => card;
     /// <summary>That hand points at the handle or the button: its pinch goes here (RobotControl).</summary>
-    public bool Hovered(bool right) => onHandle[right ? 1 : 0] || onButton[right ? 1 : 0] || onFold[right ? 1 : 0];
+    public bool Hovered(bool right) => onHandle[right ? 1 : 0] || onButton[right ? 1 : 0] || onFold[right ? 1 : 0] || onMail[right ? 1 : 0];
 
     void Awake()
     {
@@ -88,6 +89,9 @@ public class NotesPanel : MonoBehaviour
         handle = Ui.Quad(card, "Handle", panelMaterial, 3016);
         button = Ui.Quad(card, "NewMeeting", panelMaterial, 3016);
         buttonText = Ui.Text(card, "NewMeetingText", text, 36, TextScale);
+        mail = Ui.Quad(card, "Mail", panelMaterial, 3016);
+        mailText = Ui.Text(card, "MailText", text, 36, TextScale);
+        mailText.text = "Mail";
         fold = Ui.Quad(card, "Fold", panelMaterial, 3016);
         foldText = Ui.Text(card, "FoldText", text, 44, TextScale, TextAnchor.MiddleCenter, FontStyle.Bold);
         folded = PlayerPrefs.GetInt(FoldKey, 0) == 1;
@@ -123,7 +127,7 @@ public class NotesPanel : MonoBehaviour
         card.localScale = Hidden ? Vector3.zero : Vector3.one;
         if (Hidden)
         {
-            for (int i = 0; i < 2; i++) { onHandle[i] = onButton[i] = onFold[i] = false; cursors[i].Hide(); }
+            for (int i = 0; i < 2; i++) { onHandle[i] = onButton[i] = onFold[i] = onMail[i] = false; cursors[i].Hide(); }
             return;
         }
         if (dragging)
@@ -160,6 +164,11 @@ public class NotesPanel : MonoBehaviour
         // top right: fold / unfold, and left of it New meeting (not while folded)
         var foldAt = new Vector3(w / 2 - Pad - 0.01f, h / 2 - Pad - 0.025f, -0.003f);
         var buttonAt = foldAt + new Vector3(-0.07f - bs.x / 2, 0, 0);
+        // Mail: the notes as a draft in the mail program of the laptop next to Reachy
+        var mailAt = buttonAt + new Vector3(-bs.x / 2 - 0.085f, 0, 0);
+        bool canMail = !folded && notes != null;
+        mail.Show(canMail);
+        mailText.gameObject.SetActive(canMail);
         foldText.text = folded ? "+" : "–";
         button.Show(!folded);
         buttonText.gameObject.SetActive(!folded);
@@ -169,10 +178,12 @@ public class NotesPanel : MonoBehaviour
             bool right = hand == 1;
             var aim = XrInput.Aim(right, head);
             var p = Ui.Pick(card, aim, head, q => Ui.Inside(q, handleAt, HandleW + 0.12f, 0.09f)
-                || !folded && Ui.Inside(q, buttonAt, bs.x + 0.06f, 0.08f) || Ui.Inside(q, foldAt, 0.09f, 0.09f), out var byHand);
+                || !folded && Ui.Inside(q, buttonAt, bs.x + 0.06f, 0.08f) || Ui.Inside(q, foldAt, 0.09f, 0.09f)
+                || canMail && Ui.Inside(q, mailAt, 0.13f, 0.08f), out var byHand);
             onHandle[hand] = !dragging && Ui.Inside(p, handleAt, HandleW + 0.12f, 0.09f);
             onButton[hand] = !dragging && !folded && Ui.Inside(p, buttonAt, bs.x + 0.06f, 0.08f);
             onFold[hand] = !dragging && Ui.Inside(p, foldAt, 0.09f, 0.09f);
+            onMail[hand] = !dragging && canMail && Ui.Inside(p, mailAt, 0.13f, 0.08f);
             bool onCard = byHand is Vector3 hq && Ui.Inside(hq, new Vector3(0, -HandleGap / 2, 0), w + 0.1f, h + 2 * HandleGap + 0.1f);
             if (aim != null && onCard) cursors[hand].Show(byHand.Value, right ? control.RightLevel : control.LeftLevel);
             else cursors[hand].Hide();
@@ -185,6 +196,8 @@ public class NotesPanel : MonoBehaviour
         buttonText.transform.localPosition = buttonAt;
         fold.Set(0.06f, 0.055f, 0.0275f, foldAt + new Vector3(0, 0, 0.001f), new Color(1, 1, 1, onFold[0] || onFold[1] ? 0.3f : 0.1f));
         foldText.transform.localPosition = foldAt;
+        mail.Set(0.11f, 0.055f, 0.0275f, mailAt + new Vector3(0, 0, 0.001f), new Color(1, 1, 1, onMail[0] || onMail[1] ? 0.3f : 0.1f));
+        mailText.transform.localPosition = mailAt;
     }
 
     /// <summary>Pinch (either hand) on the handle (drag while held) or on New meeting (twice).</summary>
@@ -192,6 +205,13 @@ public class NotesPanel : MonoBehaviour
     {
         int hand = right ? 1 : 0;
         if (onHandle[hand]) { BeginDrag(right); return; }
+        if (onMail[hand])
+        {
+            room?.Backend?.Send("{\"type\": \"mail_notes\"}");
+            if (menu != null) menu.Flash(Ui.German ? "Mail-Entwurf am Laptop\nbei Reachy geöffnet" : "Mail draft opened on the\nlaptop next to Reachy");
+            Debug.Log("[notes] mail draft asked");
+            return;
+        }
         if (onFold[hand])
         {
             folded = !folded;

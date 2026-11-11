@@ -33,6 +33,7 @@ Protocol (server -> headset, one JSON per message; keep in sync with xr-client):
 Client -> server: {"type": "auth", "hf_token": str} first (checked through the tunnel only);
 {"type": "auth", "secret": str} first from another machine when the server runs with --lan-secret;
 {"type": "voice", "gender": "male" | "female"} picks Reachy's voice (voice.py GENDER_VOICES, per language);
+{"type": "mail_notes"} opens the current notes as a mail draft on this computer;
 {"type": "me_mode", "speak": false} = the remote user's voice is only transcribed (subtitles), not spoken by
 Reachy: the Unity app sends its own voice to Reachy over WebRTC and this copy only for "You" lines. The room
 sound is then muted for captions while it comes in (+ ECHO_S), or Reachy's speaker would caption it again;
@@ -483,6 +484,14 @@ class Pipeline:
                 log.info("Reachy's voice: %s (%s)", msg["gender"], self.voice.voice(self.meeting_lang()) or "system voice")
         if msg.get("type") == "new_meeting" and self.summarizer:   # the headset clears the notes
             self.summarizer.reset("asked by the headset")
+        if msg.get("type") == "mail_notes" and self.summarizer and self.summarizer.latest:
+            # a draft in this computer's mail program, to check, address and send (no account or password here)
+            import webbrowser
+
+            from .summary import mail_draft
+
+            webbrowser.open(mail_draft(self.summarizer.latest, german=self.target == "de"))
+            log.info("Notes: mail draft opened")
         if msg.get("type") == "voice_end":   # the page stopped sending the remote user's voice
             self.me_queue.put_nowait(None)
         if msg.get("type") == "me_mode" and isinstance(msg.get("speak"), bool) and msg["speak"] != self.me_speak:
