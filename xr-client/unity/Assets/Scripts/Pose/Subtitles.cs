@@ -12,6 +12,8 @@ public class SubtitleLine
     public int Seq;              // order of appearance
     public int? CaptionId;
     public bool You, Final, Live;
+    public bool Waiting;         // being translated and nothing translated to show yet: dots
+    public bool Translated;
     public int? Speaker;         // 1, 2, ... from the voice; null = not known
     public string Text = "", Original;
     public double Until;
@@ -28,7 +30,10 @@ public class Subtitles
     double liveUntil = double.NegativeInfinity;
 
     /// <summary>A room caption (same id = update). Empty text removes it: nothing was said.</summary>
-    public void Caption(int id, bool final, string text, string translation, string lang, int? speaker, double now)
+    /// <summary>translating: the backend is translating this text. The original is not shown meanwhile (reading German,
+    /// then English, then German again as the sentence grows is hard): an earlier translation stays, else dots.</summary>
+    public void Caption(int id, bool final, string text, string translation, string lang, int? speaker, double now,
+        bool translating = false)
     {
         var line = lines.Find(l => l.CaptionId == id);
         if (string.IsNullOrEmpty(text))
@@ -38,6 +43,16 @@ public class Subtitles
         }
         if (line == null) lines.Add(line = new SubtitleLine { CaptionId = id, Seq = seq++ });
         bool translated = !string.IsNullOrEmpty(translation);
+        if (speaker != null) line.Speaker = speaker;
+        if (translating && !translated)
+        {
+            line.Waiting = !line.Translated;
+            line.Final = false;
+            line.Until = now + (final ? FinalS : PartialS);
+            return;
+        }
+        line.Waiting = false;
+        line.Translated = translated;
         line.Text = translated ? translation : text;
         line.Original = translated ? $"{lang}: {text}" : null;
         line.Final = final;

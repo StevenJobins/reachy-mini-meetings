@@ -36,6 +36,21 @@ public class Curtain : MonoBehaviour
     Transform card, mascot;
     readonly Transform[] antennas = new Transform[2];
     readonly Ui.Rect[] eyes = new Ui.Rect[2];
+    // Asleep: no picture, only a large button to wake Reachy up (either hand's ray + pinch)
+    Ui.Rect wake;
+    TextMesh wakeText;
+    readonly bool[] onWake = new bool[2];
+    readonly Ui.Cursor[] cursors = new Ui.Cursor[2];
+    const float WakeW = 0.62f, WakeH = 0.16f;
+    static readonly Vector3 WakeAt = new Vector3(0, -0.2f, -0.001f);
+
+    /// <summary>That hand points at the wake-up button: its pinch goes here (RobotControl).</summary>
+    public bool Hovered(bool right) => onWake[right ? 1 : 0];
+
+    public void Press(bool right)
+    {
+        if (onWake[right ? 1 : 0]) control.WakeUp();
+    }
     Ui.Rect panel;
     TextMesh text;
     string shown;
@@ -72,15 +87,16 @@ public class Curtain : MonoBehaviour
         }
     }
 
-    void Animate()
+    void Animate(bool sleeping)
     {
         float t = Time.unscaledTime;
-        mascot.localRotation = Quaternion.Euler(0, 0, 7f * Mathf.Sin(t * 1.3f));                 // the head tilts from side to side
+        mascot.localRotation = Quaternion.Euler(0, 0, sleeping ? 10f : 7f * Mathf.Sin(t * 1.3f));   // the head tilts from side to side
         for (int i = 0; i < 2; i++)
         {
             float side = i == 0 ? 1 : -1;
             antennas[i].localRotation = Quaternion.Euler(0, 0, side * 16f + 12f * Mathf.Sin(t * 3.1f + i * 1.3f));
-            float blink = t % 3.4f < 0.12f ? 0.12f : 1f;                                           // a blink now and then
+            float blink = sleeping || t % 3.4f < 0.12f ? 0.12f : 1f;                              // a blink now and then; closed asleep
+            if (sleeping) antennas[i].localRotation = Quaternion.Euler(0, 0, side * 70f);         // antennas down
             eyes[i].T.localScale = new Vector3(0.075f, 0.075f * blink, 1);
         }
     }
@@ -97,6 +113,10 @@ public class Curtain : MonoBehaviour
         panel = Ui.Quad(card, "Panel", panelMaterial, 3030);
         text = Ui.Text(card, "Text", Ui.TextMaterial(textMaterial, 3031), 56, TextScale);
         BuildMascot();
+        wake = Ui.Quad(card, "Wake", panelMaterial, 3030);
+        wakeText = Ui.Text(card, "WakeText", Ui.TextMaterial(textMaterial, 3031), 64, TextScale, TextAnchor.MiddleCenter, FontStyle.Bold);
+        wakeText.transform.localPosition = WakeAt + new Vector3(0, 0, -0.002f);
+        for (int i = 0; i < 2; i++) cursors[i] = new Ui.Cursor(card, panelMaterial);
         card.gameObject.SetActive(false);
     }
 
@@ -116,7 +136,8 @@ public class Curtain : MonoBehaviour
                 Debug.Log($"[curtain] open ({(scanOver ? "scan over" : noRobot ? "no robot" : noScan ? "no scan" : "sweep")})");
             }
         }
-        bool raw = tour || !lifted || panorama.Scanning || control.Waking;   // also the wake-up and lie-down from the menu
+        bool asleep = control.Asleep && !control.GoingToSleep && !tour;
+        bool raw = tour || !lifted || panorama.Scanning || control.Waking || control.Asleep;   // also the wake-up and lie-down from the menu
         if (raw) rawAt = Time.unscaledTime;
         bool hide = raw || Time.unscaledTime - rawAt < SettleS;
         if (hide != hidden)
@@ -142,6 +163,10 @@ public class Curtain : MonoBehaviour
             card.gameObject.SetActive(problem != null);
             if (problem != null) Say(problem, true);
             mascot.gameObject.SetActive(false);
+            wake.Show(false);
+            wakeText.gameObject.SetActive(false);
+            onWake[0] = onWake[1] = false;
+            foreach (var cur in cursors) cur.Hide();
             return;
         }
 
@@ -152,13 +177,34 @@ public class Curtain : MonoBehaviour
         eye.backgroundColor = Calm;
 
         card.gameObject.SetActive(!tour);
-        if (tour) return;
+        if (tour) { onWake[0] = onWake[1] = false; return; }
         string dots = new string('.', 1 + (int)(Time.unscaledTime * 1.5f) % 3).PadRight(3, ' ');
         string say = control.GoingToSleep ? (Ui.German ? "Reachy legt sich schlafen" : "Reachy is going to sleep")
             : (Ui.German ? "Reachy macht sich bereit" : "Reachy is getting ready");
-        Say(problem ?? $"{say}\n<color=#38bdf8>{dots}</color>", problem != null);
+        bool button = asleep && problem == null;
+        Say(problem ?? (button ? (Ui.German ? "Reachy schläft" : "Reachy is asleep") : $"{say}\n<color=#38bdf8>{dots}</color>"),
+            problem != null);
         mascot.gameObject.SetActive(problem == null);
-        if (problem == null) Animate();
+        if (problem == null) Animate(asleep);
+
+        wake.Show(button);
+        wakeText.gameObject.SetActive(button);
+        for (int hand = 0; hand < 2; hand++)
+        {
+            bool right = hand == 1;
+            var aim = XrInput.Aim(right, head);
+            var p = Ui.PointOn(card, aim ?? XrInput.Gaze(head));
+            onWake[hand] = button && Ui.Inside(p, WakeAt, WakeW + 0.06f, WakeH + 0.06f);
+            if (button && aim != null && Ui.Inside(p, new Vector3(0, -0.05f, 0), 1.2f, 0.9f))
+                cursors[hand].Show(p.Value, right ? control.RightLevel : control.LeftLevel);
+            else cursors[hand].Hide();
+        }
+        if (button)
+        {
+            bool over = onWake[0] || onWake[1];
+            wake.Set(WakeW, WakeH, WakeH / 2, WakeAt, new Color(0.22f, 0.74f, 0.97f, over ? 1f : 0.8f));
+            wakeText.text = $"<color=#0b1220>{(Ui.German ? "Aufwecken" : "Wake up")}</color>";
+        }
     }
 
     /// <summary>What keeps Reachy from working, in words for the user; null = nothing.</summary>

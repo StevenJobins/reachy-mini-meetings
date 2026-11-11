@@ -31,6 +31,7 @@ public class RobotControl : MonoBehaviour
     public QuickMenu menu;
     public Tutorial tutorial;
     public NotesPanel notes;
+    public Curtain curtain;
 
     readonly Recenter recenter = new Recenter();
     InputAction talk, recenterPress;
@@ -170,7 +171,8 @@ public class RobotControl : MonoBehaviour
         if (rightNow && !rightDown)
         {
             // a right pinch on the notes or a menu tile works them, like the left one, and does not talk
-            if (tutorial != null && tutorial.Hovered(true)) { tutorial.Press(true); rightUi = true; }
+            if (curtain != null && curtain.Hovered(true)) { curtain.Press(true); rightUi = true; }
+            else if (tutorial != null && tutorial.Hovered(true)) { tutorial.Press(true); rightUi = true; }
             else if (notes != null && notes.Hovered(true)) { notes.Press(true); rightUi = true; }
             else if (menu != null && menu.Hovered(true)) { menu.Select(true); rightUi = true; }
         }
@@ -193,7 +195,8 @@ public class RobotControl : MonoBehaviour
         {
             leftSince = Time.unscaledTime;
             leftUsed = true;
-            if (tutorial != null && tutorial.Hovered(false)) tutorial.Press(false);
+            if (curtain != null && curtain.Hovered(false)) curtain.Press(false);
+            else if (tutorial != null && tutorial.Hovered(false)) tutorial.Press(false);
             else if (notes != null && notes.Hovered(false)) notes.Press(false);
             else if (menu != null && menu.Hovered(false)) menu.Select(false);
             else if (Paused && !tutorial.WantsHold) tutorial.LeftPinch();

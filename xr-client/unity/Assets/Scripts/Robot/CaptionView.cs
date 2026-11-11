@@ -27,6 +27,7 @@ public class CaptionView : MonoBehaviour
         public int speaker;
         public double t_end;
         public SpeakerBubbles.At at;
+        public bool translating;
     }
     [Serializable] class MeMsg { public string text; }
     [Serializable] class FaceMsg { public float cx; }
@@ -141,8 +142,8 @@ public class CaptionView : MonoBehaviour
                 // next to the speaker when the backend knows where they are (SpeakerBubbles), else on the panel
                 var who = Who(new SubtitleLine { Speaker = speaker }, out var color);
                 bool there = bubbles != null && bubbles.Show(c.id, c.final, c.text, c.translation, c.lang, who, color,
-                    json.Contains("\"at\": {") ? c.at : null, now);
-                subs.Caption(c.id, c.final, there ? "" : c.text, c.translation, c.lang, speaker, now);
+                    json.Contains("\"at\": {") ? c.at : null, now, c.translating);
+                subs.Caption(c.id, c.final, there ? "" : c.text, c.translation, c.lang, speaker, now, c.translating);
                 Debug.Log($"[captions] {(c.final ? "final" : "partial")} #{c.id} speaker {speaker?.ToString() ?? "?"} {c.lang}: {c.text}");
                 break;
             case "me":
@@ -190,6 +191,7 @@ public class CaptionView : MonoBehaviour
             var who = Who(l, out var color);
             var name = who.Length > 0 ? $"<color={color}><b>{who}</b></color>  " : "";
             if (l.Live) { body.Append($"{name}<color=#9ca3af>● …</color>"); continue; }
+            if (l.Waiting) { body.Append(name + Ui.Dots()); continue; }
             var rows = Wrap(Escape(l.Text), RowChars - who.Length - 2, MaxRows);   // the name takes room in the first row
             var textColor = l.Final ? "#ffffff" : "#d1d5db";
             body.Append(name);

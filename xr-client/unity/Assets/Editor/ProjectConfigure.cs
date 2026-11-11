@@ -267,6 +267,7 @@ public static class ProjectConfigure
         curtainGo.transform.SetParent(offset.transform, false);
         var curtain = curtainGo.AddComponent<Curtain>();
         curtain.control = video.control;
+        video.control.curtain = curtain;
         curtain.tutorial = tutorial;
         curtain.room = video.room;
         curtain.menu = quick;

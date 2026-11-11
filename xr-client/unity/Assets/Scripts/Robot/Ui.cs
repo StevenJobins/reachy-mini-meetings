@@ -9,6 +9,15 @@ public static class Ui
 {
     public static bool German => Application.systemLanguage == SystemLanguage.German;
 
+    /// <summary>Three dots, one after the other lit: someone is talking, the text is coming.</summary>
+    public static string Dots()
+    {
+        int on = (int)(Time.unscaledTime * 3f) % 3;
+        var s = new System.Text.StringBuilder();
+        for (int i = 0; i < 3; i++) s.Append(i == on ? "<color=#ffffff>●</color> " : "<color=#6b7280>●</color> ");
+        return s.ToString();
+    }
+
     static Font font;
     static readonly List<Material> textMaterials = new List<Material>();
 

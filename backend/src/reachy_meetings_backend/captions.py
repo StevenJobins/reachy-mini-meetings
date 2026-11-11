@@ -10,7 +10,7 @@ Protocol (server -> headset, one JSON per message; keep in sync with xr-client):
   hello    {"version": str, "target": str, "session": str, "t": s}   session changes on every backend start
            (caption ids restart then); t = server clock, for mapping backend times onto the page's clock
   caption  {"id": int, "final": bool, "text": str, "lang": str, "translation": str | null,
-            "target": str, "doa_deg": float | null, "azimuth_deg": float | null, "speaker": int | null,
+            "target": str, "translating": bool, "doa_deg": float | null, "azimuth_deg": float | null, "speaker": int | null,
             "t_start": s, "t_end": s}   speaker = 1, 2, ... from the voice (speakers.py); null = not known
             (short utterance, no model); on a partial only a voice heard before
             "at": {"person": int, "yaw_deg", "pitch_deg", "top_deg", "h_deg", "seen_s"} | null   where the
@@ -405,6 +405,8 @@ class Pipeline:
         return {
             "id": seg.id, "final": seg.final, "text": text, "lang": lang,
             "translation": translation, "target": self.target,
+            # a translation is on its way: the headset shows dots, not the original and then the translation
+            "translating": bool(text and self.translator and lang != self.target and translation is None),
             "doa_deg": doa_deg, "azimuth_deg": azimuth_deg, "speaker": speaker, "at": at,
             "t_start": round(t_start, 3), "t_end": round(wall_end, 3),
         }
@@ -433,7 +435,7 @@ class Pipeline:
             self.partial_tr[seg.id] = (now, len(text))
             translation = await self.translator(text, remember=False)
             if translation and seg.id not in self.finalized:
-                self.server.send({**cap, "translation": translation})
+                self.server.send({**cap, "translation": translation, "translating": False})
 
     async def _final(self, seg: Segment, wall_end: float) -> None:
         speaker = self._speaker(seg)
@@ -457,9 +459,10 @@ class Pipeline:
         target, translator = self.target, self.translator
         if text and lang != target and translator:
             translation = await translator(text)
-            if translation and target == self.target:   # not if the bubble language changed meanwhile
-                log.info("[%d %s] %s", seg.id, target, translation)
-                cap = {**cap, "translation": translation}
+            if target == self.target:   # not if the bubble language changed meanwhile
+                if translation:
+                    log.info("[%d %s] %s", seg.id, target, translation)
+                cap = {**cap, "translation": translation, "translating": False}   # none came: the original after all
                 self.server.send(cap)
         if text:
             self.shown.append(cap)
@@ -502,7 +505,7 @@ class Pipeline:
             translation = await translator(cap["text"], remember=False) if translator and cap["lang"] != target else None
             if target != self.target:
                 return
-            self.server.send({**cap, "translation": translation, "target": target})
+            self.server.send({**cap, "translation": translation, "target": target, "translating": False})
 
     def meeting_lang(self) -> str:
         """The page's choice, else --meeting-lang, else the language most spoken in the room in the last 10 min."""

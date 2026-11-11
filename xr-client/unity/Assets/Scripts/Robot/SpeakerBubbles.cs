@@ -28,6 +28,8 @@ public class SpeakerBubbles : MonoBehaviour
         public At At;
         public double Until;
         public string Body;
+        public string Waiting;    // name line while the translation is on its way: dots under it
+        public bool Translated;
         public Transform Root;
         public Ui.Rect Panel;
         public Ui.Rect[] Frame;
@@ -53,18 +55,28 @@ public class SpeakerBubbles : MonoBehaviour
 
     /// <summary>A caption with the speaker's place. True = shown here; false = not possible now (the panel shows it).</summary>
     public bool Show(int id, bool final, string textNow, string translation, string lang, string who, string color,
-        At at, double now)
+        At at, double now, bool translating = false)
     {
         if (at == null || string.IsNullOrEmpty(textNow) || !TryPlace(at, out _)) { Remove(id); return false; }
         foreach (var other in bubbles.Where(kv => kv.Value.CaptionId == id && kv.Key != at.person).ToList())
             Drop(other.Key);   // the same words, now known to be someone else's
         if (!bubbles.TryGetValue(at.person, out var b)) b = bubbles[at.person] = Create();
+        if (b.CaptionId != id) b.Translated = false;   // a new sentence: nothing of it is translated yet
         b.CaptionId = id;
         b.At = at;
         b.Until = now + (final ? Subtitles.FinalS : Subtitles.PartialS);
         ColorUtility.TryParseHtmlString(color, out b.Color);
 
         bool translated = !string.IsNullOrEmpty(translation);
+        var name = who.Length > 0 ? $"<color={color}><b>{who}</b></color>\n" : "";
+        if (translating && !translated)
+        {
+            // not the original first and then the translation: an earlier translation stays, else dots
+            b.Waiting = b.Translated ? null : name;
+            return true;
+        }
+        b.Waiting = null;
+        b.Translated = translated;
         var rows = CaptionView.Wrap(CaptionView.Escape(translated ? translation : textNow), RowChars, MaxRows);
         var body = (who.Length > 0 ? $"<color={color}><b>{who}</b></color>\n" : "")
                    + string.Join("\n", rows.Select(r => final ? r : $"<color=#d1d5db><i>{r}</i></color>"));
@@ -137,6 +149,11 @@ public class SpeakerBubbles : MonoBehaviour
         foreach (var b in bubbles.Values)
         {
             bool on = TryPlace(b.At, out var dir) && !Hidden;
+            if (b.Waiting != null)
+            {
+                var dots = b.Waiting + Ui.Dots();
+                if (dots != b.Body) Redraw(b, dots);
+            }
             if (b.Root.gameObject.activeSelf != on) b.Root.gameObject.SetActive(on);
             if (!on) continue;
             b.Root.localPosition = dir * Distance;
