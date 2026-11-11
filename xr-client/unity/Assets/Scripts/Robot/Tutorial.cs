@@ -96,7 +96,7 @@ public class Tutorial : MonoBehaviour
                 Body = "Schau dorthin, wo für dich «geradeaus» sein soll, und halte den linken Pinch etwa eine Sekunde. Das geht später jederzeit wieder.",
                 Footer = "Links pinchen" },
             new Card { Task = Task.PickLanguage, Hand = Hand.Left, Stay = true, DoneS = 2.5f, Title = "Menü und Sprache",
-                Body = "Links unten ist das Menü. Zeig mit einer Hand auf «Sprache»: Ein Punkt zeigt, wohin du zeigst, und sein Ring schliesst sich beim Pinchen. Ist «Sprache» gelb umrandet, pinche mit dieser Hand.",
+                Body = "Unten am Bild ist das Menü. Zeig mit einer Hand auf «Sprache»: Ein Punkt zeigt, wohin du zeigst, und sein Ring schliesst sich beim Pinchen. Ist «Sprache» gelb umrandet, pinche mit dieser Hand.",
                 Footer = "Auf «Sprache» zeigen, pinchen" },
             new Card { Task = Task.Info, Hand = Hand.Left, Title = "Übersetzung",
                 Body = "Was im Raum gesagt wird, erscheint als Sprechblase über der Person, in deiner Sprache. Ist «Translate me» an (oben im Menü), sagt Reachy deine Sätze übersetzt in der Sprache des Raums. Ist es aus, hört man deine eigene Stimme.",
@@ -120,7 +120,7 @@ public class Tutorial : MonoBehaviour
                 Body = "Look where \"straight ahead\" should be for you and hold the left pinch for about a second. You can do this again any time.",
                 Footer = "Pinch left" },
             new Card { Task = Task.PickLanguage, Hand = Hand.Left, Stay = true, DoneS = 2.5f, Title = "Menu and language",
-                Body = "The menu is at the lower left. Point at \"Language\" with one hand: a dot shows where you point, and its ring closes as you pinch. Once \"Language\" has a yellow frame, pinch with that hand.",
+                Body = "The menu is at the foot of the picture. Point at \"Language\" with one hand: a dot shows where you point, and its ring closes as you pinch. Once \"Language\" has a yellow frame, pinch with that hand.",
                 Footer = "Point at \"Language\", pinch" },
             new Card { Task = Task.Info, Hand = Hand.Left, Title = "Translation",
                 Body = "What is said in the room appears as a speech bubble above the person, in your language. With \"Translate me\" on (top of the menu), Reachy says your sentences in the room's language. With it off, they hear your own voice.",
@@ -195,7 +195,7 @@ public class Tutorial : MonoBehaviour
                 Succeed(De ? "Gesetzt: Das ist jetzt geradeaus." : "Set: this is straight ahead now.");
                 break;
             case Task.PickLanguage:
-                Hint(De ? "Zeig dazu auf das Menü links unten." : "Point at the menu at the lower left for this.");
+                Hint(De ? "Zeig dazu auf das Menü unten am Bild." : "Point at the menu at the foot of the picture for this.");
                 break;
             case Task.Finish:
                 Close();

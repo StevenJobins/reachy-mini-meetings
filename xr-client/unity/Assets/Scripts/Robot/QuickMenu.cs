@@ -21,14 +21,16 @@ public class QuickMenu : MonoBehaviour
     public static readonly string[] Langs = { "de", "en", "fr", "it", "es" };
     public static readonly string[] LangNames = { "Deutsch", "English", "Français", "Italiano", "Español" };
 
-    // Left of and below where you look, 1.5 m away, three quarters size.
+    // A row at the foot of the picture, in the middle, below the subtitles, 1.5 m away, three quarters size.
+    // It stays put while you look around and glides after you once you look clearly elsewhere, like the subtitles.
+    // At the lower left it was too far out (headset test 2026-11-11); fixed in the room it covered things.
     // On the video window at 49°, 37° and 26° it was too far out or moved away when Reachy turned.
-    const float SideDeg = -28f, DownDeg = 14f, Distance = 1.5f, Scale = 0.75f;
+    const float DownDeg = 31f, Distance = 1.5f, Scale = 0.75f;
+    const float GlideAwayDeg = 25f, GlideAfterS = 0.5f, GlideS = 0.25f;
     const float HitPad = 0.04f, StickyS = 0.3f;   // larger hit area, and the gaze stays on a tile briefly after leaving
     const float TileW = 0.27f, TileH = 0.19f, Gap = 0.022f, Pad = 0.026f, Frame = 0.008f;
     const float RowW = 0.3f, RowH = 0.085f;
     const float ListCloseS = 3f, MeS = 6f, FlashS = 4f;
-    const float FollowS = 0.15f;   // how far the menu lags behind the head
     const int MeChars = 30, MeLines = 4;
     static readonly Color Back = new Color(0.07f, 0.08f, 0.11f, 0.9f);
     static readonly Color Tile = new Color(1, 1, 1, 0.08f);
@@ -57,8 +59,8 @@ public class QuickMenu : MonoBehaviour
     class Hover { public Item Item = Item.None; public int Row = -1; public float ItemAt, RowAt; }
     readonly Hover[] hover = { new Hover(), new Hover() };   // left, right hand
     readonly Ui.Cursor[] cursors = new Ui.Cursor[2];
-    float h, viewYaw;
-    bool listOpen, haveYaw;
+    float w, h, viewYaw, awaySince = -1f;
+    bool listOpen, haveYaw, glide;
     float listLookedAt;
     int sentConnects = -1;
     float meUntil;
@@ -82,13 +84,14 @@ public class QuickMenu : MonoBehaviour
         Translate = PlayerPrefs.GetInt(TranslateKey, 1) == 1;
         Target = PlayerPrefs.GetString(TargetKey, SystemLang());
 
-        h = Tiles * TileH + (Tiles - 1) * Gap + 2 * Pad;
+        w = Tiles * TileW + (Tiles - 1) * Gap + 2 * Pad;
+        h = TileH + 2 * Pad;
         back = Ui.Quad(transform, "Back", panelMaterial, 3030);
-        back.Set(TileW + 2 * Pad, h, 0.04f, Vector3.zero, Back);
+        back.Set(w, h, 0.04f, Vector3.zero, Back);
         tileAt = new Vector3[Tiles];
         for (int i = 0; i < Tiles; i++)
         {
-            tileAt[i] = new Vector3(0, h / 2 - Pad - TileH / 2 - i * (TileH + Gap), -0.001f);
+            tileAt[i] = new Vector3(-w / 2 + Pad + TileW / 2 + i * (TileW + Gap), 0, -0.001f);
             frames[i] = Ui.Quad(transform, $"Frame{i}", panelMaterial, 3031);
             frames[i].Set(TileW + 2 * Frame, TileH + 2 * Frame, 0.03f, tileAt[i], Gaze);
             tiles[i] = Ui.Quad(transform, $"Tile{i}", panelMaterial, 3032);
@@ -98,9 +101,9 @@ public class QuickMenu : MonoBehaviour
             values[i].transform.localPosition = tileAt[i] + new Vector3(0, -0.025f, -0.002f);
         }
 
-        // the language list, right of the Language tile, over the edge of the video
+        // the language list, above the Language tile
         float listH = rows.Length * RowH + 2 * Pad * 0.6f;
-        var listCentre = new Vector3(TileW / 2 + Pad + 0.03f + RowW / 2 + Pad * 0.6f, tileAt[1].y, -0.003f);
+        var listCentre = new Vector3(tileAt[1].x, h / 2 + 0.03f + listH / 2, -0.003f);
         listBack = Ui.Quad(transform, "ListBack", panelMaterial, 3034);
         listBack.Set(RowW + 1.2f * Pad, listH, 0.03f, listCentre, Back);
         rowAt = new Vector3[rows.Length];
@@ -112,8 +115,8 @@ public class QuickMenu : MonoBehaviour
             rowText[i].transform.localPosition = rowAt[i] + new Vector3(0, 0, -0.002f);
         }
 
-        me = Ui.Text(transform, "Me", text, 36, 1f, TextAnchor.UpperCenter);
-        me.transform.localPosition = new Vector3(0, -h / 2 - 0.04f, -0.002f);
+        me = Ui.Text(transform, "Me", text, 36, 1f, TextAnchor.LowerCenter);
+        me.transform.localPosition = new Vector3(tileAt[2].x + TileW / 2 + Gap / 2, h / 2 + 0.03f, -0.002f);   // above the right half
         me.gameObject.SetActive(false);
         for (int i = 0; i < 2; i++) cursors[i] = new Ui.Cursor(transform, panelMaterial);
         ShowList(false);
@@ -124,12 +127,21 @@ public class QuickMenu : MonoBehaviour
     /// <summary>Fixed relative to straight ahead (recenter), heading only, facing the eye.</summary>
     void Place()
     {
-        // Stays at the lower left of your view: turns with your head (yaw only, a little behind so it does not
-        // shake). Fixed in the room it sometimes covered what you wanted to see there (headset test 2026-11-11).
         float yaw = head.localEulerAngles.y;
-        viewYaw = haveYaw ? Mathf.LerpAngle(viewYaw, yaw, 1 - Mathf.Exp(-Time.unscaledDeltaTime / FollowS)) : yaw;
-        haveYaw = true;
-        var rot = Quaternion.Euler(DownDeg, viewYaw + SideDeg, 0);
+        if (!haveYaw) { viewYaw = yaw; haveYaw = true; }
+        float diff = Mathf.DeltaAngle(viewYaw, yaw);
+        if (Mathf.Abs(diff) > GlideAwayDeg)
+        {
+            if (awaySince < 0) awaySince = Time.unscaledTime;
+            if (Time.unscaledTime - awaySince > GlideAfterS) glide = true;
+        }
+        else
+        {
+            awaySince = -1f;
+            if (Mathf.Abs(diff) < 2f) glide = false;
+        }
+        if (glide) viewYaw += diff * (1 - Mathf.Exp(-Time.unscaledDeltaTime / GlideS));
+        var rot = Quaternion.Euler(DownDeg, viewYaw, 0);
         transform.localPosition = head.localPosition + rot * Vector3.forward * Distance;
         transform.localRotation = rot;
     }
@@ -176,7 +188,7 @@ public class QuickMenu : MonoBehaviour
             onList |= hv.Row >= 0 || hv.Item == Item.Language;
 
             // the cursor, only for a real hand ray and only on the menu
-            bool onMenu = p is Vector3 q && (Ui.Inside(q, Vector3.zero, TileW + 2 * Pad + 0.1f, h + 0.1f)
+            bool onMenu = p is Vector3 q && (Ui.Inside(q, Vector3.zero, w + 0.1f, h + 0.1f)
                                              || listOpen && Ui.Inside(q, rowAt[2], RowW + 0.15f, rows.Length * RowH + 0.1f));
             if (aim != null && onMenu) cursors[hand].Show(p.Value, right ? control.RightLevel : control.LeftLevel);
             else cursors[hand].Hide();

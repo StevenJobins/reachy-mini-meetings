@@ -11,6 +11,9 @@ public class Curtain : MonoBehaviour
     const float NoRobotS = 8f;       // nothing woke up within this: show the picture as it is
     const float NoScanS = 4f;        // following for this long without a scan starting: do not wait for one
     const float Distance = 1.5f, FollowRate = 3f, TextScale = 0.8f, Pad = 0.07f;
+    // A calm dark blue instead of black, and one line without counting: a black screen with "3/9" over it felt like
+    // a loading screen for developers (headset test 2026-11-11)
+    static readonly Color Calm = new Color(0.05f, 0.08f, 0.14f);
 
     public RobotControl control;
     public Tutorial tutorial;
@@ -78,26 +81,22 @@ public class Curtain : MonoBehaviour
         if (!hide)
         {
             card.gameObject.SetActive(problem != null);
-            if (problem != null) Say(problem);
+            if (problem != null) Say(problem, true);
             return;
         }
 
         // the panorama keeps saving frames and its mean colour behind the curtain
         foreach (var r in panorama.GetComponentsInChildren<Renderer>(true)) r.enabled = false;
         floor.enabled = false;
-        if (eye.backgroundColor != Color.black) background = eye.backgroundColor;
-        eye.backgroundColor = Color.black;
+        if (eye.backgroundColor != Calm) background = eye.backgroundColor;
+        eye.backgroundColor = Calm;
 
         card.gameObject.SetActive(!tour);
         if (tour) return;
-        var (done, total) = panorama.ScanProgress;
-        string say = panorama.Scanning
-            ? (Ui.German ? $"Reachy schaut sich im Raum um … {done + 1}/{total}" : $"Reachy is looking around the room … {done + 1}/{total}")
-            : control.GoingToSleep ? (Ui.German ? "Reachy legt sich schlafen …" : "Reachy is going to sleep …")
-            : control.Waking ? (Ui.German ? "Reachy wacht auf …" : "Reachy is waking up …")
-            : control.IsFollowing ? (Ui.German ? "Gleich geht es los …" : "Starting in a moment …")
-            : (Ui.German ? "Verbinde mit Reachy …" : "Connecting to Reachy …");
-        Say(problem ?? say);
+        string dots = new string('.', 1 + (int)(Time.unscaledTime * 1.5f) % 3).PadRight(3, ' ');
+        string say = control.GoingToSleep ? (Ui.German ? "Reachy legt sich schlafen" : "Reachy is going to sleep")
+            : (Ui.German ? "Reachy macht sich bereit" : "Reachy is getting ready");
+        Say(problem ?? $"{say}\n<color=#38bdf8>{dots}</color>", problem != null);
     }
 
     /// <summary>What keeps Reachy from working, in words for the user; null = nothing.</summary>
@@ -119,13 +118,15 @@ public class Curtain : MonoBehaviour
         return null;
     }
 
-    void Say(string say)
+    /// <summary>boxed: on a panel (a problem, possibly over the picture); else plain text on the calm background.</summary>
+    void Say(string say, bool boxed)
     {
         if (say != shown)
         {
             shown = say;
             text.text = say;
             var size = Ui.Size(text);
+            panel.Show(boxed);
             panel.Set(size.x + 2 * Pad, size.y + 2 * Pad, 0.05f, Vector3.zero, new Color(0.06f, 0.09f, 0.16f, 0.95f));
             text.transform.localPosition = new Vector3(0, 0, -0.002f);
         }
