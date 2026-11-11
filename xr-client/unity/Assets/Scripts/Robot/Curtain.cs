@@ -58,7 +58,7 @@ public class Curtain : MonoBehaviour
                 Debug.Log($"[curtain] open ({(scanOver ? "scan over" : noRobot ? "no robot" : noScan ? "no scan" : "sweep")})");
             }
         }
-        bool hide = tour || !lifted || panorama.Scanning;
+        bool hide = tour || !lifted || panorama.Scanning || control.Waking;   // also the wake-up and lie-down from the menu
         if (hide != hidden)
         {
             hidden = hide;
@@ -85,6 +85,7 @@ public class Curtain : MonoBehaviour
         var (done, total) = panorama.ScanProgress;
         string say = panorama.Scanning
             ? (Ui.German ? $"Reachy schaut sich im Raum um … {done + 1}/{total}" : $"Reachy is looking around the room … {done + 1}/{total}")
+            : control.GoingToSleep ? (Ui.German ? "Reachy legt sich schlafen …" : "Reachy is going to sleep …")
             : control.Waking ? (Ui.German ? "Reachy wacht auf …" : "Reachy is waking up …")
             : control.IsFollowing ? (Ui.German ? "Gleich geht es los …" : "Starting in a moment …")
             : (Ui.German ? "Verbinde mit Reachy …" : "Connecting to Reachy …");

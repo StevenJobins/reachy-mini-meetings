@@ -498,3 +498,13 @@ def test_nobody_stands_out_no_answer():
     _watch(people, 2, 2.5, {0.3: _talking, 0.7: _still})
     assert people.heard(None, 2, 2.5) is None             # too short to judge
 
+
+def test_a_short_clip_does_not_start_a_new_speaker():
+    rng = np.random.default_rng(1)
+    a, b = rng.normal(size=64), rng.normal(size=64)
+    clusters = SpeakerClusters(threshold=0.8)
+    assert clusters.add(a, may_create=False) is None and clusters.means == []
+    assert clusters.add(a) == 1
+    assert clusters.add(a + 0.05 * rng.normal(size=64), may_create=False) == 1    # a known voice: short is enough
+    assert clusters.add(b, may_create=False) is None and len(clusters.means) == 1
+

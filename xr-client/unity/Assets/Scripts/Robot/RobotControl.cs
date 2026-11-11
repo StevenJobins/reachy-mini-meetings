@@ -1,6 +1,6 @@
 // Reachy follows the user's head. Starts by itself once the app has the robot: wake if needed, take the current head
 // direction as "straight ahead", follow. Hands: hold the right pinch (or trigger) to talk, like a walkie-talkie, so the
-// mic can never stay on by accident (a right pinch on a menu tile or the notes works those instead); left pinch recenters, or skips the room scan while it runs, or, while you look
+// mic can never stay on by accident (a right pinch on a menu tile or the notes works those instead); a left pinch held for 0.7 s recenters, or skips the room scan while it runs; a short one, while you look
 // at an entry of the QuickMenu, switches that; on the notes card's handle, drags it; while the Tutorial is open, it
 // goes to the tutorial, and Reachy neither follows nor hears you (practice): it wakes up and scans the room meanwhile
 // (RoomPanorama, behind the Curtain), then waits looking straight ahead; closing the tutorial recenters. Reachy only turns
@@ -18,6 +18,9 @@ public class RobotControl : MonoBehaviour
 
     const float PressLevel = 0.8f, ReleaseLevel = 0.5f;
     const float MicHoldS = 0.15f;      // a tracking dropout for a few frames must not cut a word
+    // Recentering and skipping the scan need the left pinch held this long: a short left pinch happens by accident
+    // (headset test 2026-11-11: nine recenters in eleven seconds, and the scan skipped, while aiming at the menu)
+    const float RecenterHoldS = 0.7f;
     const double SleepPitchDeg = 18;   // measured pitch above this = still in the sleep pose (see robot.js wake())
     const float MoveTimeoutS = 8f;
     // adb ... -e sweep 1: bench test without a person: slow yaw sweep, see VideoWindow's recording
@@ -38,6 +41,8 @@ public class RobotControl : MonoBehaviour
     Mode mode = Mode.Idle;
     bool talking, recenterDown, started, skip, wasPaused;
     bool rightDown, rightUi;   // rightUi: this right pinch went to the menu or the notes, so it is not talking
+    bool leftUsed;             // this left pinch already did something
+    float leftSince;
     float talkReleasedAt = float.NegativeInfinity;
     int sent, sentAtMark;
     float markAt;
@@ -49,6 +54,9 @@ public class RobotControl : MonoBehaviour
     public string Summary { get; private set; } = "";
     public bool IsFollowing => mode == Mode.Following;
     public bool Waking => mode == Mode.Waking;
+    /// <summary>Sent to sleep from the menu: stays asleep until WakeUp().</summary>
+    public bool Asleep { get; private set; }
+    public bool GoingToSleep { get; private set; }
     public bool MicOn { get; private set; }
     /// <summary>Pinch strength 0..1, for the tutorial's live view of the fingers.</summary>
     public float RightLevel { get; private set; }
@@ -121,7 +129,7 @@ public class RobotControl : MonoBehaviour
         }
         if (wasPaused && !Paused && mode == Mode.Following) Recenter();   // the tutorial closed: where you look is straight ahead
         wasPaused = Paused;
-        if (!sweep && !started && Application.isFocused && daemon.TargetConnected && daemon.Latest?.head_pose != null
+        if (!sweep && !started && !Asleep && Application.isFocused && daemon.TargetConnected && daemon.Latest?.head_pose != null
             && video.VideoTexture != null)
         {
             started = true;
@@ -171,13 +179,24 @@ public class RobotControl : MonoBehaviour
         LeftLevel = left;
         bool down = left > PressLevel || recenterDown && left > ReleaseLevel;
         bool pressed = down && !recenterDown;
-        if (pressed && notes != null && notes.Hovered(false)) notes.Press(false);
-        else if (pressed && menu != null && menu.Hovered(false)) menu.Select(false);
-        else if (pressed && Paused) tutorial.LeftPinch();
-        else if (pressed && mode == Mode.Following)
+        if (pressed)
         {
-            if (Override != null) skip = true;
-            else Recenter();
+            leftSince = Time.unscaledTime;
+            leftUsed = true;
+            if (notes != null && notes.Hovered(false)) notes.Press(false);
+            else if (menu != null && menu.Hovered(false)) menu.Select(false);
+            else if (Paused && !tutorial.WantsHold) tutorial.LeftPinch();
+            else leftUsed = false;   // nothing under it: held long enough, it recenters
+        }
+        if (down && !leftUsed && Time.unscaledTime - leftSince >= RecenterHoldS)
+        {
+            leftUsed = true;
+            if (Paused) tutorial.LeftPinch();
+            else if (mode == Mode.Following)
+            {
+                if (Override != null) skip = true;
+                else Recenter();
+            }
         }
         recenterDown = down;
     }
@@ -207,6 +226,35 @@ public class RobotControl : MonoBehaviour
             yield return r.SendWebRequest();
             if (r.result == UnityWebRequest.Result.Success && r.downloadHandler.text.Trim() == "[]") yield break;
         }
+    }
+
+    /// <summary>From the menu: Reachy lies down and its motors go off, until WakeUp().</summary>
+    public void Sleep()
+    {
+        if (mode == Mode.Following && !Asleep) StartCoroutine(GoToSleep());
+    }
+
+    /// <summary>From the menu: the normal start again (wake-up motion, straight ahead = where you look).</summary>
+    public void WakeUp()
+    {
+        if (!Asleep || GoingToSleep) return;
+        Asleep = false;
+        started = false;
+    }
+
+    IEnumerator GoToSleep()
+    {
+        Asleep = GoingToSleep = true;
+        mode = Mode.Waking;   // no targets meanwhile: the daemon ignores them during a move
+        note = "going to sleep";
+        Override = null;
+        Debug.Log("[control] going to sleep");
+        yield return Post("/api/move/play/goto_sleep");
+        yield return WaitForMoves();
+        yield return Post("/api/motors/set_mode/disabled");
+        note = "";
+        mode = Mode.Idle;
+        GoingToSleep = false;
     }
 
     IEnumerator Wake()
@@ -246,7 +294,7 @@ public class RobotControl : MonoBehaviour
         var link = daemon.TargetConnected ? daemon.LastError ?? "" : $"  no daemon link {daemon.LastError}";
         Summary = mode switch
         {
-            Mode.Idle => $"waiting for the robot{link}",
+            Mode.Idle => $"{(Asleep ? "asleep (menu: wake up)" : "waiting for the robot")}{link}",
             Mode.Following => $"following {sendHz:0} Hz  yaw {lastSent.Yaw:0} pitch {lastSent.Pitch:0}{link}",
             _ => $"{note}{link}",
         };

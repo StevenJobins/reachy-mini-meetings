@@ -55,6 +55,8 @@ public class Tutorial : MonoBehaviour
     int picksAtStart;
 
     public bool Open => index >= 0;
+    /// <summary>This card's task is the held left pinch (RobotControl counts the time).</summary>
+    public bool WantsHold => Open && cards[index].Task == Task.Recenter;
     static bool De => Ui.German;
 
     void Awake()
@@ -91,7 +93,7 @@ public class Tutorial : MonoBehaviour
                 Body = "Rechte Hand: Daumen und Zeigefinger zusammen und halten, wie bei einem Walkie-Talkie. Probier es jetzt.",
                 Footer = "Rechts pinchen und halten" },
             new Card { Task = Task.Recenter, Hand = Hand.Left, Title = "Geradeaus festlegen",
-                Body = "Schau dorthin, wo für dich «geradeaus» sein soll, und pinche links. Das geht später jederzeit wieder.",
+                Body = "Schau dorthin, wo für dich «geradeaus» sein soll, und halte den linken Pinch etwa eine Sekunde. Das geht später jederzeit wieder.",
                 Footer = "Links pinchen" },
             new Card { Task = Task.PickLanguage, Hand = Hand.Left, Stay = true, DoneS = 2.5f, Title = "Menü und Sprache",
                 Body = "Links unten ist das Menü. Zeig mit einer Hand auf «Sprache»: Ein Punkt zeigt, wohin du zeigst, und sein Ring schliesst sich beim Pinchen. Ist «Sprache» gelb umrandet, pinche mit dieser Hand.",
@@ -115,7 +117,7 @@ public class Tutorial : MonoBehaviour
                 Body = "Right hand: touch thumb and index finger and hold, like a walkie-talkie. Try it now.",
                 Footer = "Pinch right and hold" },
             new Card { Task = Task.Recenter, Hand = Hand.Left, Title = "Set straight ahead",
-                Body = "Look where \"straight ahead\" should be for you and pinch left. You can do this again any time.",
+                Body = "Look where \"straight ahead\" should be for you and hold the left pinch for about a second. You can do this again any time.",
                 Footer = "Pinch left" },
             new Card { Task = Task.PickLanguage, Hand = Hand.Left, Stay = true, DoneS = 2.5f, Title = "Menu and language",
                 Body = "The menu is at the lower left. Point at \"Language\" with one hand: a dot shows where you point, and its ring closes as you pinch. Once \"Language\" has a yellow frame, pinch with that hand.",

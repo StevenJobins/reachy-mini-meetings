@@ -5,6 +5,8 @@
 //   Translate me  on / off: your voice goes to the backend, Reachy says it in the room's language (MicSender)
 //   Language      opens a short list next to it: the language the room is translated into (bubbles and notes);
 //                 starts as the headset's system language
+//   Reachy        awake / asleep: sends Reachy to sleep (lies down, motors off) and wakes it up again, so the
+//                 remote user needs nobody at the robot for it (RobotControl.Sleep / WakeUp)
 //   Help          the guided tour again (Tutorial)
 // Under the column, for a few seconds: what Reachy said for you (the backend's "me" message) or a short note
 // (new meeting notes). Settings are remembered on the headset and sent again on every reconnect.
@@ -19,13 +21,14 @@ public class QuickMenu : MonoBehaviour
     public static readonly string[] Langs = { "de", "en", "fr", "it", "es" };
     public static readonly string[] LangNames = { "Deutsch", "English", "Français", "Italiano", "Español" };
 
-    // Left of and below straight ahead, 1.5 m away, three quarters size: in view without turning the head much.
+    // Left of and below where you look, 1.5 m away, three quarters size.
     // On the video window at 49°, 37° and 26° it was too far out or moved away when Reachy turned.
     const float SideDeg = -28f, DownDeg = 14f, Distance = 1.5f, Scale = 0.75f;
     const float HitPad = 0.04f, StickyS = 0.3f;   // larger hit area, and the gaze stays on a tile briefly after leaving
     const float TileW = 0.27f, TileH = 0.19f, Gap = 0.022f, Pad = 0.026f, Frame = 0.008f;
     const float RowW = 0.3f, RowH = 0.085f;
     const float ListCloseS = 3f, MeS = 6f, FlashS = 4f;
+    const float FollowS = 0.15f;   // how far the menu lags behind the head
     const int MeChars = 30, MeLines = 4;
     static readonly Color Back = new Color(0.07f, 0.08f, 0.11f, 0.9f);
     static readonly Color Tile = new Color(1, 1, 1, 0.08f);
@@ -38,12 +41,13 @@ public class QuickMenu : MonoBehaviour
     public Material textMaterial, panelMaterial;
     public Tutorial tutorial;
 
-    enum Item { None = -1, Translate, Language, Help }
+    enum Item { None = -1, Translate, Language, Robot, Help }
+    const int Tiles = 4;
 
     Material text;
     Ui.Rect back, listBack;
-    readonly Ui.Rect[] tiles = new Ui.Rect[3], frames = new Ui.Rect[3];
-    readonly TextMesh[] labels = new TextMesh[3], values = new TextMesh[3];
+    readonly Ui.Rect[] tiles = new Ui.Rect[Tiles], frames = new Ui.Rect[Tiles];
+    readonly TextMesh[] labels = new TextMesh[Tiles], values = new TextMesh[Tiles];
     readonly Ui.Rect[] rows = new Ui.Rect[5];
     readonly TextMesh[] rowText = new TextMesh[5];
     TextMesh me;
@@ -51,8 +55,8 @@ public class QuickMenu : MonoBehaviour
     class Hover { public Item Item = Item.None; public int Row = -1; public float ItemAt, RowAt; }
     readonly Hover[] hover = { new Hover(), new Hover() };   // left, right hand
     readonly Ui.Cursor[] cursors = new Ui.Cursor[2];
-    float h;
-    bool listOpen;
+    float h, viewYaw;
+    bool listOpen, haveYaw;
     float listLookedAt;
     int sentConnects = -1;
     float meUntil;
@@ -76,11 +80,11 @@ public class QuickMenu : MonoBehaviour
         Translate = PlayerPrefs.GetInt(TranslateKey, 1) == 1;
         Target = PlayerPrefs.GetString(TargetKey, SystemLang());
 
-        h = 3 * TileH + 2 * Gap + 2 * Pad;
+        h = Tiles * TileH + (Tiles - 1) * Gap + 2 * Pad;
         back = Ui.Quad(transform, "Back", panelMaterial, 3030);
         back.Set(TileW + 2 * Pad, h, 0.04f, Vector3.zero, Back);
-        tileAt = new Vector3[3];
-        for (int i = 0; i < 3; i++)
+        tileAt = new Vector3[Tiles];
+        for (int i = 0; i < Tiles; i++)
         {
             tileAt[i] = new Vector3(0, h / 2 - Pad - TileH / 2 - i * (TileH + Gap), -0.001f);
             frames[i] = Ui.Quad(transform, $"Frame{i}", panelMaterial, 3031);
@@ -114,13 +118,16 @@ public class QuickMenu : MonoBehaviour
         Redraw();
     }
 
-    static Quaternion ToUnity(Quat q) => new Quaternion(-(float)q.X, -(float)q.Y, (float)q.Z, (float)q.W);
 
     /// <summary>Fixed relative to straight ahead (recenter), heading only, facing the eye.</summary>
     void Place()
     {
-        float frameYaw = control != null ? ToUnity(control.Frame.ToWorld(Quat.Identity)).eulerAngles.y : 0;
-        var rot = Quaternion.Euler(DownDeg, frameYaw + SideDeg, 0);
+        // Stays at the lower left of your view: turns with your head (yaw only, a little behind so it does not
+        // shake). Fixed in the room it sometimes covered what you wanted to see there (headset test 2026-11-11).
+        float yaw = head.localEulerAngles.y;
+        viewYaw = haveYaw ? Mathf.LerpAngle(viewYaw, yaw, 1 - Mathf.Exp(-Time.unscaledDeltaTime / FollowS)) : yaw;
+        haveYaw = true;
+        var rot = Quaternion.Euler(DownDeg, viewYaw + SideDeg, 0);
         transform.localPosition = head.localPosition + rot * Vector3.forward * Distance;
         transform.localRotation = rot;
     }
@@ -154,7 +161,7 @@ public class QuickMenu : MonoBehaviour
             var p = Ui.PointOn(transform, aim ?? XrInput.Gaze(head));
             var hv = hover[hand];
             var now = Item.None;
-            for (int i = 0; i < 3; i++)
+            for (int i = 0; i < Tiles; i++)
                 if (Ui.Inside(p, tileAt[i], TileW + 2 * HitPad, TileH + Gap + HitPad)) now = (Item)i;
             if (now != Item.None || Time.unscaledTime - hv.ItemAt > StickyS) hv.Item = now;
             if (now != Item.None) hv.ItemAt = Time.unscaledTime;
@@ -207,6 +214,11 @@ public class QuickMenu : MonoBehaviour
                 break;
             case Item.Language:
                 ShowList(!listOpen);
+                break;
+            case Item.Robot:
+                if (control.Asleep) control.WakeUp();
+                else control.Sleep();
+                Debug.Log($"[menu] reachy {(control.Asleep ? "to sleep" : "wake up")}");
                 break;
             case Item.Help:
                 if (tutorial != null && !tutorial.Open) tutorial.Show();
@@ -268,11 +280,16 @@ public class QuickMenu : MonoBehaviour
             : $"<color=#94a3b8>{(de ? "AUS" : "OFF")}</color>";
         labels[1].text = $"<color=#cbd5e1>{(de ? "Sprache" : "Language")}</color>";
         values[1].text = $"{Target.ToUpper()} <size=40>{(listOpen ? "‹" : "›")}</size>";
-        labels[2].text = $"<color=#cbd5e1>{(de ? "Hilfe" : "Help")}</color>";
-        values[2].text = "?";
-        for (int i = 0; i < 3; i++)
+        labels[2].text = "<color=#cbd5e1>Reachy</color>";
+        values[2].text = control.GoingToSleep ? "<size=40>…</size>"
+            : control.Asleep ? $"<color=#94a3b8>{(de ? "SCHLÄFT" : "ASLEEP")}</color>"
+            : control.IsFollowing ? (de ? "WACH" : "AWAKE")
+            : control.Waking ? "<size=40>…</size>" : $"<color=#94a3b8><size=40>{(de ? "nicht da" : "not there")}</size></color>";
+        labels[3].text = $"<color=#cbd5e1>{(de ? "Hilfe" : "Help")}</color>";
+        values[3].text = "?";
+        for (int i = 0; i < Tiles; i++)
         {
-            tiles[i].Set(TileW, TileH, 0.025f, tileAt[i], i == 0 && Translate ? On : Tile);
+            tiles[i].Set(TileW, TileH, 0.025f, tileAt[i], i == 0 && Translate || i == 2 && control.IsFollowing ? On : Tile);
             frames[i].Show(hover[0].Item == (Item)i || hover[1].Item == (Item)i);
         }
         if (!listOpen) return;

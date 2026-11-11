@@ -86,7 +86,7 @@ It forwards the Mac's Wi-Fi address (en0), port 8000, to the daemon; the app rec
 
 - **Opening the app** starts everything: as soon as video and robot are there, Reachy wakes if needed, your current head direction becomes straight ahead, and Reachy follows you.
 - **Hold the right pinch** (or trigger) to talk, like a walkie-talkie: the mic is on only while you hold, so it cannot stay on by accident.
-- **Left pinch** (or trigger) recenters: your current head direction becomes straight ahead.
+- **Left pinch** (or trigger) **held for 0.7 s** recenters: your current head direction becomes straight ahead. A short left pinch only works what the hand points at (menu, notes): on the first test with both hands, short left pinches next to the menu recentered nine times in eleven seconds and skipped the room scan.
 - **Front half only** (`YawRange` in `Pose.cs`): Reachy turns with you up to 100° each way (head + body, the body at most 35°). Further round it waits at the edge, and with your back to the room (140° to 180°) it comes back through the middle. Before this, a full turn of the user crossed the ±180° wrap and swung Reachy all the way round, past its cables.
 - To put Reachy to sleep, use Reachy Mini Control: closing the app leaves it awake, holding its last pose.
 
@@ -154,8 +154,9 @@ Speech bubbles above the speaker's head came first: picking the face from mouth 
 |---|---|
 | Turn your head | Reachy looks along (Phase 2) |
 | **Hold the right pinch** (thumb + index finger) | Talk, like a walkie-talkie; let go = mic off. With *Translate me* on, Reachy says your sentences in the room's language, otherwise your own voice comes out of Reachy |
-| **Pinch left** | Your current view direction becomes "straight ahead"; skips the room scan while it runs |
-| **Point at a menu tile with either hand + pinch with that hand** | The menu column at the lower left, always visible and still in the room: *Translate me* on/off, *Language* (opens a list: Deutsch, English, Français, Italiano, Español), *Help* (the tour again). A dot shows where the hand points and its ring closes as you pinch, like in the headset's own menus; the tile pointed at gets a yellow frame |
+| **Menu tile *Reachy*** | *AWAKE* → pinch: Reachy lies down and its motors go off (*ASLEEP*); pinch again: it wakes up as at the start. No picture during both motions. For the remote user, who has nobody at the robot |
+| **Pinch left and hold (0.7 s)** | Your current view direction becomes "straight ahead"; skips the room scan while it runs |
+| **Point at a menu tile with either hand + pinch with that hand** | The menu column at the lower left of your view, always visible, turning with your head: *Translate me* on/off, *Language* (opens a list: Deutsch, English, Français, Italiano, Español), *Help* (the tour again). A dot shows where the hand points and its ring closes as you pinch, like in the headset's own menus; the tile pointed at gets a yellow frame |
 | **Look to your right** | The meeting notes: summary, action items (who, what, by when), next steps |
 | **Point at the bar under the notes, pinch (either hand), hold, move the hand** | Carry the notes like a window; they stay where you let go. Only the hand moves them, not the head |
 | **Point at *New meeting* on the notes, pinch twice** | Clear the notes for the next meeting (also happens by itself after 20 min without speech) |
@@ -185,7 +186,7 @@ The menu is no longer on the video window: it moved whenever Reachy turned, so l
 |---|---|---|
 | Welcome | pinch left | next card |
 | Talking | hold the right pinch | "Good! Your fingers touch: now they would hear you (practice, the mic is still off)", after 1.5 s "now let go", on release "exactly" |
-| Straight ahead | look where it should be, pinch left | recenters, "set" |
+| Straight ahead | look where it should be, hold the left pinch | recenters, "set" |
 | Menu and language | look at *Language* in the menu, pinch left, pick a language | hints while you do it, then "bubbles and notes now come in …" |
 | Translation | read, pinch left | |
 | Meeting notes | look to your right | "here they are", how to drag them |
@@ -200,7 +201,7 @@ Both directions, with as few buttons as possible. Most of it is automatic:
 - **The room to you:** the bubbles are translated into the **headset's system language** (de, en, fr, it, es; otherwise English). The app sends it to the backend as `{"type": "lang", "meeting": "auto", "target": …}` on every (re)connect (`BackendClient.Connects`), so a backend restart picks it up again. *Language* in the menu picks another one from a list.
 - **You to the room (Translate me, on by default):** while you hold the right pinch, the WebRTC mic track stays off and only the backend gets your voice (`MicSender.cs`): the 48 kHz mic clip averaged down to 16 kHz, int16, in 40 ms frames (640 samples), `{"type": "voice_end"}` on release, the same protocol as `../pages/mic.js`. The menu tells the backend what to do with it: `{"type": "me_mode", "speak": true}` with Translate me, `false` without (then Reachy plays your own voice over WebRTC and the backend only transcribes it for the "You" line); sent on every connection and when you switch. The backend cuts it into sentences, Whisper transcribes them (your language is detected per sentence), DeepL translates them into the language most spoken in the room (`auto`), and Reachy says them in order. If you already speak that language, Reachy says your words as they are.
 - **What Reachy said for you:** the backend's `me` message shows for 6 s under the menu as *Reachy (de→en): …*. The *Translate me* tile shows the room's language once the first sentence went through (*ON → EN*).
-- **Menu** (`QuickMenu.cs`): a column of three tiles at the lower left, 28° left of and 14° below straight ahead, 1.5 m away, still in the room (see *Pointing*; on the video window at 49°, 37° and 26° it was too far out or slid away when Reachy turned). *Translate me* is blue while on and shows the room's language once known (*ON → EN*). *Language* opens a list of the five languages right next to it (the current one blue); it closes after a choice or 3 s without looking at it. Gaze is a ray from the head onto the column's plane, no colliders (`Ui.GazeOn`). Settings are remembered on the headset (`PlayerPrefs`: `translate`, `target`, `tutorial`, `notes_yaw`, `notes_up`). What Reachy said for you and "notes updated" show for a few seconds under the column.
+- **Menu** (`QuickMenu.cs`): a column of four tiles (*Translate me*, *Language*, *Reachy*, *Help*) at the lower left of your view, 28° left of and 14° below where your head points (it turns with your head since 2026-11-11: fixed in the room it sometimes covered what you wanted to see), 1.5 m away, still in the room (see *Pointing*; on the video window at 49°, 37° and 26° it was too far out or slid away when Reachy turned). *Translate me* is blue while on and shows the room's language once known (*ON → EN*). *Language* opens a list of the five languages right next to it (the current one blue); it closes after a choice or 3 s without looking at it. Gaze is a ray from the head onto the column's plane, no colliders (`Ui.GazeOn`). Settings are remembered on the headset (`PlayerPrefs`: `translate`, `target`, `tutorial`, `notes_yaw`, `notes_up`). What Reachy said for you and "notes updated" show for a few seconds under the column.
 
 The backend needs `DEEPL_AUTH_KEY`: without it nothing is translated, and Reachy says your words as they are. Echo: test Translate me with the headset in another room, see *Subtitles*.
 

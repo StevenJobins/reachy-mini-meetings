@@ -23,6 +23,8 @@ log = logging.getLogger(__name__)
 
 MODEL = "microsoft/wavlm-base-plus-sv"
 MIN_S = 1.0           # seconds of speech needed for an answer
+NEW_S = 2.5           # ... and for a new speaker: a short clip is a poor picture of a voice (2026-11-11: a 1.1 s
+                      # clip became speaker 1, the same person's next sentences matched it at 0.50 and became 2)
 MAX_S = 8.0           # longer clips: the last this many seconds (enough for the voice, bounded time)
 THRESHOLD = 0.80      # same speaker above this (model card: 0.86 on clean speech; the room mic is far-field)
 MAX_SPEAKERS = 6
@@ -49,10 +51,13 @@ class SpeakerClusters:
         best = int(np.argmax(sims))
         return (best + 1 if sims[best] >= self.threshold else None), sims[best]
 
-    def add(self, emb: np.ndarray) -> int:
-        """The speaker of this utterance (learning from it): a known one, a new one, or the closest when full."""
+    def add(self, emb: np.ndarray, may_create: bool = True) -> int | None:
+        """The speaker of this utterance (learning from it): a known one, a new one, or the closest when full.
+        may_create=False (a short clip): only a known one, else None."""
         e = emb / np.linalg.norm(emb)
         sid, _ = self.match(e)
+        if sid is None and not may_create:
+            return None
         if sid is None and len(self.means) < self.max_speakers:
             self.means.append(e)
             self.counts.append(1)
@@ -106,8 +111,8 @@ class VoiceIds:
         with self.lock:
             if learn:
                 sims = self.clusters.similarities(emb)
-                sid = self.clusters.add(emb)
-                log.info("Speakers: %.1f s -> %d (similarity %s)", len(audio) / 16000, sid,
+                sid = self.clusters.add(emb, may_create=len(audio) >= NEW_S * 16000)
+                log.info("Speakers: %.1f s -> %s (similarity %s)", len(audio) / 16000, sid or "nobody yet",
                          " ".join(f"{s:.2f}" for s in sims) or "-")
                 return sid
             return self.clusters.match(emb)[0]
