@@ -59,6 +59,13 @@ public class NotesPanel : MonoBehaviour
     float startYaw, startUp;
     Vector2? handStart;   // hand direction (yaw, up) when the drag began; null until the hand is tracked
     bool dragRight;
+    // Opening the app is a new meeting: the notes of the last one are cleared, unless the app was only away for a
+    // moment (it closes itself when the headset is taken off, AppLifecycle)
+    const string SeenKey = "notes_seen";
+    const long ResumeS = 300;
+    const float SeenEveryS = 30f;
+    bool askedNew;
+    float seenAt = -100f;
 
     /// <summary>The card, for the tutorial ("look to your right").</summary>
     public Transform Card => card;
@@ -88,6 +95,24 @@ public class NotesPanel : MonoBehaviour
 
     void Update()
     {
+        long unix = System.DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+        var backend = room != null ? room.Backend : null;
+        if (!askedNew && backend != null && backend.Connected)
+        {
+            askedNew = true;
+            long.TryParse(PlayerPrefs.GetString(SeenKey, "0"), out long last);
+            if (unix - last > ResumeS)
+            {
+                backend.Send("{\"type\": \"new_meeting\"}");
+                Debug.Log("[notes] app opened: new meeting");
+            }
+        }
+        if (Time.unscaledTime - seenAt > SeenEveryS)
+        {
+            seenAt = Time.unscaledTime;
+            PlayerPrefs.SetString(SeenKey, unix.ToString());
+            PlayerPrefs.Save();
+        }
         if (dragging)
         {
             if (dragRight ? control.RightHeld : control.LeftHeld)

@@ -215,7 +215,7 @@ The backend writes live notes with Google Gemini every 45–60 s when something 
 
 **New meeting:** the notes are per meeting. The backend starts a new one by itself after **20 min without speech** (`--meeting-gap`), or when you point at *New meeting* top right on the card and pinch twice (the first pinch turns it red, *Sure? Pinch again*, for 3 s). It then drops the transcript, throws away a summary still being written for the old meeting, and sends empty notes with `"new_meeting": true`; the card clears and *New meeting: notes cleared* shows under the menu. Before, the notes of the last meeting stayed until the backend was restarted.
 
-Per section at most 5 items, each item at most 3 lines (cut with …). Before the first notes the card says when they will appear. A new connection gets the latest notes right after `hello`, so they are there again after an app restart.
+Per section at most 5 items, each item at most 3 lines (cut with …). Before the first notes the card says when they will appear. A new connection gets the latest notes right after `hello`. Opening the app starts a new meeting and clears them (`{"type": "new_meeting"}`), unless the app was closed for less than 5 minutes, e.g. the headset taken off for a moment: then the notes are there again.
 
 ## Room panorama (Phase 4)
 
