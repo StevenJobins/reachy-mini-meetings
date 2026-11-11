@@ -31,22 +31,72 @@ public class Curtain : MonoBehaviour
     Camera eye;
     Color background;
     bool lifted, hidden, floorWas;
-    float startedAt, followingSince = -1f, yaw;
-    Transform card;
+    float startedAt, followingSince = -1f, yaw, rawAt;
+    const float SettleS = 1.0f;   // the picture comes this long after the last motion: Reachy turns back to you first
+    Transform card, mascot;
+    readonly Transform[] antennas = new Transform[2];
+    readonly Ui.Rect[] eyes = new Ui.Rect[2];
     Ui.Rect panel;
     TextMesh text;
     string shown;
+
+    void Awake()
+    {
+        window.enabled = false;   // not one camera frame before the loading screen
+    }
+
+    /// <summary>A little Reachy for the loading screen: head, two eyes, two antennas, drawn with rounded rectangles.</summary>
+    void BuildMascot()
+    {
+        mascot = new GameObject("Mascot").transform;
+        mascot.SetParent(card, false);
+        mascot.localPosition = new Vector3(0, 0.2f, 0);
+        var white = new Color(0.93f, 0.95f, 0.98f);
+        var dark = new Color(0.06f, 0.09f, 0.16f);
+        for (int i = 0; i < 2; i++)
+        {
+            float side = i == 0 ? -1 : 1;
+            antennas[i] = new GameObject("Antenna").transform;
+            antennas[i].SetParent(mascot, false);
+            antennas[i].localPosition = new Vector3(side * 0.09f, 0.085f, 0.001f);
+            Ui.Quad(antennas[i], "Rod", panelMaterial, 3030).Set(0.012f, 0.13f, 0.006f, new Vector3(0, 0.065f, 0), white);
+            Ui.Quad(antennas[i], "Tip", panelMaterial, 3030).Set(0.032f, 0.032f, 0.016f, new Vector3(0, 0.135f, 0), new Color(0.22f, 0.74f, 0.97f));
+        }
+        Ui.Quad(mascot, "Head", panelMaterial, 3031).Set(0.3f, 0.2f, 0.085f, Vector3.zero, white);
+        for (int i = 0; i < 2; i++)
+        {
+            float side = i == 0 ? -1 : 1;
+            eyes[i] = Ui.Quad(mascot, "Eye", panelMaterial, 3032);
+            eyes[i].Set(0.075f, 0.075f, 0.0375f, new Vector3(side * 0.07f, 0.005f, -0.001f), dark);
+            Ui.Quad(mascot, "Glint", panelMaterial, 3033).Set(0.02f, 0.02f, 0.01f, new Vector3(side * 0.07f + 0.014f, 0.02f, -0.002f), white);
+        }
+    }
+
+    void Animate()
+    {
+        float t = Time.unscaledTime;
+        mascot.localRotation = Quaternion.Euler(0, 0, 7f * Mathf.Sin(t * 1.3f));                 // the head tilts from side to side
+        for (int i = 0; i < 2; i++)
+        {
+            float side = i == 0 ? 1 : -1;
+            antennas[i].localRotation = Quaternion.Euler(0, 0, side * 16f + 12f * Mathf.Sin(t * 3.1f + i * 1.3f));
+            float blink = t % 3.4f < 0.12f ? 0.12f : 1f;                                           // a blink now and then
+            eyes[i].T.localScale = new Vector3(0.075f, 0.075f * blink, 1);
+        }
+    }
 
     void Start()
     {
         eye = head.GetComponent<Camera>();
         background = eye.backgroundColor;
+        eye.backgroundColor = Calm;
         startedAt = Time.unscaledTime;
         yaw = head.localEulerAngles.y;
         card = new GameObject("Card").transform;
         card.SetParent(transform, false);
         panel = Ui.Quad(card, "Panel", panelMaterial, 3030);
         text = Ui.Text(card, "Text", Ui.TextMaterial(textMaterial, 3031), 56, TextScale);
+        BuildMascot();
         card.gameObject.SetActive(false);
     }
 
@@ -66,7 +116,9 @@ public class Curtain : MonoBehaviour
                 Debug.Log($"[curtain] open ({(scanOver ? "scan over" : noRobot ? "no robot" : noScan ? "no scan" : "sweep")})");
             }
         }
-        bool hide = tour || !lifted || panorama.Scanning || control.Waking;   // also the wake-up and lie-down from the menu
+        bool raw = tour || !lifted || panorama.Scanning || control.Waking;   // also the wake-up and lie-down from the menu
+        if (raw) rawAt = Time.unscaledTime;
+        bool hide = raw || Time.unscaledTime - rawAt < SettleS;
         if (hide != hidden)
         {
             hidden = hide;
@@ -89,6 +141,7 @@ public class Curtain : MonoBehaviour
         {
             card.gameObject.SetActive(problem != null);
             if (problem != null) Say(problem, true);
+            mascot.gameObject.SetActive(false);
             return;
         }
 
@@ -104,6 +157,8 @@ public class Curtain : MonoBehaviour
         string say = control.GoingToSleep ? (Ui.German ? "Reachy legt sich schlafen" : "Reachy is going to sleep")
             : (Ui.German ? "Reachy macht sich bereit" : "Reachy is getting ready");
         Say(problem ?? $"{say}\n<color=#38bdf8>{dots}</color>", problem != null);
+        mascot.gameObject.SetActive(problem == null);
+        if (problem == null) Animate();
     }
 
     /// <summary>What keeps Reachy from working, in words for the user; null = nothing.</summary>

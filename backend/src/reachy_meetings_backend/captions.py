@@ -401,7 +401,7 @@ class Pipeline:
         at = None
         if self.people and text:   # a final utterance also counts as a vote for who owns this voice
             who = self.people.heard(speaker, t_start, wall_end) if seg.final else self.people.owner(speaker)
-            at = self.people.place(who, time.time())
+            at = self.people.place(who, time.time(), self.doa.head_yaw_deg if self.doa else None)
         return {
             "id": seg.id, "final": seg.final, "text": text, "lang": lang,
             "translation": translation, "target": self.target,

@@ -517,3 +517,21 @@ def test_a_person_seen_a_little_off_is_not_a_second_person():
     _watch(people, 10, 11, {0.3: _still, 0.7: _still})     # two faces at once stay two people
     assert len(people.people) == 2
 
+
+def test_who_is_seen_talking_now_beats_an_old_tie_and_empty_places_get_no_bubble():
+    people = People(_flat)
+    for i in range(3):                                     # the voice belongs to person 1 ...
+        _watch(people, 2 * i, 2 * i + 2, {0.3: _talking, 0.7: _still})
+        people.heard(1, 2 * i, 2 * i + 2)
+    assert people.owner(1).pid == 1
+    _watch(people, 10, 12, {0.3: _still, 0.7: _talking})   # ... but now person 2 is seen saying it
+    assert people.heard(1, 10, 12).pid == 2
+    _watch(people, 12, 14, {0.3: _still, 0.7: _talking})
+    assert people.heard(1, 12, 14).pid == 2 and people.owner(1) is None, "in between nobody owns it"
+    _watch(people, 14, 16, {0.3: _still, 0.7: _talking})
+    assert people.heard(1, 14, 16).pid == 2 and people.owner(1).pid == 2, "the old votes fade"
+    p1 = next(p for p in people.people if p.pid == 1)
+    _watch(people, 20, 26, {0.7: _still})                  # person 1 left; the camera still looks there
+    assert People.place(p1, 26, head_yaw_deg=0) is None
+    assert People.place(p1, 26, head_yaw_deg=80)["person"] == 1, "not in view: still where they sat"
+

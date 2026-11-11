@@ -38,9 +38,14 @@ HISTORY_S = 30.0      # mouth readings kept, to judge a whole utterance
 MIN_SAMPLES = 5       # fewer mouth readings in an utterance say nothing
 TALK_STD = 0.02       # mouth movement (standard deviation) above this may be talking
 LEAD = 1.5            # ... if it is this many times the next person's
-MIN_VOTES = 2         # votes a person needs to own a voice
+MIN_VOTES = 1.5       # votes a person needs to own a voice (two in a row = 1.7 with the fading)
 VOTE_LEAD = 2.0       # ... and this many times the next person's votes
 MIN_S = 1.0           # shorter utterances do not vote
+FADE = 0.7            # older votes of a voice count this much less with every new one: people change seats, and a
+                      # face on a phone held up once must not own the voice for good (2026-11-11: 3 old votes
+                      # kept the bubble at an empty place against the speaker in view)
+VIEW_DEG = 30.0       # the camera sees this far to each side for sure
+GONE_S = 3.0          # looked at their place this long without seeing them: they are not there any more
 
 
 def image_to_angles(u: float, v: float) -> tuple[float, float]:
@@ -148,8 +153,10 @@ class People:
             return seen
         if seen:
             v = self.votes.setdefault(voice, {})
+            for pid in v:
+                v[pid] *= FADE
             v[seen.pid] = v.get(seen.pid, 0) + 1
-        return self.owner(voice) or seen
+        return seen or self.owner(voice)   # who is seen talking now counts more than who it was before
 
     def owner(self, voice: int | None) -> Person | None:
         """The person this voice belongs to, once that is clear."""
@@ -159,9 +166,12 @@ class People:
         return next((p for p in self.people if p.pid == v[0][0]), None)
 
     @staticmethod
-    def place(p: Person | None, now: float) -> dict | None:
-        """For the caption: where the person's head is (top = top of the face), and how long ago it was seen."""
+    def place(p: Person | None, now: float, head_yaw_deg: float | None = None) -> dict | None:
+        """For the caption: where the person's head is (top = top of the face), and how long ago it was seen.
+        None when the camera looks at their place and they are not there."""
         if p is None:
+            return None
+        if head_yaw_deg is not None and now - p.seen > GONE_S and abs(angle_diff(p.yaw, head_yaw_deg)) < VIEW_DEG:
             return None
         return {"person": p.pid, "yaw_deg": round(p.yaw, 1), "pitch_deg": round(p.pitch, 1),
                 "top_deg": round(p.top, 1), "h_deg": round(p.h, 1), "seen_s": round(max(0.0, now - p.seen), 1)}
