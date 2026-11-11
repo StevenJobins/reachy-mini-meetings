@@ -23,6 +23,11 @@ MODEL_URL = ("https://storage.googleapis.com/mediapipe-models/face_landmarker/fa
              "face_landmarker.task")
 MODEL_PATH = Path.home() / ".cache" / "reachy-meetings" / "face_landmarker.task"
 MIN_SIZE = 0.015   # ignore tinier faces (fraction of the image width), as in faces-worker.js
+# Dim rooms: below DARK (mean of the image, 0..255) the image is brightened (gamma) before the detection, and the
+# detector accepts weaker faces. Measured on the robot in a dim room (brightness 41, one face, 60 frames over 12 s,
+# 2026-11-11): face found in 5 frames as before (confidence 0.4, no gamma), 10 with gamma 0.5 alone, 2 with
+# confidence 0.2 alone, 25 with both; CLAHE 4, full resolution 4.
+DARK, GAMMA, CONFIDENCE = 90, 0.5, 0.2
 
 
 def find_camera(name: str) -> int | None:
@@ -49,7 +54,8 @@ class FaceStream:
         return vision.FaceLandmarker.create_from_options(vision.FaceLandmarkerOptions(
             base_options=BaseOptions(model_asset_path=str(MODEL_PATH)),
             running_mode=vision.RunningMode.VIDEO, num_faces=self.max_faces, output_face_blendshapes=True,
-            min_face_detection_confidence=0.4, min_face_presence_confidence=0.4, min_tracking_confidence=0.4))
+            min_face_detection_confidence=CONFIDENCE, min_face_presence_confidence=CONFIDENCE,
+            min_tracking_confidence=0.4))
 
     def start(self, publish) -> None:
         """publish(people, t) is called from a background thread."""
@@ -85,8 +91,10 @@ class FaceStream:
     def _run(self, publish) -> None:
         import cv2
         import mediapipe as mp
+        import numpy as np
 
         landmarker = self._landmarker()
+        brighten = np.clip(255 * (np.arange(256) / 255.0) ** GAMMA, 0, 255).astype(np.uint8)
         self.lock, self.latest = threading.Lock(), None
         threading.Thread(target=self._grab, daemon=True, name="camera").start()
         n, t_fps, t_ms, last_t, seen = 0, time.time(), 0, 0.0, 0
@@ -99,6 +107,9 @@ class FaceStream:
                 continue
             last_t = t
             small = cv2.cvtColor(cv2.resize(frame, (960, 540)), cv2.COLOR_BGR2RGB)
+            dark = small[::8, ::8].mean()
+            if dark < DARK:
+                small = cv2.LUT(small, brighten)
             t_ms = max(t_ms + 1, int(t * 1000))   # VIDEO mode wants increasing timestamps
             res = landmarker.detect_for_video(mp.Image(image_format=mp.ImageFormat.SRGB, data=small), t_ms)
             people = []
@@ -115,6 +126,6 @@ class FaceStream:
             seen += len(people)
             if t0 - t_fps >= 5:
                 log.info("Vision: %.1f detections/s, %.1f faces per frame, brightness %.0f/255", n / (t0 - t_fps),
-                         seen / n, float(small.mean()))
+                         seen / n, float(dark))
                 self.fps, n, t_fps, seen = n / (t0 - t_fps), 0, t0, 0
             time.sleep(max(0.0, self.period - (time.time() - t0)))   # cap the rate: the page needs no more
