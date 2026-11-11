@@ -38,6 +38,8 @@ public class RobotControl : MonoBehaviour
     DaemonClient daemon;
     HeadMirror mirror = new HeadMirror();
     readonly HeadModel headModel = new HeadModel();
+    readonly WantToTalk wantToTalk = new WantToTalk();
+    NodShake nodShake = new NodShake();
     HeadTarget lastSent;
     Mode mode = Mode.Idle;
     bool talking, recenterDown, started, skip, wasPaused;
@@ -58,6 +60,15 @@ public class RobotControl : MonoBehaviour
     public string Summary { get; private set; } = "";
     public bool IsFollowing => mode == Mode.Following;
     public bool Waking => mode == Mode.Waking;
+    /// <summary>"I want to talk": Reachy waves its right antenna and swings its body for 3 s (menu tile).</summary>
+    public bool Waving => wantToTalk.Active(Time.unscaledTimeAsDouble);
+
+    public void WantToTalk()
+    {
+        if (mode != Mode.Following) return;
+        wantToTalk.Trigger(Time.unscaledTimeAsDouble);
+        Debug.Log("[control] I want to talk");
+    }
     /// <summary>Sent to sleep from the menu: stays asleep until WakeUp().</summary>
     public bool Asleep { get; private set; }
     public bool GoingToSleep { get; private set; }
@@ -152,7 +163,14 @@ public class RobotControl : MonoBehaviour
                 ? new RobotAngles(0, 0, SweepYawDeg * Mathf.Sin(2 * Mathf.PI * (Time.unscaledTime - sweepAt) / SweepPeriodS))
                 : Override ?? (Paused ? new RobotAngles(0, 0, 0)
                     : YawRange.Fold(PoseMath.HeadsetToRobot(recenter.ToRelative(HeadNow()))));
+            bool own = !Sweeping && Override == null && !Paused;   // the user's own head: nods and shakes come out larger
+            if (own) raw = nodShake.Step(raw, Time.unscaledTimeAsDouble, Time.unscaledDeltaTime);
+            else nodShake = new NodShake();
             lastSent = mirror.Step(raw, Time.unscaledDeltaTime);
+            wantToTalk.Step(Time.unscaledTimeAsDouble, out var antennaRight, out var antennaLeft, out var swing);
+            lastSent.AntennaRight = antennaRight;
+            lastSent.AntennaLeft = antennaLeft;
+            lastSent.BodyYaw = System.Math.Max(lastSent.Yaw - 60, System.Math.Min(lastSent.Yaw + 60, lastSent.BodyYaw + swing));
             daemon.SendTarget(lastSent);
             double nowS = DaemonClient.NowS();
             var commanded = new RobotAngles(lastSent.Roll, lastSent.Pitch, lastSent.Yaw);

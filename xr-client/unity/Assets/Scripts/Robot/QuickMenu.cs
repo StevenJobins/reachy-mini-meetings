@@ -5,6 +5,7 @@
 //   Translate me  on / off: your voice goes to the backend, Reachy says it in the room's language (MicSender)
 //   Language      opens a short list next to it: the language the room is translated into (bubbles and notes);
 //                 starts as the headset's system language
+//   I want to talk  Reachy waves an antenna and swings its body for 3 s, so the room sees you want the word
 //   Reachy        awake / asleep: sends Reachy to sleep (lies down, motors off) and wakes it up again, so the
 //                 remote user needs nobody at the robot for it (RobotControl.Sleep / WakeUp)
 //   Help          the guided tour again (Tutorial)
@@ -45,10 +46,10 @@ public class QuickMenu : MonoBehaviour
     /// <summary>Not there at all (Curtain: while Reachy gets ready there is nothing to work yet).</summary>
     public bool Hidden;
 
-    enum Item { None = -1, Translate, Language, Robot, Help }
+    enum Item { None = -1, Translate, Language, Talk, Robot, Help }
     /// <summary>The laptop answers, but the robot behind it does not run (e.g. a motor fault).</summary>
     bool RobotFault => control.DaemonState != null && control.DaemonState != "running" && control.DaemonState != "unreachable";
-    const int Tiles = 4;
+    const int Tiles = 5;
 
     Material text;
     Ui.Rect back, listBack;
@@ -118,7 +119,7 @@ public class QuickMenu : MonoBehaviour
         }
 
         me = Ui.Text(transform, "Me", text, 36, 1f, TextAnchor.LowerCenter);
-        me.transform.localPosition = new Vector3(tileAt[2].x + TileW / 2 + Gap / 2, h / 2 + 0.03f, -0.002f);   // above the right half
+        me.transform.localPosition = new Vector3(tileAt[3].x, h / 2 + 0.03f, -0.002f);   // above the right part
         me.gameObject.SetActive(false);
         for (int i = 0; i < 2; i++) cursors[i] = new Ui.Cursor(transform, panelMaterial);
         ShowList(false);
@@ -238,6 +239,9 @@ public class QuickMenu : MonoBehaviour
             case Item.Language:
                 ShowList(!listOpen);
                 break;
+            case Item.Talk:
+                control.WantToTalk();
+                break;
             case Item.Robot:
                 if (RobotFault) control.RestartDaemon();
                 else if (control.Asleep) control.WakeUp();
@@ -304,18 +308,20 @@ public class QuickMenu : MonoBehaviour
             : $"<color=#94a3b8>{(de ? "AUS" : "OFF")}</color>";
         labels[1].text = $"<color=#cbd5e1>{(de ? "Sprache" : "Language")}</color>";
         values[1].text = $"{Target.ToUpper()} <size=40>{(listOpen ? "‹" : "›")}</size>";
-        labels[2].text = "<color=#cbd5e1>Reachy</color>";
-        values[2].text = control.Restarting ? $"<size=40>{(de ? "startet neu …" : "restarting …")}</size>"
+        labels[2].text = $"<color=#cbd5e1>{(de ? "Ich möchte" : "I want to")}</color>";
+        values[2].text = $"<size=44>{(de ? "SPRECHEN" : "TALK")}</size>";
+        labels[3].text = "<color=#cbd5e1>Reachy</color>";
+        values[3].text = control.Restarting ? $"<size=40>{(de ? "startet neu …" : "restarting …")}</size>"
             : RobotFault ? $"<color=#ff9500><size=40>{(de ? "Fehler: neu starten" : "error: restart")}</size></color>"
             : control.GoingToSleep ? "<size=40>…</size>"
             : control.Asleep ? $"<color=#94a3b8>{(de ? "SCHLÄFT" : "ASLEEP")}</color>"
             : control.IsFollowing ? (de ? "WACH" : "AWAKE")
             : control.Waking ? "<size=40>…</size>" : $"<color=#94a3b8><size=40>{(de ? "nicht da" : "not there")}</size></color>";
-        labels[3].text = $"<color=#cbd5e1>{(de ? "Hilfe" : "Help")}</color>";
-        values[3].text = "?";
+        labels[4].text = $"<color=#cbd5e1>{(de ? "Hilfe" : "Help")}</color>";
+        values[4].text = "?";
         for (int i = 0; i < Tiles; i++)
         {
-            tiles[i].Set(TileW, TileH, 0.025f, tileAt[i], i == 0 && Translate || i == 2 && control.IsFollowing ? On : Tile);
+            tiles[i].Set(TileW, TileH, 0.025f, tileAt[i], i == 0 && Translate || i == 2 && control.Waving || i == 3 && control.IsFollowing ? On : Tile);
             frames[i].Show(hover[0].Item == (Item)i || hover[1].Item == (Item)i);
         }
         if (!listOpen) return;

@@ -208,6 +208,23 @@ public class PoseTests
     }
 
     [Test]
+    public void SpeechFilterBringsQuietAndLoudVoicesToASimilarLevel()
+    {
+        double Peak(double amplitude)
+        {
+            var f = new SpeechFilter();
+            var s = new float[48000];   // 3 s
+            for (int i = 0; i < s.Length; i++) s[i] = (float)(amplitude * Math.Sin(2 * Math.PI * 1000 * i / 16000));
+            f.Process(s, 0, s.Length);
+            return s.Skip(40000).Max(v => Math.Abs(v));
+        }
+        double quiet = Peak(0.02), loud = Peak(0.3);   // someone far from the robot, someone next to it
+        Assert.That(quiet, Is.GreaterThan(0.15), "a far voice is brought up");
+        Assert.That(loud, Is.LessThan(0.95), "a near voice does not clip");
+        Assert.That(loud / quiet, Is.LessThan(2.5));
+    }
+
+    [Test]
     public void SubtitleLinesUpdateByIdAndKeepTheNewestThree()
     {
         var s = new Subtitles();

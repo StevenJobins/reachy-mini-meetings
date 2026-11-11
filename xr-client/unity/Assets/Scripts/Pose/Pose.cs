@@ -106,11 +106,12 @@ public class RateLimiter
 public struct HeadTarget
 {
     public double Roll, Pitch, Yaw, BodyYaw;
+    public double AntennaRight, AntennaLeft;   // degrees, 0 = at rest (gestures)
 
     /// <summary>FullBodyTarget message for the daemon's set_target (radians, antennas at rest).</summary>
     public string ToDaemonJson() =>
         "{\"target_head_pose\":{\"roll\":" + Rad(Roll) + ",\"pitch\":" + Rad(Pitch) + ",\"yaw\":" + Rad(Yaw) +
-        "},\"target_antennas\":[0,0],\"target_body_yaw\":" + Rad(BodyYaw) + "}";
+        "},\"target_antennas\":[" + Rad(AntennaRight) + "," + Rad(AntennaLeft) + "],\"target_body_yaw\":" + Rad(BodyYaw) + "}";
 
     static string Rad(double deg) => (deg / PoseMath.Deg).ToString("R", CultureInfo.InvariantCulture);
 }

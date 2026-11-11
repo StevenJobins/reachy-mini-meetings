@@ -67,7 +67,9 @@ def main() -> None:
         print("restored", f)
         return
     src = f.read_text()
-    if not orig.exists():
+    if not orig.exists() or BEGIN not in src:
+        # no copy yet, or an app update put a fresh file there: that is the original now (the old copy would
+        # put the previous daemon version's file back)
         shutil.copy(f, orig)
     src = orig.read_text()   # always patch the original, so running it again changes the settings cleanly
     if ANCHOR not in src or (args.fps and FPS_ANCHOR not in src):   # reachy_mini 1.8 has no FPS_ANCHOR

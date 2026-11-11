@@ -154,6 +154,8 @@ Speech bubbles above the speaker's head came first: picking the face from mouth 
 |---|---|
 | Turn your head | Reachy looks along (Phase 2) |
 | **Hold the right pinch** (thumb + index finger) | Talk, like a walkie-talkie; let go = mic off. With *Translate me* on, Reachy says your sentences in the room's language, otherwise your own voice comes out of Reachy |
+| **Menu tile *I want to talk*** | Reachy waves its right antenna and swings its body for 3 s, so the room sees you want the word |
+| **Nod or shake your head** | comes out of Reachy about twice as large (`Gestures.cs`), so the room sees it |
 | **Menu tile *Reachy*** | *AWAKE* → pinch: Reachy lies down and its motors go off (*ASLEEP*); pinch again: it wakes up as at the start. No picture during both motions. For the remote user, who has nobody at the robot |
 | **Pinch left and hold (0.7 s)** | Your current view direction becomes "straight ahead"; skips the room scan while it runs |
 | **Point at a menu tile with either hand + pinch with that hand** | The menu column at the lower left of your view, always visible, turning with your head: *Translate me* on/off, *Language* (opens a list: Deutsch, English, Français, Italiano, Español), *Help* (the tour again). A dot shows where the hand points and its ring closes as you pinch, like in the headset's own menus; the tile pointed at gets a yellow frame |

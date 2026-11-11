@@ -96,20 +96,30 @@ public class Biquad
 /// <summary>Speech chain: high-pass 120 Hz against room hum, +4 dB presence at 3 kHz, compressor, make-up gain.</summary>
 public class SpeechFilter
 {
-    const double ThresholdDb = -28, Ratio = 3.5, MakeUp = 1.8;
+    const double ThresholdDb = -18, Ratio = 3.5, MakeUp = 1.8;
     const double AttackS = 0.005, ReleaseS = 0.15;
+    // Level first: people a few metres from the robot arrive very quiet (measured 2026-11-11: speech peaks at
+    // -33 dBFS, and came out of this filter at -28). A slow gain brings the loud parts of the speech to AgcTarget,
+    // at most AgcMax times; it does not move in the pauses (below AgcFloor), so the noise there is not pulled up.
+    const double AgcTarget = 0.3, AgcMax = 10, AgcFloor = 0.004, AgcAttackS = 0.02, AgcReleaseS = 4;
 
     readonly Biquad highPass = Biquad.HighPass(120, 0.7, AudioJitterBuffer.SampleRate);
     readonly Biquad presence = Biquad.Peaking(3000, 0.9, 4, AudioJitterBuffer.SampleRate);
     readonly double attack = Math.Exp(-1 / (AttackS * AudioJitterBuffer.SampleRate));
     readonly double release = Math.Exp(-1 / (ReleaseS * AudioJitterBuffer.SampleRate));
-    double level;
+    readonly double agcAttack = Math.Exp(-1 / (AgcAttackS * AudioJitterBuffer.SampleRate));
+    readonly double agcRelease = Math.Exp(-1 / (AgcReleaseS * AudioJitterBuffer.SampleRate));
+    double level, peak = 0.06;
 
     public void Process(float[] samples, int offset, int length)
     {
         for (int i = offset; i < offset + length; i++)
         {
             double x = presence.Step(highPass.Step(samples[i]));
+            double a = Math.Abs(x);
+            if (a > peak) peak = agcAttack * peak + (1 - agcAttack) * a;
+            else if (a > AgcFloor) peak = agcRelease * peak + (1 - agcRelease) * a;
+            x *= Math.Min(AgcMax, Math.Max(1, AgcTarget / peak));
             double rectified = Math.Abs(x);
             level = rectified > level ? attack * level + (1 - attack) * rectified : release * level + (1 - release) * rectified;
             double db = 20 * Math.Log10(Math.Max(level, 1e-6));
