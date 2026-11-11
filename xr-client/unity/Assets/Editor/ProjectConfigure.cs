@@ -115,6 +115,7 @@ public static class ProjectConfigure
         openxr.GetFeature<HandInteractionProfile>().enabled = true;       // Galaxy XR hands
         openxr.GetFeature<HandTracking>().enabled = true;                 // hand joints (XR Hands): pinch fallback, adds HAND_TRACKING
         openxr.GetFeature<EyeGazeInteraction>().enabled = true;           // eye gaze for picking, adds EYE_TRACKING_FINE
+        openxr.GetFeature<ARFaceFeature>().enabled = true;                // the user's own face (smile), adds FACE_TRACKING
         openxr.GetFeature<KHRSimpleControllerProfile>().enabled = true;
         openxr.GetFeature<OculusTouchControllerProfile>().enabled = true; // Galaxy XR controllers report Touch-compatible input
         EditorUtility.SetDirty(openxr);
@@ -186,6 +187,7 @@ public static class ProjectConfigure
         video.control.head = camGo.transform;
         video.gameObject.AddComponent<XrInput>().head = camGo.transform;
         video.gameObject.AddComponent<AppLifecycle>();
+        video.gameObject.AddComponent<FaceInput>().control = video.control;
         video.mic = video.gameObject.AddComponent<MicSender>();
         video.mic.control = video.control;
         video.room = new GameObject("Room Sound").AddComponent<RoomSound>();

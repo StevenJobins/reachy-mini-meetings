@@ -39,6 +39,13 @@ public class XrInput : MonoBehaviour
     public static float PinchLeft { get; private set; }
     public static float PinchRight { get; private set; }
     public static bool EyesTracked { get; private set; }
+    /// <summary>A hand held above the head for a moment: "I want to talk".</summary>
+    public static bool HandRaised { get; private set; }
+    /// <summary>+1 = a thumbs up held for a moment, -1 = thumbs down, 0 = neither.</summary>
+    public static int Thumb { get; private set; }
+    const float RaiseAboveM = 0.05f, RaiseHoldS = 0.5f, ThumbHoldS = 0.4f;
+    float raisedSince = -1f, thumbSince = -1f;
+    int thumbNow;
 
     /// <summary>Where the user looks, in world space: the eyes if tracked, else the head.</summary>
     public static Ray Gaze(Transform head) =>
@@ -49,7 +56,7 @@ public class XrInput : MonoBehaviour
         instance = this;
 #if UNITY_ANDROID && !UNITY_EDITOR
         var ask = new List<string>();
-        foreach (var p in new[] { Permission.Microphone, HandPermission, EyePermission })
+        foreach (var p in new[] { Permission.Microphone, HandPermission, EyePermission, FaceInput.Permission })
             if (!Permission.HasUserAuthorizedPermission(p)) ask.Add(p);
         if (ask.Count > 0) Permission.RequestUserPermissions(ask.ToArray());
 #endif
@@ -107,6 +114,7 @@ public class XrInput : MonoBehaviour
         }
         PinchLeft = hands != null ? Pinch(hands.leftHand) : 0;
         PinchRight = hands != null ? Pinch(hands.rightHand) : 0;
+        UpdatePoses();
         maxLeft = Mathf.Max(maxLeft, PinchLeft);
         maxRight = Mathf.Max(maxRight, PinchRight);
 
@@ -147,6 +155,42 @@ public class XrInput : MonoBehaviour
 #else
         return true;
 #endif
+    }
+
+    /// <summary>Raised hand and thumbs up / down, from the hand joints (tracking space: y is up).</summary>
+    void UpdatePoses()
+    {
+        bool raised = false;
+        int thumb = 0;
+        if (hands != null)
+            foreach (var hand in new[] { hands.leftHand, hands.rightHand })
+            {
+                if (!hand.isTracked || !hand.GetJoint(XRHandJointID.Wrist).TryGetPose(out var wrist)) continue;
+                if (wrist.position.y > head.localPosition.y + RaiseAboveM) raised = true;
+                int t = ThumbPose(hand);
+                if (t != 0) thumb = t;
+            }
+        if (!raised) raisedSince = -1f;
+        else if (raisedSince < 0) raisedSince = Time.unscaledTime;
+        HandRaised = raised && Time.unscaledTime - raisedSince >= RaiseHoldS;
+
+        if (thumb != thumbNow) { thumbNow = thumb; thumbSince = Time.unscaledTime; }
+        Thumb = thumbNow != 0 && Time.unscaledTime - thumbSince >= ThumbHoldS ? thumbNow : 0;
+    }
+
+    /// <summary>+1 / -1 when the thumb points up / down and the four fingers are curled into the palm.</summary>
+    static int ThumbPose(XRHand hand)
+    {
+        if (!hand.GetJoint(XRHandJointID.Palm).TryGetPose(out var palm)) return 0;
+        if (!hand.GetJoint(XRHandJointID.ThumbTip).TryGetPose(out var tip)) return 0;
+        if (!hand.GetJoint(XRHandJointID.ThumbProximal).TryGetPose(out var root)) return 0;
+        foreach (var id in new[] { XRHandJointID.IndexTip, XRHandJointID.MiddleTip, XRHandJointID.RingTip, XRHandJointID.LittleTip })
+            if (!hand.GetJoint(id).TryGetPose(out var f) || Vector3.Distance(f.position, palm.position) > 0.075f) return 0;   // a finger is out
+        var along = tip.position - root.position;
+        if (along.magnitude < 0.035f) return 0;                       // the thumb is tucked in
+        float up = Vector3.Dot(along.normalized, Vector3.up);
+        if (Vector3.Distance(tip.position, palm.position) < 0.07f) return 0;
+        return up > 0.75f ? 1 : up < -0.75f ? -1 : 0;
     }
 
     static float Pinch(XRHand hand)

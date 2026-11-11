@@ -20,21 +20,60 @@ public class GestureTests
     }
 
     [Test]
-    public void ANodComesOutLarger()
+    public void ANodMovesTheAntennasAndNotTheCamera()
     {
-        double nod = Swing(t => new RobotAngles(0, 6 * Math.Sin(2 * Math.PI * 1.8 * t), 10), a => a.Pitch, out var g);
+        double head = Swing(t => new RobotAngles(0, 6 * Math.Sin(2 * Math.PI * 1.8 * t), 10), a => a.Pitch, out var g);
         Assert.That(g.Nodding(3.9), Is.True);
-        Assert.That(nod, Is.GreaterThan(6 * 1.6), "about twice the 6 degrees");
-        double yawOff = Swing(t => new RobotAngles(0, 6 * Math.Sin(2 * Math.PI * 1.8 * t), 10), a => a.Yaw, out _);
-        Assert.That(yawOff, Is.LessThan(0.01), "the other axis is left alone");
+        Assert.That(head, Is.LessThan(1.5), "the head holds still: the picture does not go up and down");
+        var n = new NodShake();
+        double both = 0, apart = 0;
+        for (int i = 0; i < 72 * 4; i++)
+        {
+            double t = i / 72.0;
+            n.Step(new RobotAngles(0, 6 * Math.Sin(2 * Math.PI * 1.8 * t), 10), t, 1 / 72.0);
+            n.Antennas(out var r, out var l);
+            if (t > 2) { both = Math.Max(both, Math.Abs(r + l) / 2); apart = Math.Max(apart, Math.Abs(r - l)); }
+        }
+        Assert.That(both, Is.GreaterThan(15), "both antennas nod");
+        Assert.That(apart, Is.LessThan(0.5));
     }
 
     [Test]
-    public void AHeadShakeComesOutLarger()
+    public void AHeadShakeMovesTheAntennasAgainstEachOther()
     {
-        double shake = Swing(t => new RobotAngles(0, 0, 8 * Math.Sin(2 * Math.PI * 1.5 * t)), a => a.Yaw, out var g);
+        double head = Swing(t => new RobotAngles(0, 0, 8 * Math.Sin(2 * Math.PI * 1.5 * t)), a => a.Yaw, out var g);
         Assert.That(g.Shaking(3.9), Is.True);
-        Assert.That(shake, Is.GreaterThan(8 * 1.5));
+        Assert.That(head, Is.LessThan(2));
+        var n = new NodShake();
+        double apart = 0;
+        for (int i = 0; i < 72 * 4; i++)
+        {
+            double t = i / 72.0;
+            n.Step(new RobotAngles(0, 0, 8 * Math.Sin(2 * Math.PI * 1.5 * t)), t, 1 / 72.0);
+            n.Antennas(out var r, out var l);
+            if (t > 2) apart = Math.Max(apart, Math.Abs(r - l));
+        }
+        Assert.That(apart, Is.GreaterThan(30));
+    }
+
+    [Test]
+    public void ThumbsUpBouncesUpAndThumbsDownSinks()
+    {
+        var r = new Reaction();
+        r.Step(0, 1 / 72.0, 0, out var a0, out _);
+        Assert.That(a0, Is.EqualTo(0));
+        r.Trigger(Reaction.Kind.ThumbsUp, 1);
+        double top = 0;
+        for (double t = 1; t < 2.4; t += 1 / 72.0) { r.Step(t, 1 / 72.0, 0, out var x, out var y); Assert.That(x, Is.EqualTo(y)); top = Math.Max(top, x); }
+        Assert.That(top, Is.InRange(30, 41));
+        Assert.That(r.Active(2.5), Is.False);
+        r.Trigger(Reaction.Kind.ThumbsDown, 5);
+        double low = 0;
+        for (double t = 5; t < 6.8; t += 1 / 72.0) { r.Step(t, 1 / 72.0, 0, out var x, out _); low = Math.Min(low, x); }
+        Assert.That(low, Is.InRange(-39, -30));
+        double smile = 0;
+        for (double t = 10; t < 12; t += 1 / 72.0) r.Step(t, 1 / 72.0, 1, out smile, out _);
+        Assert.That(smile, Is.InRange(12, 14.1), "a smile lifts both a little");
     }
 
     [Test]

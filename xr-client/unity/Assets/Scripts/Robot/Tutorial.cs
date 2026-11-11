@@ -1,7 +1,7 @@
 // Interactive guided tour on the first start. Reachy stays still meanwhile (RobotControl: no wake-up, no following,
 // mic to nobody): you practise each gesture and the card tells you when it worked. The two dots on the card are your
 // real thumb and index finger (pinch strength from the hand tracking), so you see the pinch being recognised.
-// Cards: welcome, talking (hold right), straight ahead (pinch left), menu + language (look + pinch left), translation,
+// Cards: welcome, talking (hold right), straight ahead (hold left), raise your hand, menu + language (look + pinch left), translation,
 // meeting notes (look right), ready. Opened again from Help in the menu. German if the headset is German, else English.
 
 using UnityEngine;
@@ -22,7 +22,7 @@ public class Tutorial : MonoBehaviour
     static readonly Color Good = new Color(0.29f, 0.87f, 0.5f);            // #4ade80
     static readonly Color DotOff = new Color(1, 1, 1, 0.25f);
 
-    enum Task { Start, HoldRight, Recenter, PickLanguage, Info, LookNotes, Finish }
+    enum Task { Start, HoldRight, Recenter, RaiseHand, PickLanguage, Info, LookNotes, Finish }
     enum Hand { None, Left, Right }
 
     class Card
@@ -108,6 +108,9 @@ public class Tutorial : MonoBehaviour
             new Card { Task = Task.Recenter, Hand = Hand.Left, Title = "Geradeaus festlegen",
                 Body = "Schau dorthin, wo für dich «geradeaus» sein soll, und halte den linken Pinch etwa eine Sekunde. Das geht später jederzeit wieder.",
                 Footer = "Links pinchen und halten" },
+            new Card { Task = Task.RaiseHand, Hand = Hand.None, Title = "Wortmeldung und Reaktionen",
+                Body = "Heb eine Hand über den Kopf: Reachy winkt dann im Raum, damit alle sehen, dass du etwas sagen willst. Daumen hoch, Daumen runter, Nicken und Kopfschütteln zeigt Reachy mit seinen Antennen. Probier das Hand heben jetzt.",
+                Footer = "Eine Hand über den Kopf heben" },
             new Card { Task = Task.PickLanguage, Hand = Hand.Left, Stay = true, DoneS = 2.5f, Title = "Menü und Sprache",
                 Body = "Unten am Bild ist das Menü. Zeig mit einer Hand auf «Sprache»: Ein Punkt zeigt, wohin du zeigst, und sein Ring schliesst sich beim Pinchen. Ist «Sprache» gelb umrandet, pinche mit dieser Hand.",
                 Footer = "Auf «Sprache» zeigen, pinchen" },
@@ -132,6 +135,9 @@ public class Tutorial : MonoBehaviour
             new Card { Task = Task.Recenter, Hand = Hand.Left, Title = "Set straight ahead",
                 Body = "Look where \"straight ahead\" should be for you and hold the left pinch for about a second. You can do this again any time.",
                 Footer = "Pinch left and hold" },
+            new Card { Task = Task.RaiseHand, Hand = Hand.None, Title = "Asking for the word, reactions",
+                Body = "Raise a hand above your head: Reachy then waves in the room, so everyone sees you want to say something. Thumbs up, thumbs down, a nod and a head shake are shown by Reachy's antennas. Try raising your hand now.",
+                Footer = "Raise a hand above your head" },
             new Card { Task = Task.PickLanguage, Hand = Hand.Left, Stay = true, DoneS = 2.5f, Title = "Menu and language",
                 Body = "The menu is at the foot of the picture. Point at \"Language\" with one hand: a dot shows where you point, and its ring closes as you pinch. Once \"Language\" has a yellow frame, pinch with that hand.",
                 Footer = "Point at \"Language\", pinch" },
@@ -297,6 +303,10 @@ public class Tutorial : MonoBehaviour
                 }
                 else if (menu.ListOpen) Hint(De ? "Zeig auf deine Sprache und pinche." : "Point at your language and pinch.");
                 else if (menu.LanguageGazed) Hint(De ? "Genau, jetzt pinchen." : "That's it, now pinch.");
+                break;
+            case Task.RaiseHand:
+                if (XrInput.HandRaised)
+                    Succeed(De ? "Gesehen! Im Meeting winkt Reachy jetzt drei Sekunden." : "Seen! In the meeting Reachy now waves for three seconds.");
                 break;
             case Task.LookNotes:
                 if (notes != null && Vector3.Angle(XrInput.Gaze(head).direction, notes.Card.position - head.position) < NotesDeg)

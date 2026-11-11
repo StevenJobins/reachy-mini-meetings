@@ -39,6 +39,9 @@ public class RobotControl : MonoBehaviour
     HeadMirror mirror = new HeadMirror();
     readonly HeadModel headModel = new HeadModel();
     readonly WantToTalk wantToTalk = new WantToTalk();
+    readonly Reaction reaction = new Reaction();
+    /// <summary>How much the user smiles, 0..1 (FaceInput, when the headset gives it).</summary>
+    public float Smile { get; set; }
     NodShake nodShake = new NodShake();
     HeadTarget lastSent;
     Mode mode = Mode.Idle;
@@ -163,11 +166,26 @@ public class RobotControl : MonoBehaviour
                 ? new RobotAngles(0, 0, SweepYawDeg * Mathf.Sin(2 * Mathf.PI * (Time.unscaledTime - sweepAt) / SweepPeriodS))
                 : Override ?? (Paused ? new RobotAngles(0, 0, 0)
                     : YawRange.Fold(PoseMath.HeadsetToRobot(recenter.ToRelative(HeadNow()))));
-            bool own = !Sweeping && Override == null && !Paused;   // the user's own head: nods and shakes come out larger
-            if (own) raw = nodShake.Step(raw, Time.unscaledTimeAsDouble, Time.unscaledDeltaTime);
+            // the user's own head: a nod or a head shake goes to the antennas, the camera holds still meanwhile
+            bool own = !Sweeping && Override == null && !Paused;
+            double gestureT = Time.unscaledTimeAsDouble;
+            if (own) raw = nodShake.Step(raw, gestureT, Time.unscaledDeltaTime);
             else nodShake = new NodShake();
             lastSent = mirror.Step(raw, Time.unscaledDeltaTime);
-            wantToTalk.Step(Time.unscaledTimeAsDouble, out var antennaRight, out var antennaLeft, out var swing);
+            // hands: a raised hand asks for the word, thumbs up / down are shown by the antennas
+            if (own && XrInput.HandRaised) wantToTalk.Trigger(gestureT);
+            if (own && XrInput.Thumb != 0) reaction.Trigger(XrInput.Thumb > 0 ? Reaction.Kind.ThumbsUp : Reaction.Kind.ThumbsDown, gestureT);
+            wantToTalk.Step(gestureT, out var antennaRight, out var antennaLeft, out var swing);
+            if (!wantToTalk.Active(gestureT))
+            {
+                reaction.Step(gestureT, Time.unscaledDeltaTime, own ? Smile : 0, out antennaRight, out antennaLeft);
+                if (!reaction.Active(gestureT) && own)
+                {
+                    nodShake.Antennas(out var nodRight, out var nodLeft);
+                    antennaRight += nodRight;
+                    antennaLeft += nodLeft;
+                }
+            }
             lastSent.AntennaRight = antennaRight;
             lastSent.AntennaLeft = antennaLeft;
             lastSent.BodyYaw = System.Math.Max(lastSent.Yaw - 60, System.Math.Min(lastSent.Yaw + 60, lastSent.BodyYaw + swing));
