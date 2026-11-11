@@ -269,6 +269,10 @@ public static class ProjectConfigure
         curtain.control = video.control;
         curtain.tutorial = tutorial;
         curtain.room = video.room;
+        curtain.menu = quick;
+        curtain.notes = notesPanel;
+        curtain.captions = video.captions;
+        curtain.bubbles = bubbles;
         curtain.panorama = video.panorama;
         curtain.window = windowRenderer;
         curtain.label = hud;

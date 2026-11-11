@@ -48,6 +48,8 @@ public class CaptionView : MonoBehaviour
     public QuickMenu menu;
     public NotesPanel notes;
     public SpeakerBubbles bubbles;
+    /// <summary>Not shown (Curtain).</summary>
+    public bool Hidden;
 
     readonly Subtitles subs = new Subtitles();
     Font font;
@@ -115,7 +117,7 @@ public class CaptionView : MonoBehaviour
         var body = Compose(lines);
         if (body != shownText) Redraw(body);
         alpha = Mathf.MoveTowards(alpha, lines.Count > 0 ? 1 : 0, Time.unscaledDeltaTime / FadeS);
-        root.gameObject.SetActive(alpha > 0);
+        root.gameObject.SetActive(alpha > 0 && !Hidden);
         panel.color = new Color(0, 0, 0, 0.6f * alpha);
         meshRenderer.enabled = alpha > 0.5f;
         Place();

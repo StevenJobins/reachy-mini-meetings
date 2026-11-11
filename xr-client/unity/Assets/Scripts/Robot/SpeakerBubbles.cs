@@ -42,6 +42,8 @@ public class SpeakerBubbles : MonoBehaviour
     public VideoWindow view;
     public RobotVideo video;
     public Material textMaterial, panelMaterial;
+    /// <summary>Not shown (Curtain).</summary>
+    public bool Hidden;
 
     readonly Dictionary<int, Bubble> bubbles = new Dictionary<int, Bubble>();   // by person
     readonly CameraModel cam = CameraModel.Calibrated();
@@ -134,7 +136,7 @@ public class SpeakerBubbles : MonoBehaviour
         foreach (var person in bubbles.Where(kv => now > kv.Value.Until).Select(kv => kv.Key).ToList()) Drop(person);
         foreach (var b in bubbles.Values)
         {
-            bool on = TryPlace(b.At, out var dir);
+            bool on = TryPlace(b.At, out var dir) && !Hidden;
             if (b.Root.gameObject.activeSelf != on) b.Root.gameObject.SetActive(on);
             if (!on) continue;
             b.Root.localPosition = dir * Distance;

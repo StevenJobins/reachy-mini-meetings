@@ -53,7 +53,7 @@ class FaceStream:
             urllib.request.urlretrieve(MODEL_URL, MODEL_PATH)
         return vision.FaceLandmarker.create_from_options(vision.FaceLandmarkerOptions(
             base_options=BaseOptions(model_asset_path=str(MODEL_PATH)),
-            running_mode=vision.RunningMode.VIDEO, num_faces=self.max_faces, output_face_blendshapes=True,
+            running_mode=vision.RunningMode.IMAGE, num_faces=self.max_faces, output_face_blendshapes=True,
             min_face_detection_confidence=CONFIDENCE, min_face_presence_confidence=CONFIDENCE,
             min_tracking_confidence=0.4))
 
@@ -90,14 +90,11 @@ class FaceStream:
 
     def _run(self, publish) -> None:
         import cv2
-        import mediapipe as mp
-        import numpy as np
 
-        landmarker = self._landmarker()
-        brighten = np.clip(255 * (np.arange(256) / 255.0) ** GAMMA, 0, 255).astype(np.uint8)
+        finder = FaceFinder(self._landmarker())
         self.lock, self.latest = threading.Lock(), None
         threading.Thread(target=self._grab, daemon=True, name="camera").start()
-        n, t_fps, t_ms, last_t, seen = 0, time.time(), 0, 0.0, 0
+        n, t_fps, last_t, seen = 0, time.time(), 0.0, 0
         while True:
             t0 = time.time()
             with self.lock:
@@ -106,26 +103,89 @@ class FaceStream:
                 time.sleep(0.005)
                 continue
             last_t = t
-            small = cv2.cvtColor(cv2.resize(frame, (960, 540)), cv2.COLOR_BGR2RGB)
-            dark = small[::8, ::8].mean()
-            if dark < DARK:
-                small = cv2.LUT(small, brighten)
-            t_ms = max(t_ms + 1, int(t * 1000))   # VIDEO mode wants increasing timestamps
-            res = landmarker.detect_for_video(mp.Image(image_format=mp.ImageFormat.SRGB, data=small), t_ms)
-            people = []
-            for i, pts in enumerate(res.face_landmarks):
-                xs, ys = [p.x for p in pts], [p.y for p in pts]
-                x0, x1, y0, y1 = min(xs), max(xs), min(ys), max(ys)
-                if x1 - x0 < MIN_SIZE:
-                    continue
-                jaw = next((c.score for c in res.face_blendshapes[i] if c.category_name == "jawOpen"), 0.0)
-                people.append({"cx": round((x0 + x1) / 2, 4), "cy": round((y0 + y1) / 2, 4), "top": round(y0, 4),
-                               "w": round(x1 - x0, 4), "h": round(y1 - y0, 4), "mouth": round(jaw, 3)})
+            people = finder.step(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
             publish(people, t)
             n += 1
             seen += len(people)
             if t0 - t_fps >= 5:
                 log.info("Vision: %.1f detections/s, %.1f faces per frame, brightness %.0f/255", n / (t0 - t_fps),
-                         seen / n, float(dark))
+                         seen / n, float(frame[::16, ::16].mean()))
                 self.fps, n, t_fps, seen = n / (t0 - t_fps), 0, t0, 0
             time.sleep(max(0.0, self.period - (time.time() - t0)))   # cap the rate: the page needs no more
+
+
+# The detector inside the landmarker looks at the whole picture shrunk to its small input, so a face that is small
+# in the wide-angle image (someone 2 m away, a face on a phone) is not found, whatever the camera resolution. So:
+# the picture is searched piece by piece, one piece per frame (the whole, then six overlapping parts), and a face
+# once found is followed in a close crop around it, where it is large: found more often, and the mouth is measured
+# on many more pixels. Regions as fractions of the picture: x, y, width, height.
+TILES = [(0.0, 0.0, 1.0, 1.0)] + [(x, y, 0.4, 0.6) for y in (0.0, 0.4) for x in (0.0, 0.3, 0.6)]
+CROP = 2.4        # the crop around a followed face, in face sizes
+LOST = 8          # frames without the face in its crop before it is given up
+INPUT = 640       # longer side of what goes into the landmarker
+
+
+class FaceFinder:
+    """Faces in a frame (RGB), as vision.py publishes them. Needs a landmarker in IMAGE mode."""
+
+    def __init__(self, landmarker) -> None:
+        import numpy as np
+
+        self.landmarker = landmarker
+        self.brighten = np.clip(255 * (np.arange(256) / 255.0) ** GAMMA, 0, 255).astype(np.uint8)
+        self.tracks: list[dict] = []   # {"face": the last answer, "missed": frames}
+        self.k = 0
+
+    def _detect(self, frame, x: float, y: float, w: float, h: float) -> list[dict]:
+        import cv2
+        import mediapipe as mp
+
+        H, W = frame.shape[:2]
+        x0, y0 = max(0, int(x * W)), max(0, int(y * H))
+        x1, y1 = min(W, int((x + w) * W)), min(H, int((y + h) * H))
+        if x1 - x0 < 16 or y1 - y0 < 16:
+            return []
+        crop = frame[y0:y1, x0:x1]
+        scale = INPUT / max(crop.shape[:2])
+        if scale < 1:
+            crop = cv2.resize(crop, None, fx=scale, fy=scale)
+        if crop[::4, ::4].mean() < DARK:
+            crop = cv2.LUT(crop, self.brighten)
+        res = self.landmarker.detect(mp.Image(image_format=mp.ImageFormat.SRGB, data=crop.copy()))
+        faces = []
+        for i, pts in enumerate(res.face_landmarks):
+            xs = [(x0 + p.x * (x1 - x0)) / W for p in pts]
+            ys = [(y0 + p.y * (y1 - y0)) / H for p in pts]
+            fx0, fx1, fy0, fy1 = min(xs), max(xs), min(ys), max(ys)
+            if fx1 - fx0 < MIN_SIZE:
+                continue
+            jaw = next((c.score for c in res.face_blendshapes[i] if c.category_name == "jawOpen"), 0.0)
+            faces.append({"cx": round((fx0 + fx1) / 2, 4), "cy": round((fy0 + fy1) / 2, 4), "top": round(fy0, 4),
+                          "w": round(fx1 - fx0, 4), "h": round(fy1 - fy0, 4), "mouth": round(jaw, 3)})
+        return faces
+
+    @staticmethod
+    def _same(a: dict, b: dict) -> bool:
+        return abs(a["cx"] - b["cx"]) < 0.6 * max(a["w"], b["w"]) and abs(a["cy"] - b["cy"]) < 0.6 * max(a["h"], b["h"])
+
+    def step(self, frame) -> list[dict]:
+        H, W = frame.shape[:2]
+        people = []
+        for tr in self.tracks:   # follow the known faces, each in a close crop
+            f = tr["face"]
+            side = CROP * max(f["w"] * W, f["h"] * H)
+            found = self._detect(frame, f["cx"] - side / W / 2, f["cy"] - side / H / 2, side / W, side / H)
+            found = [g for g in found if self._same(f, g)]
+            if found:
+                tr["face"], tr["missed"] = found[0], 0
+                people.append(found[0])
+            else:
+                tr["missed"] += 1
+        self.tracks = [tr for tr in self.tracks if tr["missed"] < LOST]
+        tile = TILES[self.k % len(TILES)]   # and look for new ones in one piece of the picture
+        self.k += 1
+        for g in self._detect(frame, *tile):
+            if not any(self._same(tr["face"], g) for tr in self.tracks):
+                self.tracks.append({"face": g, "missed": 0})
+                people.append(g)
+        return people

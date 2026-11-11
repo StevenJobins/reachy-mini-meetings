@@ -18,6 +18,10 @@ public class Curtain : MonoBehaviour
     public RobotControl control;
     public Tutorial tutorial;
     public RoomSound room;
+    public QuickMenu menu;
+    public NotesPanel notes;
+    public CaptionView captions;
+    public SpeakerBubbles bubbles;
     public RoomPanorama panorama;
     public Renderer window, floor;
     public FpsLabel label;
@@ -77,6 +81,9 @@ public class Curtain : MonoBehaviour
             if (room != null) room.Muted = hide;
             label.SetVisible(!hide && PlayerPrefs.GetString("hud", "off") == "on");   // as RobotVideo sets it
         }
+        // While Reachy gets ready there is nothing to work yet: no menu, notes or subtitles, a plain loading screen.
+        // In the tutorial they are there: it shows them.
+        menu.Hidden = notes.Hidden = captions.Hidden = bubbles.Hidden = hide && !tour;
         string problem = Problem();
         if (!hide)
         {

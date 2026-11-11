@@ -42,6 +42,8 @@ public class QuickMenu : MonoBehaviour
     public Transform head;
     public Material textMaterial, panelMaterial;
     public Tutorial tutorial;
+    /// <summary>Not there at all (Curtain: while Reachy gets ready there is nothing to work yet).</summary>
+    public bool Hidden;
 
     enum Item { None = -1, Translate, Language, Robot, Help }
     /// <summary>The laptop answers, but the robot behind it does not run (e.g. a motor fault).</summary>
@@ -167,6 +169,13 @@ public class QuickMenu : MonoBehaviour
         }
 
         Place();
+        transform.localScale = Hidden ? Vector3.zero : Vector3.one * Scale;
+        if (Hidden)
+        {
+            foreach (var hv in hover) { hv.Item = Item.None; hv.Row = -1; }
+            foreach (var c in cursors) c.Hide();
+            return;
+        }
         bool onList = false;
         for (int hand = 0; hand < 2; hand++)
         {

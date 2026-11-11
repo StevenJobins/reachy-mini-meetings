@@ -45,6 +45,8 @@ public class NotesPanel : MonoBehaviour
     public QuickMenu menu;
     public RoomSound room;
     public Material textMaterial, panelMaterial;
+    /// <summary>Not there at all (Curtain).</summary>
+    public bool Hidden;
 
     Transform card;
     Ui.Rect panel, strip, handle, button, fold;
@@ -117,6 +119,12 @@ public class NotesPanel : MonoBehaviour
             seenAt = Time.unscaledTime;
             PlayerPrefs.SetString(SeenKey, unix.ToString());
             PlayerPrefs.Save();
+        }
+        card.localScale = Hidden ? Vector3.zero : Vector3.one;
+        if (Hidden)
+        {
+            for (int i = 0; i < 2; i++) { onHandle[i] = onButton[i] = onFold[i] = false; cursors[i].Hide(); }
+            return;
         }
         if (dragging)
         {

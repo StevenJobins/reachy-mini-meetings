@@ -92,6 +92,7 @@ from .stt import AUTO
 log = logging.getLogger("reachy_captions")
 
 PROTOCOL_VERSION = "0.3"
+RESHOW_S = 12  # finals younger than this are still on show in the headset (it keeps a line 10 s)
 ECHO_S = 0.8   # the remote user's voice from Reachy's speaker: room captions muted this long after its last frame
 HEADSET_LOG = Path.home() / "Library/Logs/reachy-headset.log"   # the page's log lines ({"type": "log"})
 
@@ -317,6 +318,7 @@ class Pipeline:
         self.worker = Worker()  # Whisper runs one job at a time
         self.pending = 0
         self.finalized: set[int] = set()
+        self.shown: deque[dict] = deque(maxlen=4)   # the last finals, to translate again when the language is switched
         self.partial_tr: dict[int, tuple[float, int]] = {}   # id -> (time, text length) of last partial translation
         # Language per utterance, detected by the fast partial model, so the big model needn't detect it
         # again (that costs ~1 s): auto language at no extra delay.
@@ -459,6 +461,8 @@ class Pipeline:
                 log.info("[%d %s] %s", seg.id, target, translation)
                 cap = {**cap, "translation": translation}
                 self.server.send(cap)
+        if text:
+            self.shown.append(cap)
         if self.summarizer:
             self.summarizer.add(cap)
 
@@ -486,9 +490,19 @@ class Pipeline:
             if target and target != self.target:
                 self.target = self.server.target = target
                 self.translator = self._new_translator(target)
+                asyncio.create_task(self._retranslate())
                 if self.summarizer:
                     self.summarizer.set_target(target)
                 log.info("Bubbles in: %s", target)
+
+    async def _retranslate(self) -> None:
+        """The language was switched: what stands in the headset right now comes again in the new one."""
+        target, translator = self.target, self.translator
+        for cap in [c for c in self.shown if time.time() - c["t_end"] < RESHOW_S]:
+            translation = await translator(cap["text"], remember=False) if translator and cap["lang"] != target else None
+            if target != self.target:
+                return
+            self.server.send({**cap, "translation": translation, "target": target})
 
     def meeting_lang(self) -> str:
         """The page's choice, else --meeting-lang, else the language most spoken in the room in the last 10 min."""

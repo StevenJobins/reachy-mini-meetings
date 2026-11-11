@@ -66,11 +66,12 @@ class Summarizer:
         self.key = os.environ.get("GEMINI_API_KEY")
         if not self.key:
             raise RuntimeError("GEMINI_API_KEY is not set (free key: aistudio.google.com/apikey)")
-        self.set_target(target)
+        self.system = SYSTEM.format(target=target)
         self.model = model
         self.every_s = every_s
         self.gap_s = gap_s
         self.lines: list[str] = []
+        self.now = asyncio.Event()   # write the notes now (language changed), not at the next interval
         self.new = 0
         self.latest: dict | None = None
         self.meeting = 0                    # counts up with every new meeting
@@ -89,8 +90,12 @@ class Summarizer:
             self.publish(self.latest)
 
     def set_target(self, target: str) -> None:
-        """Language of the notes (the bubble language, switchable from the page)."""
+        """Language of the notes (the bubble language, switchable from the page). The notes there are written
+        again in it at once, not only after the next sentences."""
         self.system = SYSTEM.format(target=target)
+        if self.lines:
+            self.new += 1
+            self.now.set()
 
     def add(self, caption: dict) -> None:
         if not caption["text"]:
@@ -118,7 +123,11 @@ class Summarizer:
     async def run(self, publish) -> None:
         self.publish = publish
         while True:
-            await asyncio.sleep(self.every_s)
+            try:
+                await asyncio.wait_for(self.now.wait(), self.every_s)
+            except asyncio.TimeoutError:
+                pass
+            self.now.clear()
             if not self.new:
                 continue
             self.new = 0
