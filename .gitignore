@@ -47,3 +47,6 @@ node_modules/
 *.slnx
 .utmp/
 !xr-client/pages/midterm/demo.mp4
+
+# The built Mac app (laptop-app/build_app.sh)
+laptop-app/dist/

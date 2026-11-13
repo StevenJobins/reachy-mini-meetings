@@ -1,0 +1,14 @@
+[project]
+name = "reachy-meetings-app"
+version = "0.1.0"
+description = "Reachy Meetings on the laptop next to Reachy: one window that starts and watches gateway and backend"
+requires-python = ">=3.10"
+dependencies = [
+    "pyobjc-framework-Cocoa; sys_platform == 'darwin'",   # the window (AppKit); the backend needs it too
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 120
