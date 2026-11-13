@@ -57,7 +57,7 @@ The app appears in the launcher as *Reachy Meetings*. You should see a dark-blue
 
 The app uses the daemon's WebRTC signalling on the robot laptop (GStreamer `webrtcsink`, the same as `../web/index.html`), not HF sign-in and Pollen central. Headset and laptop must be on the same Wi-Fi.
 
-**One door on the laptop (since 2026-11-13).** Everything the app needs on the laptop goes through the gateway (`robot/scripts/gateway.py`, port 8790; `./start_meeting.sh` starts it), and only with this headset's token. The app knows one address and puts each part under its own path (`Assets/Scripts/Pose/Endpoints.cs`):
+**One door on the laptop (since 2026-11-13).** Everything the app needs on the laptop goes through the gateway (`robot/scripts/gateway.py`, port 8790; the *Reachy Meetings* app on the laptop starts it, see `laptop-app/README.md`, or `./start_meeting.sh`), and only with this headset's token. The app knows one address and puts each part under its own path (`Assets/Scripts/Pose/Endpoints.cs`):
 
 | Path | Goes to on the laptop |
 |---|---|
@@ -68,7 +68,7 @@ The app uses the daemon's WebRTC signalling on the robot laptop (GStreamer `webr
 
 The video itself (WebRTC, UDP) still goes straight between headset and laptop.
 
-**A new headset pairs itself, with a code (`Pairing.cs`, no cable).** A headset that knows no laptop shows a number pad (after the tutorial on the very first start). Type the six-digit code that `./start_meeting.sh` shows on the laptop: point at a key with either hand, or look at it, and pinch. The headset then
+**A new headset pairs itself, with a code (`Pairing.cs`, no cable).** A headset that knows no laptop shows a number pad (after the tutorial on the very first start). Type the six-digit code that the laptop shows (in the window of its *Reachy Meetings* app, or in `./start_meeting.sh`): point at a key with either hand, or look at it, and pinch. The headset then
 
 1. asks the Wi-Fi who is a gateway (`LanSearch` in `Pose/PairingCode.cs`: a UDP broadcast `reachy-meetings?` to port 8790, answered with `reachy-meetings 1 <port> <laptop id> <laptop name>`),
 2. sends the code to it (`POST /pair {"code", "name"}`, the one request that needs no token) and gets its token.
@@ -80,7 +80,7 @@ Address, token and the laptop's id are remembered on the headset. The code is go
 - **Wi-Fi that does not pass broadcasts** (some guest and campus networks): the search finds nothing and the pad says so. Then, or for tests without wearing the headset, over adb: `-e pair <code>` on the `am start` line pairs with the code as if typed, and `python3 robot/scripts/gateway.py add "<name>"` prints a line that gives address and token directly (`-e gateway ws://<laptop-ip>:8790 -e token <token>`). `-e gateway off` makes the headset forget its laptop.
 - **Pairing needs the same Wi-Fi once.** After that the headset also connects from other networks, see below.
 
-**From another network (at home), since 2026-11-13.** Tried once on 2026-11-13 with the headset on a lab router (192.168.50.x) and the laptop on the ETH Wi-Fi (10.5.x.x): the headset found the laptop, control and captions ran through the tunnel (a status request about 70 ms from the laptop's own network), and the picture came in 1 s at 1920x1080, 60 fps, over a relay. Not yet tried from a home network or a phone hotspot. Start the laptop with `./start_meeting.sh --remote` (needs `cloudflared`: `brew install cloudflared`; no account). Nothing to set on the headset:
+**From another network (at home), since 2026-11-13.** Tried once on 2026-11-13 with the headset on a lab router (192.168.50.x) and the laptop on the ETH Wi-Fi (10.5.x.x): the headset found the laptop, control and captions ran through the tunnel (a status request about 70 ms from the laptop's own network), and the picture came in 1 s at 1920x1080, 60 fps, over a relay. Not yet tried from a home network or a phone hotspot. Switch on *Other networks* in the laptop's *Reachy Meetings* app, or start `./start_meeting.sh --remote` (needs `cloudflared`: `brew install cloudflared`; no account). Nothing to set on the headset:
 
 1. The laptop opens a Cloudflare quick tunnel: a public `https://….trycloudflare.com` address, **new on every start**, that leads to a second door of the gateway on 127.0.0.1:8791. That door is like the first, except that it does not pair.
 2. For every paired headset the laptop posts the address on ntfy.sh, as a notice only that headset can find and check: the topic and a signature are both made from the headset's token (`gateway.py`: `topic()`, `notice()`; app: `Pose/RemoteAddress.cs`, with the same test values on both sides).

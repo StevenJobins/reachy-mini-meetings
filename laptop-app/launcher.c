@@ -82,9 +82,24 @@ int main(int argc, char **argv) {
         alert("Its Python did not start. Build the app again with laptop-app/build_app.sh.");
         return 1;
     }
+    // Which code to run: the app's own, or a newer one it downloaded for itself (updates.py decides, and falls back
+    // to the app's own if a download did not start properly last time). Anything going wrong here: the app's own.
     int failed = PyRun_SimpleString(
         "import os, runpy, sys\n"
-        "sys.path.insert(0, os.environ['REACHY_APP_DIR'])\n"
+        "app_dir = os.environ['REACHY_APP_DIR']\n"
+        "sys.path.insert(0, app_dir)\n"
+        "if os.environ.get('REACHY_STANDALONE') == '1':\n"
+        "    try:\n"
+        "        from reachy_meetings_app import updates\n"
+        "        own = os.path.dirname(app_dir)\n"
+        "        picked = str(updates.choose(updates.Path(own)))\n"
+        "        if picked != own:\n"
+        "            updates.mark_starting(updates.Path(picked))\n"
+        "            for name in [m for m in sys.modules if m.split('.')[0] == 'reachy_meetings_app']:\n"
+        "                del sys.modules[name]\n"
+        "            sys.path[0] = os.environ['REACHY_APP_DIR'] = os.path.join(picked, 'laptop-app')\n"
+        "    except Exception:\n"
+        "        sys.path[0] = os.environ['REACHY_APP_DIR'] = app_dir\n"
         "runpy.run_module('reachy_meetings_app', run_name='__main__', alter_sys=True)\n");
     if (Py_FinalizeEx() < 0) failed = 1;
     return failed ? 1 : 0;

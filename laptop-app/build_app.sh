@@ -12,6 +12,8 @@
 # (~/.venvs/reachy-backend, or $REACHY_PYTHON): the standalone app copies the Python that environment is made from.
 # requirements-backend.txt is the list of that environment when it was last known to work; refresh it with
 #   uv pip freeze --python ~/.venvs/reachy-backend/bin/python | grep -v "^-e " > laptop-app/requirements-backend.txt
+# The app's version is laptop-app/VERSION. The standalone app then updates its code by itself from the project's
+# GitHub releases (release.sh makes one, reachy_meetings_app/updates.py takes it).
 #
 # Opened from the Finder, the app itself is what macOS asks about for the microphone (room sound), the camera
 # (faces) and the local network (headsets on the Wi-Fi), once each; the thin shell also for the folder this
@@ -25,6 +27,7 @@ mode=dev
 [[ $1 == --standalone ]] && mode=standalone
 app="$here/dist/Reachy Meetings.app"
 [[ $mode == standalone ]] && app="$here/dist/standalone/Reachy Meetings.app"
+[[ -n $REACHY_APP_OUT ]] && app="$REACHY_APP_OUT/Reachy Meetings.app"   # somewhere else, e.g. while the other one runs
 res=$app/Contents/Resources
 
 [[ -x $python ]] || { echo "No Python at $python: set up backend/ first (backend/README.md), or set REACHY_PYTHON"; exit 1 }
@@ -32,6 +35,7 @@ version=$($python -c "import sys; print(f'{sys.version_info.major}.{sys.version_
 
 rm -rf $app
 mkdir -p $app/Contents/MacOS $res
+cp $here/AppIcon.icns $res/AppIcon.icns          # from the project's icon, see make_icon.py
 
 cat > $app/Contents/Info.plist <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
@@ -43,7 +47,8 @@ cat > $app/Contents/Info.plist <<PLIST
   <key>CFBundleIdentifier</key><string>ch.ethz.reachymeetings.laptop</string>
   <key>CFBundleExecutable</key><string>reachy-meetings</string>
   <key>CFBundlePackageType</key><string>APPL</string>
-  <key>CFBundleShortVersionString</key><string>0.1</string>
+  <key>CFBundleShortVersionString</key><string>$(<$here/VERSION)</string>
+  <key>CFBundleIconFile</key><string>AppIcon</string>
   <key>CFBundleVersion</key><string>$(git -C $repo rev-parse --short HEAD 2>/dev/null || echo 0)</string>
   <key>LSMinimumSystemVersion</key><string>13.0</string>
   <key>NSHighResolutionCapable</key><true/>
@@ -69,14 +74,10 @@ if [[ $mode == standalone ]]; then
   # for the window: pyobjc, in the versions of the backend's list
   cocoa=($(grep -iE "^pyobjc-(core|framework-cocoa)==" $here/requirements-backend.txt))
   $res/python/bin/python3 -m pip install --quiet --disable-pip-version-check --no-warn-script-location --only-binary :all: $cocoa
-  # our code, laid out like the repository (supervisor.py finds its parts by that)
-  mkdir -p $res/code/laptop-app $res/code/robot/scripts $res/code/backend $res/bin
-  cp -R $here/reachy_meetings_app $res/code/laptop-app/
-  cp $here/requirements-backend.txt $res/code/laptop-app/
-  cp $repo/robot/scripts/gateway.py $res/code/robot/scripts/
-  cp -R $repo/backend/src $res/code/backend/src
+  # our code, laid out like the repository (supervisor.py finds its parts by that); an update brings the same
+  $here/stage_code.sh $res/code
+  mkdir -p $res/bin
   find $res -name __pycache__ -prune -exec rm -rf {} +
-  find $res/code -name "*.egg-info" -prune -exec rm -rf {} +
   # for headsets on other networks: the tunnel program, if this Mac has it
   tunnel=$(whence -p cloudflared) && cp -L $tunnel $res/bin/cloudflared \
     || echo "note: no cloudflared on this Mac: the app will not offer other networks unless the user installs it"

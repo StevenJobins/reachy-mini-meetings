@@ -23,7 +23,7 @@ import urllib.request
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from . import libraries
+from . import libraries, updates
 
 REPO = Path(__file__).resolve().parents[2]
 LOGS = Path.home() / "Library" / "Logs" / "reachy-meetings"
@@ -121,6 +121,8 @@ class Status:
     translation_key: bool = False
     video_patch: bool = True
     problem: str = ""            # a part that stopped, with its last log lines
+    version: str = ""            # of the code that runs
+    update: str = ""             # a newer version that was fetched and is used from the next start
     setup: str = ""              # first start: what is being fetched; "" when there is nothing to set up
     setup_fraction: float = 0.0  # how far that is, 0..1
 
@@ -138,6 +140,8 @@ class Supervisor:
         self.standalone = libraries.standalone() if environ is None else environ.get("REACHY_STANDALONE") == "1"
         self.support = libraries.SUPPORT
         self.setup_text, self.setup_fraction, self.setup_error = "", 0.0, ""
+        self.version = updates.version_of(repo)
+        self.update_ready = ""
 
     # ------------------------------------------------------------ settings
     def _load_settings(self) -> dict:
@@ -226,6 +230,34 @@ class Supervisor:
         self.start_gateway()
         if self.prepare():
             self.start_backend()
+        self.check_updates()
+
+    def check_updates(self, base_url: str = updates.BASE_URL, fetch=updates.fetch, verify=updates.verify) -> None:
+        """Is there a newer release of our code? Then fetch it; it is used from the next start (updates.py).
+        Only the standalone app: a checkout updates with git. Being offline, or a release that is not ours, changes
+        nothing and is only noted in update.log."""
+        if not self.standalone or self.update_ready:
+            return
+        try:
+            info = updates.available(self.version, base_url, fetch)
+            if info is None or (self.support / "code" / info["version"] / ".failed").exists():
+                return   # nothing newer, or one that did not start here before
+            updates.install(info, self.repo / "laptop-app" / "release_key.pub.pem", self.support, base_url, fetch, verify)
+            self.update_ready = info["version"]
+            note = f"fetched {info['version']}, in use from the next start"
+        except Exception as e:   # noqa: BLE001 - whatever the network or the release holds, the meeting goes on
+            note = f"no update: {type(e).__name__}: {e}"
+        try:
+            self.logs.mkdir(parents=True, exist_ok=True)
+            with open(self.logs / "update.log", "a") as log:
+                log.write(note[:300] + "\n")
+        except OSError:
+            pass
+
+    def bundle(self):
+        """The .app this runs from (standalone), to open it again after an update; None from a checkout."""
+        inside = self.environ.get("REACHY_BUNDLE_BIN")
+        return Path(inside).parents[2] if inside else None
 
     def set_deepl_key(self, key: str) -> None:
         """The translation key, typed into the app. Kept in the app's settings (readable by this user only), and
@@ -298,6 +330,7 @@ class Supervisor:
             or bool(self.environ.get("DEEPL_AUTH_KEY")),
             video_patch=self._patched(),
             setup=self.setup_text, setup_fraction=self.setup_fraction,
+            version=self.version, update=self.update_ready,
         )
         if self.setup_error:
             s.problem = self.setup_error

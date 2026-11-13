@@ -67,7 +67,7 @@ Make a test file: `say -v Anna -o t.aiff "Guten Morgen zusammen." && afconvert -
 
 Headset over USB: `adb reverse tcp:8766 tcp:8766`
 
-Unity app on the same Wi-Fi: `scripts/start_for_headset.sh` (`--host 0.0.0.0 --lan-secret`, see xr-client/unity/README.md). A network host without a secret is refused, because anyone on the Wi-Fi could listen to the room.
+Unity app: nothing to set here. Since 2026-11-13 it reaches this server through the gateway (`robot/scripts/gateway.py`, started by the *Reachy Meetings* app on the laptop or by `./start_meeting.sh`), which checks the headset's token and forwards to `127.0.0.1:8766`; the server keeps its default `--host 127.0.0.1`. `scripts/start_for_headset.sh` and `--host 0.0.0.0 --lan-secret` are the earlier way and no longer used by the app. A network host without a secret is refused, because anyone on the Wi-Fi could listen to the room.
 
 ### Wireless headset (`--tunnel`)
 

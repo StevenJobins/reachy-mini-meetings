@@ -11,6 +11,7 @@ import objc
 from Foundation import NSObject, NSTimer
 from PyObjCTools import AppHelper
 
+from . import updates
 from .supervisor import Status, Supervisor
 
 W = 520
@@ -67,6 +68,8 @@ class Controller(NSObject):
         self.shown_headsets = None
         self.busy = False
         self.run_parts = True
+        self.ticks = 0
+        self.settled = False
         return self
 
     # ------------------------------------------------------------ building
@@ -85,6 +88,12 @@ class Controller(NSObject):
         self.headsets_title = label("Headsets that may connect", 12, bold=True)
         self.headsets = stack(True, 6)
         self.notice = label("", 11, color="systemOrangeColor")
+        self.update_text = label("", 12)
+        restart = AppKit.NSButton.buttonWithTitle_target_action_("Restart now", self, "restartForUpdate:")
+        restart.setControlSize_(AppKit.NSControlSizeSmall)
+        restart.setFont_(AppKit.NSFont.systemFontOfSize_(11))
+        self.update = stack(False, 12, self.update_text, restart)
+        self.update.setAlignment_(AppKit.NSLayoutAttributeCenterY)
 
         # First start of the app with its own Python: the libraries are being fetched
         self.setup_bar = AppKit.NSProgressIndicator.alloc().init()
@@ -100,7 +109,7 @@ class Controller(NSObject):
                       self.rows["headset"].view)
         code = stack(True, 2, self.code_title, self.code, self.code_hint)
         self.content = stack(True, 18, self.setup, parts, rule(), code, rule(), self.headsets_title, self.headsets,
-                             self.notice)
+                             self.notice, self.update)
         self.content.setEdgeInsets_(AppKit.NSEdgeInsetsMake(22, 26, 22, 26))
 
         style = (AppKit.NSWindowStyleMaskTitled | AppKit.NSWindowStyleMaskClosable | AppKit.NSWindowStyleMaskMiniaturizable)
@@ -188,6 +197,9 @@ class Controller(NSObject):
                          "python robot/scripts/patch_daemon_video.py, then restart Reachy Mini Control.")
         self.notice.setStringValue_("\n\n".join(notes))
         self.notice.setHidden_(not notes)
+        self.update_text.setStringValue_(f"Version {s.update} is ready. It is used from the next start.")
+        self.update.setHidden_(not s.update)
+        self.window.setTitle_(f"Reachy Meetings {s.version}".strip())
         self.window.setContentSize_(self.content.fittingSize())
 
     # ------------------------------------------------------------ running
@@ -203,6 +215,9 @@ class Controller(NSObject):
         self.tick_(None)
 
     def tick_(self, timer) -> None:
+        self.ticks += 1
+        if self.ticks % (6 * 3600 // 2) == 0:   # every six hours of running: is there a newer version?
+            threading.Thread(target=self.supervisor.check_updates, daemon=True).start()
         if self.busy:
             return
         self.busy = True
@@ -215,6 +230,9 @@ class Controller(NSObject):
         finally:
             self.busy = False
         AppHelper.callAfter(self.show, status)
+        if not self.settled:   # the window is up and the parts answered: this code runs (an update that does not
+            self.settled = True   # get here is not tried again, see updates.choose)
+            updates.mark_ok(updates.running_root())
 
     def toggleRemote_(self, sender) -> None:
         on = sender.state() == AppKit.NSControlStateValueOn
@@ -233,6 +251,16 @@ class Controller(NSObject):
         if alert.runModal() == AppKit.NSAlertFirstButtonReturn:
             self.supervisor.remove_headset(name)
             self.tick_(None)
+
+    def restartForUpdate_(self, sender) -> None:
+        bundle = self.supervisor.bundle()
+        if bundle is None:
+            return
+        # opened again by a helper that outlives us, after the parts have let go of their ports
+        import subprocess
+        subprocess.Popen(["/bin/sh", "-c", 'sleep 3; /usr/bin/open "$0"', str(bundle)], start_new_session=True,
+                         stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        AppKit.NSApp.terminate_(None)
 
     def translationKey_(self, sender) -> None:
         alert = AppKit.NSAlert.alloc().init()

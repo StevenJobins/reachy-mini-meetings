@@ -39,7 +39,28 @@ Out of scope: spatial audio.
 
 ## Getting started
 
-**For a meeting:** on the laptop next to Reachy open the *Reachy Meetings* app ([laptop-app/README.md](laptop-app/README.md); built with `laptop-app/build_app.sh`, with `--standalone` for a Mac without this project), or run `./start_meeting.sh` (starts Reachy Mini Control, the caption backend and the gateway through which the headset reaches both, and shows whether each part is up), then open *Reachy Meetings* in the headset. A headset that is new to this laptop asks once for the six-digit code the laptop shows. With `./start_meeting.sh --remote` a paired headset can also join from another network (at home). Waking Reachy, sending it to sleep and restarting it after an error are in the headset's menu (*Reachy* tile).
+**For a meeting**, two things run: the laptop next to Reachy, and the headset of the person who is somewhere else.
 
-- Teleop in the headset: open https://stevenjobins.github.io/reachy-mini-meetings/. Details in [xr-client/README.md](xr-client/README.md).
+1. **On the laptop (a Mac with Apple Silicon):** open the *Reachy Meetings* app. It starts everything the meeting
+   needs and shows whether each part is up, the pairing code, and the headsets that may connect
+   ([laptop-app/README.md](laptop-app/README.md)). Reachy itself is driven by Pollen's own app, *Reachy Mini
+   Control*, which must be installed too; *Reachy Meetings* opens it when it is not running.
+2. **In the headset:** open *Reachy Meetings*. A headset that is new to this laptop shows a number pad: type the
+   six-digit code from the laptop's window, once, while both are on the same Wi-Fi. No cable, no address.
+3. **From another network (at home):** switch on *Other networks* in the laptop's window. A paired headset then
+   finds the laptop by itself, wherever it is.
+
+Waking Reachy, sending it to sleep and restarting it after an error are in the headset's menu (*Reachy* tile).
+
+| To | Do |
+|---|---|
+| build the laptop app | `laptop-app/build_app.sh --standalone` makes `laptop-app/dist/standalone/Reachy Meetings.app` (120 MB, for any Apple Silicon Mac; it fetches the speech and vision libraries itself on its first start) |
+| publish an update for the laptop apps | `laptop-app/release.sh <version>`, then the `gh release create` line it prints; the apps update themselves |
+| run it from a terminal instead | `./start_meeting.sh`, with `--remote` for other networks (needs this checkout and the backend's environment) |
+| build and install the headset app | [xr-client/unity/README.md](xr-client/unity/README.md) |
+
+How the headset reaches the laptop (one door with a token per headset, pairing, other networks) is described in
+[xr-client/unity/README.md](xr-client/unity/README.md), *Robot video*; the door itself is `robot/scripts/gateway.py`.
+
+- The earlier web app (a reference only, see *Decisions*): https://stevenjobins.github.io/reachy-mini-meetings/, details in [xr-client/README.md](xr-client/README.md).
 - Robot side: [robot/README.md](robot/README.md)

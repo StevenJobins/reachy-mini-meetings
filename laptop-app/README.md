@@ -52,7 +52,31 @@ allows it under System Settings > Privacy & Security.
 (`~/.venvs/reachy-backend`). A `git pull` updates it without building again. macOS also asks for the folder the
 checkout is in, when that is Documents, Desktop or Downloads.
 
-Both need the Xcode command line tools to build. Not there yet: the app updating itself, and an icon.
+Both need the Xcode command line tools to build. The icon is the project's (`xr-client/pages/icon.svg`), made into
+`AppIcon.icns` by `make_icon.py`.
+
+## Updates (the standalone app)
+
+The app updates **our code** by itself: this app, the gateway and the backend, a package of about 70 kB. Python and
+the app's program stay as installed, and the backend's libraries follow when a new code brings another list.
+
+- **For the user:** the app looks for a newer version at every start and every six hours, fetches it, and says
+  *Version x is ready. It is used from the next start.* with a *Restart now* button. The window title shows the
+  version that runs. Nothing to do otherwise.
+- **To publish one:** `laptop-app/release.sh 0.3.0` makes three files in `dist/release` (`latest.json`, the package,
+  its signature) and prints the `gh release create` line that publishes them as a GitHub release of this
+  repository. The apps look at the latest release (`reachy_meetings_app/updates.py`). `VERSION` is the version an
+  app is built with; an update must have a higher one.
+- **Only ours:** an app takes a package only if it is signed with the release key, says the announced version
+  inside, and is newer than what runs. The key is `~/.config/reachy-meetings/release_key.pem` on the Mac that
+  publishes (made on 2026-11-13 on Kevin's; **keep a copy somewhere safe and keep it private**: without it no
+  installed app takes another update). Its public half, `release_key.pub.pem`, is in the repository and in every app.
+- **If an update is broken:** a version that does not get as far as its window is not started a second time; the
+  app goes back to the code it was installed with (`updates.choose`, asked by `launcher.c`) and does not fetch
+  that version again. `~/Library/Logs/reachy-meetings/update.log` says what the app found.
+- **Not updated this way:** the app's program and its Python (a new build, by hand), and Reachy Mini Control.
+- `python -m reachy_meetings_app --version` (or the app's program with `--version`) prints the version and where
+  the running code is: inside the app, or in `~/Library/Application Support/Reachy Meetings/code/<version>`.
 
 - `launcher.c`: the app's own program, with Python running inside it. A shell script in its place does not do:
   macOS decides by the app's program who is asking for microphone, camera, local network or a folder in Documents,
