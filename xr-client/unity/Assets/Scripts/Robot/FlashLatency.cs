@@ -40,7 +40,7 @@ public class FlashLatency : MonoBehaviour
 
     void Update()
     {
-        clock.Tick(video.SignallingUrl);
+        clock.Tick(video.Laptop);
         var tex = video.VideoTexture;
         if (!clock.Ok || tex == null || pending > 2) return;
         if (small == null) small = new RenderTexture(W, H, 0, RenderTextureFormat.ARGB32);

@@ -5,7 +5,6 @@ using UnityEngine;
 
 public class RoomSound : MonoBehaviour
 {
-    const string SecretKey = "secret";
     // The headset voice the backend gets is only transcribed ("You" subtitles): Reachy already plays it over WebRTC
     const string MeMode = "{\"type\": \"me_mode\", \"speak\": false}";
 
@@ -27,18 +26,13 @@ public class RoomSound : MonoBehaviour
     public BackendClient Backend => backend;
     public string Status { get; private set; } = "";
 
-    void Start()
-    {
-        var secret = RobotVideo.ReadIntentExtra(SecretKey);
-        if (!string.IsNullOrEmpty(secret)) { PlayerPrefs.SetString(SecretKey, secret); PlayerPrefs.Save(); }
-    }
-
     void Update()
     {
         if (backend == null)
         {
-            if (string.IsNullOrEmpty(video.SignallingUrl)) return;
-            backend = new BackendClient(new System.Uri(video.SignallingUrl).Host, PlayerPrefs.GetString(SecretKey, ""), MeMode);
+            if (video.Laptop == null) return;
+            backend = new BackendClient(() => video.Laptop, MeMode);
+            video.LaptopChanged += backend.Restart;
             buffer = backend.Audio;
             source = gameObject.AddComponent<AudioSource>();
             source.mute = muted;

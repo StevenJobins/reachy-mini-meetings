@@ -32,6 +32,7 @@ public class RobotControl : MonoBehaviour
     public Tutorial tutorial;
     public NotesPanel notes;
     public Curtain curtain;
+    public Pairing pairing;
 
     readonly Recenter recenter = new Recenter();
     InputAction talk, recenterPress;
@@ -72,6 +73,13 @@ public class RobotControl : MonoBehaviour
         wantToTalk.Trigger(Time.unscaledTimeAsDouble);
         Debug.Log("[control] I want to talk");
     }
+
+    /// <summary>The menu tile again while Reachy waves: it stops.</summary>
+    public void StopWaving()
+    {
+        wantToTalk.Stop(Time.unscaledTimeAsDouble);
+        Debug.Log("[control] wave stopped");
+    }
     /// <summary>Sent to sleep from the menu: stays asleep until WakeUp().</summary>
     public bool Asleep { get; private set; }
     public bool GoingToSleep { get; private set; }
@@ -79,6 +87,9 @@ public class RobotControl : MonoBehaviour
     /// answer from the laptop), null before the first answer. DaemonError: its message, e.g. a motor fault.</summary>
     public string DaemonState { get; private set; }
     public string DaemonError { get; private set; }
+    /// <summary>While unreachable, what the laptop's gateway answered: 401 = it does not know this headset's token,
+    /// 502 = it is there but the daemon behind it is not, 0 = no answer at all.</summary>
+    public long LaptopAnswer { get; private set; }
     public bool Restarting => Time.unscaledTime < restartUntil;
     public bool MicOn { get; private set; }
     /// <summary>Pinch strength 0..1, for the tutorial's live view of the fingers.</summary>
@@ -140,8 +151,9 @@ public class RobotControl : MonoBehaviour
     {
         if (daemon == null)
         {
-            if (string.IsNullOrEmpty(video.SignallingUrl)) return;
-            daemon = new DaemonClient(new System.Uri(video.SignallingUrl).Host);
+            if (video.Laptop == null) { HandlePress(); return; }   // no laptop yet: the tutorial and the pairing pad still take pinches
+            daemon = new DaemonClient(() => video.Laptop);
+            video.LaptopChanged += daemon.Restart;
             StartCoroutine(Health());
         }
         HandlePress();
@@ -207,7 +219,8 @@ public class RobotControl : MonoBehaviour
         if (rightNow && !rightDown)
         {
             // a right pinch on the notes or a menu tile works them, like the left one, and does not talk
-            if (curtain != null && curtain.Hovered(true)) { curtain.Press(true); rightUi = true; }
+            if (pairing != null && pairing.Hovered(true)) { pairing.Press(true); rightUi = true; }
+            else if (curtain != null && curtain.Hovered(true)) { curtain.Press(true); rightUi = true; }
             else if (tutorial != null && tutorial.Hovered(true)) { tutorial.Press(true); rightUi = true; }
             else if (notes != null && notes.Hovered(true)) { notes.Press(true); rightUi = true; }
             else if (menu != null && menu.Hovered(true)) { menu.Select(true); rightUi = true; }
@@ -231,7 +244,8 @@ public class RobotControl : MonoBehaviour
         {
             leftSince = Time.unscaledTime;
             leftUsed = true;
-            if (curtain != null && curtain.Hovered(false)) curtain.Press(false);
+            if (pairing != null && pairing.Hovered(false)) pairing.Press(false);
+            else if (curtain != null && curtain.Hovered(false)) curtain.Press(false);
             else if (tutorial != null && tutorial.Hovered(false)) tutorial.Press(false);
             else if (notes != null && notes.Hovered(false)) notes.Press(false);
             else if (menu != null && menu.Hovered(false)) menu.Select(false);
@@ -258,9 +272,17 @@ public class RobotControl : MonoBehaviour
         Debug.Log("[control] recentered");
     }
 
+    /// <summary>A request to the daemon's HTTP API, with this headset's token for the gateway.</summary>
+    UnityWebRequest Ask(string method, string path)
+    {
+        var r = new UnityWebRequest(daemon.HttpBase + path, method) { downloadHandler = new DownloadHandlerBuffer() };
+        r.SetRequestHeader("Authorization", video.Laptop.Authorization);
+        return r;
+    }
+
     IEnumerator Post(string path)
     {
-        using var r = new UnityWebRequest(daemon.HttpBase + path, "POST") { downloadHandler = new DownloadHandlerBuffer() };
+        using var r = Ask("POST", path);
         yield return r.SendWebRequest();
         if (r.result != UnityWebRequest.Result.Success) { note = $"{path}: {r.error}"; Debug.LogWarning($"[control] {path}: {r.error}"); }
     }
@@ -272,7 +294,7 @@ public class RobotControl : MonoBehaviour
         while (Time.unscaledTime < deadline)
         {
             yield return new WaitForSecondsRealtime(0.2f);
-            using var r = UnityWebRequest.Get(daemon.HttpBase + "/api/move/running");
+            using var r = Ask("GET", "/api/move/running");
             yield return r.SendWebRequest();
             if (r.result == UnityWebRequest.Result.Success && r.downloadHandler.text.Trim() == "[]") yield break;
         }
@@ -284,7 +306,7 @@ public class RobotControl : MonoBehaviour
     {
         while (true)
         {
-            using (var r = UnityWebRequest.Get(daemon.HttpBase + "/api/daemon/status"))
+            using (var r = Ask("GET", "/api/daemon/status"))
             {
                 r.timeout = 3;
                 yield return r.SendWebRequest();
@@ -293,6 +315,7 @@ public class RobotControl : MonoBehaviour
                     if (++misses < 2) { yield return new WaitForSecondsRealtime(2f); continue; }   // one lost request is Wi-Fi
                     DaemonState = "unreachable";
                     DaemonError = r.error;
+                    LaptopAnswer = r.responseCode;
                 }
                 else
                 {

@@ -122,12 +122,17 @@ public static class Ui
     public static Vector3? GazeOn(Transform t, Transform head) => PointOn(t, XrInput.Gaze(head));
 
     /// <summary>What a hand picks on a panel: where its ray points if that is on something to press (`hits`), else
-    /// where the eyes look. So you can point and pinch, or just look at something and pinch with either hand.</summary>
+    /// where the eyes look. So you can point and pinch, or just look at something and pinch with either hand.
+    /// One pointer at a time: while either hand points at something to press, on any panel, the eyes pick nothing.
+    /// Before, the other hand fell back to the eyes and two things were selected at once (headset test 2026-11-13).</summary>
     public static Vector3? Pick(Transform panel, Ray? aim, Transform head, System.Func<Vector3?, bool> hits, out Vector3? byHand)
     {
         byHand = aim != null ? PointOn(panel, aim.Value) : null;
-        return hits(byHand) ? byHand : PointOn(panel, XrInput.Gaze(head));
+        if (hits(byHand)) { handPointedFrame = Time.frameCount; return byHand; }
+        return Time.frameCount - handPointedFrame <= 1 ? (Vector3?)null : PointOn(panel, XrInput.Gaze(head));
     }
+
+    static int handPointedFrame = -10;   // the last frame in which a hand's ray was on something to press
 
     /// <summary>Where a ray meets the plane of `t`, in its local coordinates; null if it does not.</summary>
     public static Vector3? PointOn(Transform t, Ray ray)

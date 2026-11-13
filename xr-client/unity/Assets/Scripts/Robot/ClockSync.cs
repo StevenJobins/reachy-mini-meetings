@@ -1,4 +1,4 @@
-// Clock offset to the laptop over ws://<laptop>:8444 (any message, reply = its Unix time in ms). Best of 12 round
+// Clock offset to the laptop over its gateway's /time (port 8444 there: any message, reply = its Unix time in ms). Best of 12 round
 // trips, like clocksync.js; the laptop side is robot/scripts/fake_camera.py or flash_clock.py. Repeats every 60 s.
 
 using System;
@@ -25,20 +25,22 @@ public class ClockSync
     public long SenderNowMs() => LocalMs() + offsetMs;
 
     /// <summary>Call every frame; syncs when due.</summary>
-    public void Tick(string signallingUrl)
+    public void Tick(Endpoints laptop)
     {
-        if (busy || string.IsNullOrEmpty(signallingUrl) || LocalMs() < nextSyncMs) return;
+        if (busy || laptop == null || LocalMs() < nextSyncMs) return;
         busy = true;
         nextSyncMs = LocalMs() + ResyncMs;
-        _ = Sync(new UriBuilder(signallingUrl) { Port = 8444 }.Uri);
+        _ = Sync(laptop);
     }
 
-    async Task Sync(Uri uri)
+    async Task Sync(Endpoints laptop)
     {
+        var uri = laptop.Clock;
         try
         {
             using var ws = new ClientWebSocket();
             using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+            laptop.Sign(ws);
             await ws.ConnectAsync(uri, cts.Token);
             var buffer = new byte[64];
             double bestRtt = double.MaxValue;

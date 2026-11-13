@@ -112,4 +112,18 @@ public class GestureTests
         Assert.That(body, Is.InRange(20, WantToTalk.BodyDeg));
         Assert.That(w.Active(13.1), Is.False);
     }
+
+    [Test]
+    public void WantToTalkStopsEarly()
+    {
+        var w = new WantToTalk();
+        w.Trigger(10);
+        w.Stop(11);
+        Assert.That(w.Active(11 + WantToTalk.FadeS / 2), Is.True, "swinging out");
+        Assert.That(w.Active(11 + WantToTalk.FadeS + 0.01), Is.False);
+        w.Step(11 + WantToTalk.FadeS + 0.01, out var r, out _, out var b);
+        Assert.That(new[] { r, b }, Is.EqualTo(new[] { 0.0, 0 }));
+        w.Stop(20);
+        Assert.That(w.Active(20), Is.False, "stopping while idle starts nothing");
+    }
 }

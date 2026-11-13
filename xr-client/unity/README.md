@@ -55,14 +55,48 @@ The app appears in the launcher as *Reachy Meetings*. You should see a dark-blue
 
 ## Robot video (Phase 1)
 
-The app connects straight to the daemon's WebRTC signalling on the robot laptop (`ws://<laptop-ip>:8443`, GStreamer `webrtcsink`, the same as `../web/index.html`), not through HF sign-in and Pollen central. Headset and laptop must be on the same Wi-Fi. Tell the app the address once; it is remembered on the headset:
+The app uses the daemon's WebRTC signalling on the robot laptop (GStreamer `webrtcsink`, the same as `../web/index.html`), not HF sign-in and Pollen central. Headset and laptop must be on the same Wi-Fi.
 
-```bash
-$ADB shell am start -n ch.ethz.reachymeetings/com.unity3d.player.UnityPlayerGameActivity -e signalling ws://<laptop-ip>:8443
-```
+**One door on the laptop (since 2026-11-13).** Everything the app needs on the laptop goes through the gateway (`robot/scripts/gateway.py`, port 8790; `./start_meeting.sh` starts it), and only with this headset's token. The app knows one address and puts each part under its own path (`Assets/Scripts/Pose/Endpoints.cs`):
 
-- **Real robot:** the daemon (Reachy Mini Control) must be running with media on. Its signalling server listens on all interfaces, also with the default `--localhost-only`.
-- **Without the robot:** `robot/scripts/fake_camera.py` (see robot/README.md) sends a 1080p60 test pattern with the same signalling and codec, plus a time strip: the app then also shows the video latency.
+| Path | Goes to on the laptop |
+|---|---|
+| `/signalling` | video signalling, 127.0.0.1:8443 |
+| `/daemon/...` | Reachy daemon, 127.0.0.1:8000 (Phase 2) |
+| `/backend` | captions, translation, room sound, 127.0.0.1:8766 |
+| `/time` | clock for the latency tests, 127.0.0.1:8444 |
+
+The video itself (WebRTC, UDP) still goes straight between headset and laptop.
+
+**A new headset pairs itself, with a code (`Pairing.cs`, no cable).** A headset that knows no laptop shows a number pad (after the tutorial on the very first start). Type the six-digit code that `./start_meeting.sh` shows on the laptop: point at a key with either hand, or look at it, and pinch. The headset then
+
+1. asks the Wi-Fi who is a gateway (`LanSearch` in `Pose/PairingCode.cs`: a UDP broadcast `reachy-meetings?` to port 8790, answered with `reachy-meetings 1 <port> <laptop id> <laptop name>`),
+2. sends the code to it (`POST /pair {"code", "name"}`, the one request that needs no token) and gets its token.
+
+Address, token and the laptop's id are remembered on the headset. The code is good for one headset and for 10 minutes, then the laptop shows a new one; after 5 wrong codes there is a new one too and a minute's pause. On the laptop's list the headset is called by its model plus four characters of its own (`SM-I610 a3f2`).
+
+- **The laptop got a new address** (other Wi-Fi, new address from the router): while it does not answer, the headset repeats the search every 6 s and carries on where the same laptop id answers. Nothing to do.
+- **Removed on the laptop** (`gateway.py remove <name>`; `gateway.py list` shows the names; no restart needed): the laptop answers `401`, and the pad comes back and asks for the code again.
+- **Wi-Fi that does not pass broadcasts** (some guest and campus networks): the search finds nothing and the pad says so. Then, or for tests without wearing the headset, over adb: `-e pair <code>` on the `am start` line pairs with the code as if typed, and `python3 robot/scripts/gateway.py add "<name>"` prints a line that gives address and token directly (`-e gateway ws://<laptop-ip>:8790 -e token <token>`). `-e gateway off` makes the headset forget its laptop.
+- **Pairing needs the same Wi-Fi once.** After that the headset also connects from other networks, see below.
+
+**From another network (at home), since 2026-11-13.** Tried once on 2026-11-13 with the headset on a lab router (192.168.50.x) and the laptop on the ETH Wi-Fi (10.5.x.x): the headset found the laptop, control and captions ran through the tunnel (a status request about 70 ms from the laptop's own network), and the picture came in 1 s at 1920x1080, 60 fps, over a relay. Not yet tried from a home network or a phone hotspot. Start the laptop with `./start_meeting.sh --remote` (needs `cloudflared`: `brew install cloudflared`; no account). Nothing to set on the headset:
+
+1. The laptop opens a Cloudflare quick tunnel: a public `https://….trycloudflare.com` address, **new on every start**, that leads to a second door of the gateway on 127.0.0.1:8791. That door is like the first, except that it does not pair.
+2. For every paired headset the laptop posts the address on ntfy.sh, as a notice only that headset can find and check: the topic and a signature are both made from the headset's token (`gateway.py`: `topic()`, `notice()`; app: `Pose/RemoteAddress.cs`, with the same test values on both sides).
+3. A headset that does not find its laptop on the Wi-Fi it is on looks its notice up and connects to the address in it (`Pairing.Refind`). It takes no address that is not signed with its own token and none that is not `wss`, because it sends its token there.
+
+- **Which way a headset takes:** at every start it searches the Wi-Fi first and uses the direct way when the laptop is there. From home the first start takes about 12 s longer (it first has to find out that the laptop's Wi-Fi address is dead); later starts know the public address or look the new one up at once.
+- **What goes through Cloudflare:** robot control, captions, room sound and the video signalling, encrypted to Cloudflare and inside its tunnel to the laptop.
+- **The video** still goes between headset and laptop by WebRTC: directly where the two networks allow it, else over a relay. The relay is not ours: Pollen's daemon holds TURN servers (`Refreshed 6 TURN server(s)` in the Reachy Mini Control log) and offers relay candidates on its side; in the test above that was the way in use (`[video] routes …: srflx/udp>relay/udp succeeded answered IN USE` in `adb logcat -s Unity`, logged once per connection, and every 3 s while there is no picture). The headset itself only has a STUN server.
+- **The laptop's candidates were never taken before 2026-11-13.** `webrtcsink` names the media line of a candidate only by its number, and the Unity peer connection silently refuses a candidate without the line's name (`sdpMid`): `AddIceCandidate` returned false for every one. On one Wi-Fi nobody noticed, because there the laptop reaches the headset by itself; from another network there was no picture at all. `RobotVideo.AddCandidate` now fills the name in from the offer, holds candidates that arrive before the offer is in, and logs one that is not taken.
+- **No guarantees:** quick tunnels and ntfy.sh are free services without an account. A stable address needs an own domain (a named Cloudflare tunnel); only where the address comes from changes then.
+- `python3 robot/scripts/gateway.py remote` says whether the running gateway is open to other networks, and at which address.
+
+A request without a known token gets `401` and reaches nothing. A headset set up before 2026-11-13 (`-e signalling`, `-e secret`) pairs once with the code.
+
+- **Real robot:** the daemon (Reachy Mini Control) must be running with media on. **Still open on the Wi-Fi:** the daemon's signalling server listens on all interfaces by itself (also with `--localhost-only`), so someone on the same Wi-Fi who talks to port 8443 directly can still get the camera picture. Closing that needs a change in the daemon patch.
+- **Without the robot:** `robot/scripts/fake_camera.py` (see robot/README.md) sends a 1080p60 test pattern with the same signalling and codec, plus a time strip: the app then also shows the video latency. Run `python3 robot/scripts/gateway.py` next to it, so the headset reaches it.
 
 **Audio is declined by default.** libwebrtc delays video to stay in sync with the audio track, and this app does not play it: 141 ms without, 302 ms with (`-e audio on` on the `am start` line, for A/B tests). Sending the mic to the robot in Phase 4 will need that transceiver as send-only instead of inactive.
 
@@ -74,15 +108,9 @@ Status lines below the frame rate: connection state; incoming video (size, fps, 
 
 ## Controlling Reachy (Phase 2)
 
-The app talks to the daemon on the laptop directly (port 8000, same host as the signalling URL), so `reachy-meetings` does not need to run: targets over `/api/move/ws/set_target`, measured pose from `/api/state/ws/full`, wake over HTTP.
+The app talks to the daemon on the laptop through the gateway (`/daemon/...`, see *Robot video*), so `reachy-meetings` does not need to run: targets over `/api/move/ws/set_target`, measured pose from `/api/state/ws/full`, wake over HTTP.
 
-**Daemon 1.14 and later (desktop app update, 2026-11-06): port 8000 is localhost only.** On the Lite the daemon now binds its API to 127.0.0.1, so the app gets video (8443 still listens on all interfaces) but Reachy never wakes or follows, and the headset finds 8000 closed. Keep Reachy Mini Control open and run the relay next to it, in its own terminal:
-
-```bash
-python3 robot/scripts/daemon_lan_relay.py
-```
-
-It forwards the Mac's Wi-Fi address (en0), port 8000, to the daemon; the app reconnects by itself within a few seconds. The API has no password, so while the relay runs anyone on the Wi-Fi can move Reachy; Ctrl+C closes it. Without Reachy Mini Control, `--fastapi-host 0.0.0.0` on the daemon does the same, but reopening the app shuts that daemon down and starts its own on localhost.
+**The daemon's API has no password of its own**, and since daemon 1.14 (desktop app update, 2026-11-06) it listens on 127.0.0.1 only on the Lite. The gateway is what lets a headset reach it, and only with a token: nobody else on the Wi-Fi can move Reachy. (Until 2026-11-13 a relay, `daemon_lan_relay.py`, opened port 8000 to the whole Wi-Fi; it is gone.) Keep Reachy Mini Control open; `./start_meeting.sh` starts the gateway next to it.
 
 - **Opening the app** starts everything: as soon as video and robot are there, Reachy wakes if needed, your current head direction becomes straight ahead, and Reachy follows you.
 - **Hold the right pinch** (or trigger) to talk, like a walkie-talkie: the mic is on only while you hold, so it cannot stay on by accident.
@@ -119,17 +147,13 @@ The time the window looks back is the jitter buffer + decode from the WebRTC sta
 - **Your voice to Reachy:** the headset mic goes over WebRTC to the robot's speaker (`MicSender.cs`) while you hold the right pinch. The audio transceiver is send-only, so the video delay stays low (see *Audio is declined by default*). The first start asks for microphone access in the headset.
 - **Room sound:** Reachy's mic array reaches the laptop over USB, and the backend streams it to the app (`BackendClient.cs`, `RoomSound.cs`, `RoomAudio.cs`: jitter buffer and speech filter, port of `roomaudio.js`).
 
-Start the backend in **Terminal.app** the first time, so macOS can ask for microphone and camera access:
+Start it in **Terminal.app** the first time, so macOS can ask for microphone and camera access:
 
 ```bash
-backend/scripts/start_for_headset.sh
+./start_meeting.sh
 ```
 
-It listens on the Wi-Fi with a secret (`~/.config/reachy-meetings/lan_secret`), so others on the network cannot listen in. Tell the app once, with the headset on:
-
-```bash
-$ADB shell am start -n ch.ethz.reachymeetings/com.unity3d.player.UnityPlayerGameActivity -e secret $(cat ~/.config/reachy-meetings/lan_secret)
-```
+The backend listens on 127.0.0.1 only; the headset reaches it through the gateway (`/backend`) with its token, so others on the network cannot listen in. Nothing more to tell the app.
 
 **If the room sound is silent:** check `curl localhost:8000/api/audio/config/parameter/AUDIO_MGR_MIC_GAIN`. If it fails (`status 68`, `exceeds 100 times`), the robot's mic chip is stuck and sends digital silence: put Reachy to sleep and power-cycle it, then restart the backend. Seen on 2026-10-30 and again on 2026-11-06 (only "You" subtitles, no room captions; `/api/state/doa` then read exactly 50° all the time), cause unknown.
 
@@ -161,7 +185,7 @@ Speech bubbles above the speaker's head came first: picking the face from mouth 
 | **Smile** | the antennas lift a little while you smile (face tracking, `FaceInput.cs`; asks for the face tracking permission) |
 | **Menu tile *Reachy*** | *AWAKE* → pinch: Reachy lies down and its motors go off (*ASLEEP*); pinch again: it wakes up as at the start. No picture during both motions. For the remote user, who has nobody at the robot |
 | **Pinch left and hold (0.7 s)** | Your current view direction becomes "straight ahead"; skips the room scan while it runs |
-| **Point at a menu tile with either hand + pinch with that hand** | The menu column at the lower left of your view, always visible, turning with your head: *Translate me* on/off, *Language* (opens a list: Deutsch, English, Français, Italiano, Español), *Help* (the tour again). A dot shows where the hand points and its ring closes as you pinch, like in the headset's own menus; the tile pointed at gets a yellow frame |
+| **Point at a menu tile with either hand + pinch with that hand** | The menu column at the lower left of your view, always visible, turning with your head: *Translate me* on/off, *Language* (opens a list: Deutsch, English, Français, Italiano, Español), *Help* (the tour again). A dot shows where the hand points and its ring closes as you pinch, like in the headset's own menus; the tile pointed at gets a little lighter |
 | **Look to your right** | The meeting notes: summary, action items (who, what, by when), next steps |
 | **Point at the bar under the notes, pinch (either hand), hold, move the hand** | Carry the notes like a window; they stay where you let go. Only the hand moves them, not the head |
 | **Point at *New meeting* on the notes, pinch twice** | Clear the notes for the next meeting (also happens by itself after 20 min without speech) |

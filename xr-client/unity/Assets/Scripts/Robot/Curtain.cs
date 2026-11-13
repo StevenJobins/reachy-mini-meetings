@@ -18,6 +18,7 @@ public class Curtain : MonoBehaviour
 
     public RobotControl control;
     public Tutorial tutorial;
+    public Pairing pairing;
     public RoomSound room;
     public QuickMenu menu;
     public NotesPanel notes;
@@ -126,9 +127,13 @@ public class Curtain : MonoBehaviour
     void LateUpdate()
     {
         bool tour = tutorial != null && tutorial.Open;
+        // The pairing pad (no laptop known yet) has the stage to itself: nothing behind it, and no card of ours.
+        // The wait for a robot that never comes starts when it closes.
+        bool pad = pairing != null && pairing.Open;
+        if (pad) startedAt = Time.unscaledTime;
         if (control.IsFollowing) { if (followingSince < 0) followingSince = Time.unscaledTime; }
         else followingSince = -1f;
-        if (!lifted && !tour)
+        if (!lifted && !tour && !pad)
         {
             bool scanOver = panorama.ScanStarted && !panorama.Scanning;
             bool noRobot = !control.IsFollowing && !control.Waking && Time.unscaledTime - startedAt > NoRobotS;
@@ -140,7 +145,7 @@ public class Curtain : MonoBehaviour
             }
         }
         bool asleep = control.Asleep && !control.GoingToSleep && !tour;
-        bool raw = tour || !lifted || panorama.Scanning || control.Waking || control.Asleep;   // also the wake-up and lie-down from the menu
+        bool raw = tour || pad || !lifted || panorama.Scanning || control.Waking || control.Asleep;   // also the wake-up and lie-down from the menu
         if (raw) rawAt = Time.unscaledTime;
         bool hide = raw || Time.unscaledTime - rawAt < SettleS;
         if (hide != hidden)
@@ -179,8 +184,8 @@ public class Curtain : MonoBehaviour
         if (eye.backgroundColor != Calm) background = eye.backgroundColor;
         eye.backgroundColor = Calm;
 
-        card.gameObject.SetActive(!tour);
-        if (tour) { onWake[0] = onWake[1] = false; return; }
+        card.gameObject.SetActive(!tour && !pad);
+        if (tour || pad) { onWake[0] = onWake[1] = false; return; }
         string dots = new string('.', 1 + (int)(Time.unscaledTime * 1.5f) % 3).PadRight(3, ' ');
         string say = control.GoingToSleep ? (Ui.German ? "Reachy legt sich schlafen" : "Reachy is going to sleep")
             : (Ui.German ? "Reachy macht sich bereit" : "Reachy is getting ready");
@@ -196,7 +201,7 @@ public class Curtain : MonoBehaviour
         {
             bool right = hand == 1;
             var aim = XrInput.Aim(right, head);
-            var p = Ui.Pick(card, aim, head, q => Ui.Inside(q, WakeAt, WakeW + 0.06f, WakeH + 0.06f), out var byHand);
+            var p = Ui.Pick(card, aim, head, q => button && Ui.Inside(q, WakeAt, WakeW + 0.06f, WakeH + 0.06f), out var byHand);
             onWake[hand] = button && Ui.Inside(p, WakeAt, WakeW + 0.06f, WakeH + 0.06f);
             if (button && aim != null && Ui.Inside(byHand, new Vector3(0, -0.05f, 0), 1.2f, 0.9f))
                 cursors[hand].Show(byHand.Value, right ? control.RightLevel : control.LeftLevel);
@@ -214,10 +219,17 @@ public class Curtain : MonoBehaviour
     string Problem()
     {
         bool de = Ui.German;
-        if (string.IsNullOrEmpty(control.video.SignallingUrl))
-            return de ? "Diese Brille kennt den Laptop bei Reachy noch nicht.\nBitte einmal am Laptop einrichten."
-                      : "This headset does not know the laptop next to Reachy yet.\nPlease set it up once at the laptop.";
+        if (pairing != null && pairing.Open) return null;   // the pad says it itself
+        if (control.video.Laptop == null)
+            return de ? "Diese Brille kennt den Laptop bei Reachy noch nicht."
+                      : "This headset does not know the laptop next to Reachy yet.";
         if (control.Restarting) return de ? "Reachy startet neu …" : "Reachy is restarting …";
+        if (control.DaemonState == "unreachable" && control.LaptopAnswer == 401)
+            return de ? "Der Laptop bei Reachy kennt diese Brille nicht (mehr)."
+                      : "The laptop next to Reachy does not know this headset (any more).";
+        if (control.DaemonState == "unreachable" && control.LaptopAnswer == 502)
+            return de ? "Der Laptop ist erreichbar, aber Reachy Mini Control läuft dort nicht."
+                      : "The laptop is reachable, but Reachy Mini Control is not running on it.";
         if (control.DaemonState == "unreachable")
             return de ? "Keine Verbindung zum Laptop bei Reachy.\nLäuft dort das Meeting-Programm?\nSind beide im gleichen WLAN?"
                       : "No connection to the laptop next to Reachy.\nIs the meeting program running there?\nAre both on the same Wi-Fi?";

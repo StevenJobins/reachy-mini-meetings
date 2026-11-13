@@ -284,6 +284,19 @@ public static class ProjectConfigure
         curtain.textMaterial = hud.textMaterial;
         curtain.panelMaterial = video.captions.panelMaterial;
 
+        // A headset that knows no laptop yet: the pad for the code the laptop shows
+        var pairingGo = new GameObject("Pairing");
+        pairingGo.transform.SetParent(offset.transform, false);
+        var pairing = pairingGo.AddComponent<Pairing>();
+        pairing.video = video;
+        pairing.control = video.control;
+        pairing.tutorial = tutorial;
+        pairing.head = camGo.transform;
+        pairing.textMaterial = hud.textMaterial;
+        pairing.panelMaterial = video.captions.panelMaterial;
+        video.control.pairing = pairing;
+        curtain.pairing = pairing;
+
         EditorSceneManager.SaveScene(scene, ScenePath);
         EditorBuildSettings.scenes = new[] { new EditorBuildSettingsScene(ScenePath, true) };
     }

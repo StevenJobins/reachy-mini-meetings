@@ -1,4 +1,5 @@
-// Client for GStreamer webrtcsink's signalling server (the daemon's ws://<robot-laptop>:8443), consumer side.
+// Client for GStreamer webrtcsink's signalling server (the daemon's, port 8443 on the robot laptop, reached through
+// the gateway: Endpoints.Signalling), consumer side.
 // Same protocol as xr-client/web/index.html:
 //   -> {type:"list"}                               <- {type:"list", producers:[{id, meta:{name}}]}
 //   -> {type:"startSession", peerId}               <- {type:"sessionStarted", peerId, sessionId}
@@ -54,9 +55,10 @@ public class GstSignalling : IDisposable
     public State Status { get; private set; } = State.Connecting;
     public string LastError { get; private set; }
 
-    public GstSignalling(string url)
+    public GstSignalling(Endpoints laptop)
     {
-        _ = Run(new Uri(url));
+        laptop.Sign(ws);
+        _ = Run(laptop.Signalling);
     }
 
     async Task Run(Uri uri)

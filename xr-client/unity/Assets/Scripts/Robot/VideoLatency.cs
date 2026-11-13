@@ -31,7 +31,7 @@ public class VideoLatency : MonoBehaviour
 
     void Update()
     {
-        clock.Tick(video.SignallingUrl);
+        clock.Tick(video.Laptop);
         var tex = video.VideoTexture;
         if (!clock.Ok || tex == null || pending > 2) return;
 

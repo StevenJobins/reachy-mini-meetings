@@ -1,7 +1,7 @@
 // The app's few settings, as a column of tiles at the lower left, always visible. It stays still in the room
 // (relative to straight ahead, like the notes), not on the video window, which moves whenever Reachy turns. Look at a
 // tile with either hand (a dot shows where it points, its ring closes as you pinch, like the headset's own menus) and
-// pinch with that hand (RobotControl); without hand rays the eyes pick. The tile pointed at gets a yellow frame:
+// pinch with that hand (RobotControl); without hand rays the eyes pick. The tile pointed at gets a little lighter:
 //   Translate me  on / off: your voice goes to the backend, Reachy says it in the room's language (MicSender)
 //   Language      opens a short list next to it: the language the room is translated into (bubbles and notes);
 //                 starts as the headset's system language
@@ -38,7 +38,10 @@ public class QuickMenu : MonoBehaviour
     static readonly string[] IconNames = { "translate", "globe", "hand", "moon", "help" };
     readonly Renderer[] icons = new Renderer[Tiles];
     static readonly Color On = new Color(0.22f, 0.74f, 0.97f, 0.9f);       // #38bdf8
-    static readonly Color Gaze = new Color(0.98f, 0.8f, 0.08f);            // #facc15
+    // What you point at or look at only gets a little lighter, as in the headsets' own menus (a soft highlight, no
+    // colour of its own). A yellow frame, and yellow rows with dark text, jumped around with the eyes and made the
+    // languages hard to read (headset test 2026-11-13).
+    static readonly Color HoverFill = new Color(1, 1, 1, 0.16f), HoverEdge = new Color(1, 1, 1, 0.45f);
 
     public RoomSound room;
     public RobotControl control;
@@ -99,7 +102,8 @@ public class QuickMenu : MonoBehaviour
         {
             tileAt[i] = new Vector3(-w / 2 + Pad + TileW / 2 + i * (TileW + Gap), 0, -0.001f);
             frames[i] = Ui.Quad(transform, $"Frame{i}", panelMaterial, 3031);
-            frames[i].Set(TileW + 2 * Frame, TileH + 2 * Frame, 0.03f, tileAt[i], Gaze);
+            frames[i].Set(TileW + 2 * Frame, TileH + 2 * Frame, 0.03f, tileAt[i], Color.clear);
+            frames[i].Show(false);   // no frame any more: the tile itself gets lighter (Redraw)
             tiles[i] = Ui.Quad(transform, $"Tile{i}", panelMaterial, 3032);
             icons[i] = Ui.Icon(transform, IconNames[i], textMaterial, 0.075f, 3033, Color.white);
             icons[i].transform.localPosition = tileAt[i] + new Vector3(0, 0.032f, -0.002f);
@@ -115,12 +119,15 @@ public class QuickMenu : MonoBehaviour
         listBack = Ui.Quad(transform, "ListBack", panelMaterial, 3034);
         listBack.Set(RowW + 1.2f * Pad, listH, 0.04f, listCentre, Back);
         listBack.Border(Ui.Edge);
+        // drawn after the list's panel (3034) and rows (3035): with the menu's text material (3033) the names lay
+        // under the dark glass and came out grey
+        var listText = Ui.TextMaterial(textMaterial, 3036);
         rowAt = new Vector3[rows.Length];
         for (int i = 0; i < rows.Length; i++)
         {
             rowAt[i] = listCentre + new Vector3(0, listH / 2 - Pad * 0.6f - RowH / 2 - i * RowH, -0.001f);
             rows[i] = Ui.Quad(transform, $"Row{i}", panelMaterial, 3035);
-            rowText[i] = Ui.Text(transform, $"RowText{i}", text, 44, 1f);
+            rowText[i] = Ui.Text(transform, $"RowText{i}", listText, 44, 1f);
             rowText[i].transform.localPosition = rowAt[i] + new Vector3(0, 0, -0.002f);
         }
 
@@ -257,7 +264,8 @@ public class QuickMenu : MonoBehaviour
                 ShowList(!listOpen);
                 break;
             case Item.Talk:
-                control.WantToTalk();
+                if (control.Waving) control.StopWaving();
+                else control.WantToTalk();
                 break;
             case Item.Robot:
                 if (RobotFault) control.RestartDaemon();
@@ -299,6 +307,7 @@ public class QuickMenu : MonoBehaviour
     {
         bool translated = !string.IsNullOrEmpty(m.translation);
         meetingLang = m.target;
+        if (!translated) return;   // Reachy said your words as they are: the "You" subtitle already shows them
         var said = translated ? m.translation : m.text;
         var arrow = translated ? $"{m.lang}→{m.target}" : m.lang;
         me.text = $"<color=#9ca3af>Reachy ({arrow}):</color>\n"
@@ -325,7 +334,7 @@ public class QuickMenu : MonoBehaviour
             ? $" <color={Ui.AccentHex}>{(de ? "an" : "on")}{(meetingLang != null ? " → " + meetingLang.ToUpper() : "")}</color>"
             : $" <color={soft}>{(de ? "aus" : "off")}</color>");
         labels[1].text = (lang >= 0 ? LangNames[lang] : Target.ToUpper()) + $" <color={soft}>{(listOpen ? "‹" : "›")}</color>";
-        labels[2].text = de ? "Wortmeldung" : "Raise hand";
+        labels[2].text = control.Waving ? (de ? "Stopp" : "Stop") : de ? "Wortmeldung" : "Raise hand";
         labels[3].text = control.Restarting ? (de ? "startet neu …" : "restarting …")
             : RobotFault ? $"<color=#ff9500>{(de ? "Fehler: neu starten" : "error: restart")}</color>"
             : control.GoingToSleep || control.Waking ? "Reachy …"
@@ -336,17 +345,22 @@ public class QuickMenu : MonoBehaviour
         for (int i = 0; i < Tiles; i++)
         {
             bool on = i == 0 && Translate || i == 2 && control.Waving;
-            tiles[i].Set(TileW, TileH, 0.04f, tileAt[i], on ? new Color(Ui.Accent.r, Ui.Accent.g, Ui.Accent.b, 0.2f) : Tile);
-            tiles[i].Border(on ? Ui.Accent : new Color(1, 1, 1, 0.12f), 0.003f);
+            bool look = hover[0].Item == (Item)i || hover[1].Item == (Item)i;
+            tiles[i].Set(TileW, TileH, 0.04f, tileAt[i],
+                on ? new Color(Ui.Accent.r, Ui.Accent.g, Ui.Accent.b, look ? 0.32f : 0.2f) : look ? HoverFill : Tile);
+            tiles[i].Border(on ? Ui.Accent : look ? HoverEdge : new Color(1, 1, 1, 0.12f), 0.003f);
             icons[i].sharedMaterial.color = on ? Ui.Accent : Color.white;
-            frames[i].Show(hover[0].Item == (Item)i || hover[1].Item == (Item)i);
         }
         if (!listOpen) return;
         for (int i = 0; i < rows.Length; i++)
         {
             bool current = i == lang, look = hover[0].Row == i || hover[1].Row == i;
-            rows[i].Set(RowW, RowH - 0.01f, 0.02f, rowAt[i], look ? Gaze : current ? On : Tile);
-            rowText[i].text = look ? $"<color=#111111><b>{LangNames[i]}</b></color>" : current ? $"<b>{LangNames[i]}</b>" : LangNames[i];
+            // white text on every row; the current language has the same blue tint and edge as a tile that is on
+            // (white on the full blue could not be read)
+            rows[i].Set(RowW, RowH - 0.01f, 0.02f, rowAt[i],
+                current ? new Color(Ui.Accent.r, Ui.Accent.g, Ui.Accent.b, look ? 0.32f : 0.2f) : look ? HoverFill : Tile);
+            rows[i].Border(current ? Ui.Accent : look ? HoverEdge : Color.clear, 0.003f);
+            rowText[i].text = current ? $"<b>{LangNames[i]}</b>" : LangNames[i];
         }
     }
 }

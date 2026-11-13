@@ -1,4 +1,4 @@
-// Direct line to the Reachy daemon on the robot laptop (port 8000), no helper process on the laptop:
+// Line to the Reachy daemon on the robot laptop (port 8000 there, reached through the gateway: Endpoints):
 //   ws  /api/move/ws/set_target   head + body targets (radians), latest value wins, nothing queues up
 //   ws  /api/state/ws/full        measured pose
 //   http POST for wake-up and sleep (RobotControl)
@@ -33,17 +33,31 @@ public class DaemonClient : IDisposable
 
     const int ReconnectMs = 1000;
 
-    readonly string host;
+    readonly Func<Endpoints> where;   // asked on every (re)connect: the laptop's address or the token may be new
+    Endpoints laptop => where();
     readonly CancellationTokenSource cts = new CancellationTokenSource();
     readonly SemaphoreSlim wake = new SemaphoreSlim(0);
     readonly ConcurrentQueue<State> received = new ConcurrentQueue<State>();
     string pending;
     volatile State state;
+    volatile ClientWebSocket targetSocket, stateSocket;
+
+    /// <summary>The laptop is somewhere else now (or the token is new): drop both lines, they come back there.
+    /// Without this a line to an address that no longer answers can hang for minutes.</summary>
+    public void Restart()
+    {
+        foreach (var ws in new[] { targetSocket, stateSocket })
+        {
+            try { ws?.Abort(); }
+            catch (ObjectDisposedException) { }
+        }
+        if (wake.CurrentCount == 0) wake.Release();   // the send loop may be waiting for a target
+    }
 
     /// <summary>Monotonic clock for pairing poses with video, also usable off the main thread.</summary>
     public static double NowS() => (double)Stopwatch.GetTimestamp() / Stopwatch.Frequency;
 
-    public string HttpBase => $"http://{host}:8000";
+    public string HttpBase => laptop.DaemonHttp;
     public bool TargetConnected { get; private set; }
     /// <summary>Latest measured state (angles in radians), null until the first message.</summary>
     public State Latest => state;
@@ -51,9 +65,9 @@ public class DaemonClient : IDisposable
     /// <summary>Every state as it arrived; the view needs all of them, not just the latest of each rendered frame.</summary>
     public bool TryDequeueState(out State s) => received.TryDequeue(out s);
 
-    public DaemonClient(string host)
+    public DaemonClient(Func<Endpoints> laptop)
     {
-        this.host = host;
+        where = laptop;
         _ = TargetLoop();
         _ = StateLoop();
     }
@@ -72,7 +86,9 @@ public class DaemonClient : IDisposable
             try
             {
                 using var ws = new ClientWebSocket();
-                await ws.ConnectAsync(new Uri($"ws://{host}:8000/api/move/ws/set_target"), cts.Token);
+                targetSocket = ws;
+                laptop.Sign(ws);
+                await ws.ConnectAsync(laptop.DaemonTarget, cts.Token);
                 TargetConnected = true;
                 _ = ReadReplies(ws);
                 while (ws.State == WebSocketState.Open)
@@ -110,14 +126,15 @@ public class DaemonClient : IDisposable
 
     async Task StateLoop()
     {
-        var uri = new Uri($"ws://{host}:8000/api/state/ws/full?frequency=60&with_head_pose=true&with_body_yaw=true&with_antenna_positions=false");
         var buffer = new byte[16 * 1024];
         while (!cts.IsCancellationRequested)
         {
             try
             {
                 using var ws = new ClientWebSocket();
-                await ws.ConnectAsync(uri, cts.Token);
+                stateSocket = ws;
+                laptop.Sign(ws);
+                await ws.ConnectAsync(laptop.DaemonState, cts.Token);
                 var text = new StringBuilder();
                 while (ws.State == WebSocketState.Open)
                 {

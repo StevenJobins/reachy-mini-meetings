@@ -73,7 +73,8 @@ src/reachy_meetings_robot/
     ├── protocol.py      JSON messages (keep in sync with xr-client / backend)
     └── server.py        WebSocket server
 scripts/                 check_connection, demo_gestures, mock_headset, fake_camera (video stand-in), flash_clock (latency),
-                         daemon_lan_relay (daemon API on the Wi-Fi for the headset)
+                         gateway (the one door from the headset to this laptop: daemon, video signalling, backend;
+                         token per headset)
 tests/                   pure-logic tests
 ```
 

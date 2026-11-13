@@ -38,7 +38,7 @@ Out of scope: spatial audio.
 
 ## Getting started
 
-**For a meeting:** on the laptop next to Reachy run `./start_meeting.sh` (starts Reachy Mini Control, the relay for the headset and the caption backend, and shows whether each part is up), then open *Reachy Meetings* in the headset. Waking Reachy, sending it to sleep and restarting it after an error are in the headset's menu (*Reachy* tile).
+**For a meeting:** on the laptop next to Reachy run `./start_meeting.sh` (starts Reachy Mini Control, the caption backend and the gateway through which the headset reaches both, and shows whether each part is up), then open *Reachy Meetings* in the headset. A headset that is new to this laptop asks once for the six-digit code the laptop shows. With `./start_meeting.sh --remote` a paired headset can also join from another network (at home). Waking Reachy, sending it to sleep and restarting it after an error are in the headset's menu (*Reachy* tile).
 
 - Teleop in the headset: open https://stevenjobins.github.io/reachy-mini-meetings/. Details in [xr-client/README.md](xr-client/README.md).
 - Robot side: [robot/README.md](robot/README.md)

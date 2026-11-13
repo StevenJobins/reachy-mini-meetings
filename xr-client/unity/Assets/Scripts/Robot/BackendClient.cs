@@ -1,11 +1,8 @@
-// Connection to the caption backend on the laptop (backend/, ws://<laptop>:8766, protocol in captions.py).
+// Connection to the caption backend on the laptop (backend/, port 8766 there, reached through the gateway:
+// Endpoints.Backend; protocol in captions.py).
 // Binary frames are the room sound; JSON messages wait in a queue for the main thread. Reconnects by itself.
 // Out: JSON, and binary frames = the headset mic while push to talk is held (MicSender), for the "You" subtitles
 // and for Translate me; one queue, so they keep their order.
-//
-// Address and secret are set once and remembered on the headset:
-//   adb shell am start -n ch.ethz.reachymeetings/com.unity3d.player.UnityPlayerGameActivity -e secret <lan-secret>
-// The host defaults to the signalling host, port 8766.
 
 using System;
 using System.Collections.Concurrent;
@@ -17,12 +14,10 @@ using UnityEngine;
 
 public class BackendClient : IDisposable
 {
-    [Serializable] class AuthMsg { public string type = "auth"; public string secret; }
-
     const int ReconnectMs = 2000;
 
-    readonly Uri uri;
-    readonly string secret;
+    readonly Func<Endpoints> where;   // asked on every (re)connect: the laptop's address or the token may be new
+    Endpoints laptop => where();
     readonly CancellationTokenSource cts = new CancellationTokenSource();
     readonly ConcurrentQueue<string> messages = new ConcurrentQueue<string>();
     readonly ConcurrentQueue<object> outgoing = new ConcurrentQueue<object>();   // string = JSON, byte[] = binary
@@ -34,16 +29,24 @@ public class BackendClient : IDisposable
     /// <summary>Counts up on every new connection, so settings can be sent again after a reconnect.</summary>
     public int Connects { get; private set; }
 
-    /// <summary>onConnect: JSON sent after the sign-in on every (re)connect (settings the backend forgets).</summary>
-    public BackendClient(string host, string secret, string onConnect = null)
+    /// <summary>onConnect: JSON sent first on every (re)connect (settings the backend forgets).</summary>
+    public BackendClient(Func<Endpoints> laptop, string onConnect = null)
     {
-        uri = new Uri($"ws://{host}:8766");
-        this.secret = secret;
+        where = laptop;
         this.onConnect = onConnect;
         _ = Loop();
     }
 
     public bool TryGetMessage(out string json) => messages.TryDequeue(out json);
+
+    volatile ClientWebSocket socket;
+
+    /// <summary>The laptop is somewhere else now (or the token is new): drop the line, it comes back there.</summary>
+    public void Restart()
+    {
+        try { socket?.Abort(); }
+        catch (ObjectDisposedException) { }
+    }
 
     /// <summary>JSON to the backend, sent in order.</summary>
     public void Send(string json) => outgoing.Enqueue(json);
@@ -62,9 +65,9 @@ public class BackendClient : IDisposable
             try
             {
                 using var ws = new ClientWebSocket();
-                await ws.ConnectAsync(uri, cts.Token);
-                if (!string.IsNullOrEmpty(secret))
-                    await SendText(ws, JsonUtility.ToJson(new AuthMsg { secret = secret }));
+                socket = ws;
+                laptop.Sign(ws);
+                await ws.ConnectAsync(laptop.Backend, cts.Token);
                 while (outgoing.TryDequeue(out _)) { }   // nothing stale from the last connection
                 if (onConnect != null) await SendText(ws, onConnect);
                 Connected = true;

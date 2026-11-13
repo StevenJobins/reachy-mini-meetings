@@ -26,6 +26,12 @@ public class WantToTalk
         until = t + DurationS;
     }
 
+    /// <summary>Stop early: the body swings out over FadeS.</summary>
+    public void Stop(double t)
+    {
+        if (Active(t)) until = Math.Min(until, t + FadeS);
+    }
+
     public bool Active(double t) => t <= until;
 
     /// <summary>Antennas (right, left) and the body's offset from where it is. Zero when idle.</summary>
