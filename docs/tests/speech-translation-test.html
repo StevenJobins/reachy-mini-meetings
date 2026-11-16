@@ -1,0 +1,592 @@
+<title>Reachy Sprachtest</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  /* Layout: a sticky header (run, role, who is here) and a sticky "now" card above the full protocol, one column. */
+  :root {
+    --bg: #f4f6f8; --surface: #ffffff; --surface2: #eef2f5; --line: #d6dde4; --fg: #14202b; --muted: #5b6b7a;
+    --accent: #0b6e8a; --accent-soft: #dbeff5; --room: #8a4b0b; --room-soft: #fbead6; --head: #4b3a9e; --head-soft: #e7e3fa;
+    --ok: #157347; --ok-soft: #d8f0e2; --part: #9a6700; --part-soft: #fbefcf; --fail: #b42318; --fail-soft: #fbe0dd; --skip: #6b7280; --skip-soft: #eceef1;
+    --sans: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif; --mono: "IBM Plex Mono", ui-monospace, Menlo, monospace;
+  }
+  @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+    --bg: #0e151c; --surface: #16202a; --surface2: #1d2a36; --line: #2b3a48; --fg: #e6edf3; --muted: #93a4b4;
+    --accent: #4fc3dc; --accent-soft: #11313c; --room: #f0a25a; --room-soft: #3a2a17; --head: #b3a6ff; --head-soft: #2a2550;
+    --ok: #4ade80; --ok-soft: #12321f; --part: #fbbf24; --part-soft: #3a2e0d; --fail: #f87171; --fail-soft: #3d1715; --skip: #9ca3af; --skip-soft: #262d35;
+    color-scheme: dark; } }
+  :root[data-theme="dark"] {
+    --bg: #0e151c; --surface: #16202a; --surface2: #1d2a36; --line: #2b3a48; --fg: #e6edf3; --muted: #93a4b4;
+    --accent: #4fc3dc; --accent-soft: #11313c; --room: #f0a25a; --room-soft: #3a2a17; --head: #b3a6ff; --head-soft: #2a2550;
+    --ok: #4ade80; --ok-soft: #12321f; --part: #fbbf24; --part-soft: #3a2e0d; --fail: #f87171; --fail-soft: #3d1715; --skip: #9ca3af; --skip-soft: #262d35;
+    color-scheme: dark; }
+  * { box-sizing: border-box; }
+  body { background: var(--bg); color: var(--fg); font: 15px/1.5 var(--sans); }
+  body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-area-inset-top, 0px); z-index: 10; background: var(--surface); }
+  .wrap { max-width: 980px; margin: 0 auto; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+  button, input, select, textarea { font: inherit; color: inherit; }
+  button { cursor: pointer; }
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  h1 { font-size: 20px; margin: 0; letter-spacing: -.01em; }
+  h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); margin: 28px 0 10px; }
+  h3 { font-size: 17px; margin: 0; text-wrap: balance; }
+  .mono { font-family: var(--mono); }
+  .muted { color: var(--muted); }
+
+  /* header */
+  header { position: sticky; top: env(safe-area-inset-top, 0px); z-index: 5; background: var(--surface); border-bottom: 1px solid var(--line); }
+  header .wrap { padding-block: 10px; display: flex; flex-wrap: wrap; gap: 10px 16px; align-items: center; }
+  .grow { flex: 1 1 180px; min-width: 0; }
+  .seg { display: inline-flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+  .seg button { border: 0; background: transparent; padding: 5px 11px; font-weight: 600; font-size: 13px; }
+  .seg button[aria-pressed="true"] { background: var(--accent); color: var(--surface); }
+  select { background: var(--surface2); border: 1px solid var(--line); border-radius: 8px; padding: 5px 8px; max-width: 100%; }
+  .people { display: flex; flex-wrap: wrap; gap: 6px; }
+  .who { display: inline-flex; align-items: center; gap: 6px; padding: 2px 9px 2px 3px; border-radius: 999px; background: var(--surface2); font-size: 12.5px; white-space: nowrap; }
+  .who img { width: 20px; height: 20px; border-radius: 50%; }
+  .who b { font-family: var(--mono); font-size: 11.5px; }
+  .progress { height: 4px; background: var(--surface2); }
+  .progress div { height: 100%; display: flex; }
+  .progress i { display: block; height: 100%; }
+
+  /* now card */
+  .now { margin-top: 16px; background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 16px; display: grid; gap: 12px; }
+  .now-top { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: baseline; }
+  .now-id { font: 600 28px/1 var(--mono); color: var(--accent); }
+  .now-say { font-size: 22px; line-height: 1.35; font-weight: 500; text-wrap: pretty; }
+  .now .exp { font-size: 14px; }
+  .nav { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  .btn { border: 1px solid var(--line); background: var(--surface2); border-radius: 8px; padding: 7px 12px; font-weight: 600; font-size: 13.5px; }
+  .btn.primary { background: var(--accent); border-color: var(--accent); color: var(--surface); }
+  .btn:disabled { opacity: .5; cursor: default; }
+  .live-note { font-size: 12.5px; }
+
+  /* roles */
+  .role { display: inline-block; font: 600 11.5px/1 var(--mono); padding: 4px 7px; border-radius: 6px; }
+  .role.R, .role.R2 { background: var(--room-soft); color: var(--room); }
+  .role.V { background: var(--head-soft); color: var(--head); }
+
+  /* blocks and items */
+  details.block { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; margin-bottom: 10px; }
+  details.block > summary { list-style: none; cursor: pointer; padding: 12px 14px; display: flex; gap: 10px; align-items: center; }
+  details.block > summary::-webkit-details-marker { display: none; }
+  .bletter { font: 600 15px var(--mono); width: 30px; height: 30px; display: grid; place-items: center; border-radius: 8px; background: var(--surface2); flex: none; }
+  .bcount { margin-left: auto; font: 500 12px var(--mono); color: var(--muted); white-space: nowrap; }
+  .bintro { padding: 0 14px 6px; font-size: 14px; color: var(--muted); max-width: 70ch; }
+  .bintro p { margin: 0 0 6px; }
+  .items { display: grid; gap: 0; border-top: 1px solid var(--line); }
+  .item { display: grid; grid-template-columns: 46px minmax(0, 1fr); gap: 4px 12px; padding: 12px 14px; border-bottom: 1px solid var(--line); }
+  .item:last-child { border-bottom: 0; border-radius: 0 0 12px 12px; }
+  .item.current { background: var(--accent-soft); }
+  .item.mine .iid { color: var(--accent); }
+  .iid { font: 600 15px var(--mono); padding-top: 1px; }
+  .ibody { min-width: 0; display: grid; gap: 6px; }
+  .ihead { display: flex; gap: 8px; align-items: flex-start; flex-wrap: wrap; }
+  .isay { font-size: 15.5px; font-weight: 500; min-width: 0; flex: 1 1 260px; }
+  .iexp { font-size: 13.5px; color: var(--muted); }
+  .iexp b { color: var(--fg); font-weight: 600; }
+  .row { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+  .st { border: 1px solid var(--line); background: var(--surface); border-radius: 999px; padding: 3px 10px; font-size: 12.5px; font-weight: 600; color: var(--muted); }
+  .st[aria-pressed="true"].ok { background: var(--ok-soft); border-color: var(--ok); color: var(--ok); }
+  .st[aria-pressed="true"].part { background: var(--part-soft); border-color: var(--part); color: var(--part); }
+  .st[aria-pressed="true"].fail { background: var(--fail-soft); border-color: var(--fail); color: var(--fail); }
+  .st[aria-pressed="true"].skip { background: var(--skip-soft); border-color: var(--skip); color: var(--skip); }
+  .fields { display: flex; flex-wrap: wrap; gap: 6px; }
+  .fields input { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 5px 8px; font-size: 13.5px; min-width: 0; }
+  .fields .said { flex: 2 1 240px; }
+  .fields .note { flex: 2 1 200px; }
+  .fields .time { width: 92px; font-variant-numeric: tabular-nums; }
+  .meta { font-size: 12px; color: var(--muted); display: inline-flex; align-items: center; gap: 5px; }
+  .meta img { width: 16px; height: 16px; border-radius: 50%; }
+  .here { font: 600 11px var(--mono); color: var(--accent); }
+  .tiny-btn { border: 0; background: transparent; color: var(--accent); font-weight: 600; font-size: 12.5px; padding: 2px 4px; }
+
+  .card { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 14px; }
+  .runmeta { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 8px; }
+  .runmeta label { display: grid; gap: 2px; font-size: 12px; color: var(--muted); }
+  .runmeta input { background: var(--surface2); border: 1px solid var(--line); border-radius: 8px; padding: 6px 8px; font-size: 14px; color: var(--fg); min-width: 0; }
+  .banner { margin-top: 12px; padding: 10px 12px; border-radius: 10px; background: var(--part-soft); color: var(--part); font-size: 13.5px; }
+  .roles-table { display: grid; grid-template-columns: auto 1fr; gap: 6px 12px; font-size: 14px; }
+  textarea.export { width: 100%; min-height: 160px; font: 12px/1.4 var(--mono); background: var(--surface2); border: 1px solid var(--line); border-radius: 8px; padding: 8px; }
+  footer { padding-block: 30px 40px; font-size: 13px; }
+  @media (prefers-reduced-motion: no-preference) { .item, .st { transition: background-color .15s, border-color .15s; } }
+</style>
+
+<header>
+  <div class="wrap">
+    <div class="grow">
+      <h1>Reachy Sprachtest</h1>
+      <div class="muted" style="font-size:12.5px">Sprache und Übersetzung · Raum ↔ Brille</div>
+    </div>
+    <label class="muted" style="font-size:12.5px;display:flex;gap:6px;align-items:center">Lauf
+      <select id="run-select" aria-label="Testlauf"><option>–</option></select>
+    </label>
+    <div>
+      <div class="muted" style="font-size:11px">Ich bin</div>
+      <div class="seg" id="role-seg" role="group" aria-label="Meine Rolle">
+        <button data-role="R" aria-pressed="false">R</button><button data-role="R2" aria-pressed="false">R2</button><button data-role="V" aria-pressed="false">V</button>
+      </div>
+    </div>
+    <div class="people" id="people" aria-label="Gerade auf der Seite"></div>
+  </div>
+  <div class="progress" title="Fortschritt"><div id="progress"></div></div>
+</header>
+
+<main class="wrap">
+  <div id="banner" class="banner" hidden></div>
+
+  <section class="now" id="now" aria-live="polite"></section>
+
+  <h2>Rollen</h2>
+  <div class="card roles-table">
+    <span class="role R">R</span><span>Raum: sitzt 1–1.5 m vor Reachy. Liest in Teil 1 vor, notiert in Teil 2, was aus Reachy kommt.</span>
+    <span class="role R2">R2</span><span>zweite Person im Raum, für Block C und I (ohne sie spricht R auch die R2-Sätze und die Sprecher-Prüfung entfällt).</span>
+    <span class="role V">V</span><span>VR-Brille: meldet in Teil 1, was erscheint, und liest in Teil 2 vor. Sagt pro Satz Text, Übersetzung, Sprecher, Zeit (rechte Pinch-Geste halten, dann hört R es aus Reachy).</span>
+  </div>
+
+  <h2>Angaben zum Lauf</h2>
+  <div class="card runmeta" id="runmeta"></div>
+
+  <div id="blocks"></div>
+
+  <h2>Ergebnis</h2>
+  <div class="card" style="display:grid;gap:10px">
+    <div class="row"><button class="btn" id="copy-md">Als Markdown kopieren</button><span class="muted" id="copy-msg" style="font-size:13px">für docs/measurements/speech-JJJJ-MM-TT.md</span></div>
+    <textarea class="export" id="export" readonly hidden></textarea>
+  </div>
+</main>
+
+<footer class="wrap muted">
+  Genaue Zeiten für Teil 2 im Log des Laptops: <span class="mono">~/Library/Logs/reachy-meetings/backend.log</span>, Zeilen <span class="mono">me timing</span>.
+  Vorlage im Repo: <span class="mono">docs/tests/speech-translation-test.md</span>.
+</footer>
+
+<script>
+/* ---------------- the protocol (content) ---------------- */
+const STATUS = [["ok", "Erfolgreich"], ["part", "Teilweise"], ["fail", "Nicht erfolgreich"], ["skip", "Übersprungen"]];
+const PREP_STATUS = [["ok", "Erledigt"], ["fail", "Problem"]];
+const SHORT = { ok: "✓", part: "~", fail: "✗", skip: "–" };
+
+const BLOCKS = [
+  { id: "0", part: 0, title: "Vorbereitung", kind: "prep",
+    items: [
+      { id: "0.1", who: "R", say: "Laptop-App Reachy Meetings: alle Punkte grün. Kein orangener Hinweis zu „DeepL key“." },
+      { id: "0.2", who: "V", say: "App offen, Video da, Reachy wach." },
+      { id: "0.3", who: "V", say: "Sprach-Kachel auf English, Kachel Translate me aus." },
+    ] },
+  { id: "A", part: 1, title: "Untertitel", sub: "Raum spricht Englisch, V liest Englisch", kind: "say", fields: ["time"],
+    intro: ["Erwartet: Untertitel zuerst kursiv, dann normal. Keine Übersetzung. Label „Speaker A“."],
+    items: [
+      { id: "A1", who: "R", say: "Good morning everyone, can you all hear me clearly?" },
+      { id: "A2", who: "R", say: "The deadline for the final report is the eleventh of January." },
+    ] },
+  { id: "B", part: 1, title: "Übersetzung", sub: "Raum spricht Deutsch, V liest Englisch", kind: "say", fields: ["time"],
+    intro: ["Erwartet: kurz Punkte („…“), dann die englische Übersetzung gross und das deutsche Original klein darunter."],
+    items: [
+      { id: "B1", who: "R", say: "Guten Morgen zusammen, wollen wir mit der Sitzung beginnen?", ref: "Good morning everyone, shall we start the meeting?" },
+      { id: "B2", who: "R", say: "Das Budget für das nächste Quartal beträgt fünfzigtausend Franken.", ref: "The budget for the next quarter is fifty thousand francs." },
+      { id: "B3", who: "R", say: "Kevin zeigt nach der Pause die Demo mit dem Roboter.", ref: "After the break, Kevin will show the demo with the robot." },
+    ] },
+  { id: "C", part: 1, title: "Zwei Sprecher", sub: "R und R2 abwechselnd, Deutsch (nur mit zweiter Person)", kind: "say", fields: ["time"],
+    intro: ["Erwartet: R behält Farbe und Buchstaben, R2 bekommt einen anderen."],
+    items: [
+      { id: "C1", who: "R", say: "Ich übernehme die Messung im Headset." },
+      { id: "C2", who: "R2", say: "Gut, dann schreibe ich das Protokoll." },
+      { id: "C3", who: "R", say: "Perfekt, dann treffen wir uns am Donnerstag um zehn Uhr." },
+    ] },
+  { id: "D", part: 1, title: "Zielsprache wechseln", sub: "V stellt um", kind: "say", fields: ["time"],
+    items: [
+      { id: "D1", who: "V", act: "Sprach-Kachel → Deutsch", expect: "Kachel zeigt „Deutsch“." },
+      { id: "D2", who: "R", say: "We should order two more batteries for the headset.", expect: "Deutsche Übersetzung gross, Englisch klein." },
+      { id: "D3", who: "V", act: "Sprach-Kachel → English zurück" },
+    ] },
+  { id: "F", part: 2, title: "Eigene Stimme", sub: "Translate me aus", kind: "say", fields: [],
+    intro: ["V hält die rechte Pinch-Geste, solange er spricht. Erwartet: R hört die echte Stimme von V aus Reachy; in der Brille steht die Zeile „You“ mit dem Text."],
+    items: [
+      { id: "F1", who: "V", say: "Hallo zusammen, ich bin heute über den Roboter dabei.", expect: "R: gut verständlich?" },
+      { id: "F2", who: "V", act: "mitten im Satz loslassen (nach „Woche“)", say: "Ich bin nächste Woche leider nicht da, weil ich an einer Konferenz bin.", expect: "R: der Rest nach „Woche“ darf nicht kommen." },
+    ] },
+  { id: "G", part: 2, title: "Translate me", sub: "V spricht Englisch, Reachy sagt es auf Deutsch", kind: "say", fields: ["said", "time"],
+    intro: ["V stellt Translate me an und sagt keine Nummern. Reachy spricht die Sprache, die im Raum am meisten gesprochen wurde, nach Teil 1 also Deutsch. R schreibt auf, was Reachy gesagt hat.",
+      "Erwartet: Reachy spricht die Übersetzung (nicht die Stimme von V), unter der Menüzeile steht kurz, was Reachy gesagt hat. Zeit: V misst vom eigenen Satzende bis dieser Text erscheint."],
+    items: [
+      { id: "G0", who: "V", say: "Hello everyone.", ref: "Hallo zusammen.", expect: "V liest danach „→ XX“ auf der Kachel ab (erwartet → DE) und R schreibt es ins Feld." },
+      { id: "G1", who: "V", say: "Could you move the camera a bit to the left?", ref: "Könntet ihr die Kamera etwas nach links bewegen?" },
+      { id: "G2", who: "V", say: "Let's meet at two thirty on the fourteenth of December.", ref: "Treffen wir uns am vierzehnten Dezember um halb drei." },
+    ] },
+  { id: "I", part: 2, title: "Gespräch", sub: "nacheinander, Raum Deutsch, V Englisch mit Translate me", kind: "say", fields: ["said", "time"],
+    intro: ["Translate me bleibt an. Immer erst sprechen, wenn der vorherige Satz fertig ist (Untertitel nicht mehr kursiv bzw. Reachy fertig gesprochen).",
+      "Erwartet: Sätze aus dem Raum erscheinen bei V englisch übersetzt mit dem richtigen Sprecher (R und R2 verschieden, gleich wie in Block C). Sätze von V spricht Reachy auf Deutsch. Bei R2-Zeilen trägt V das Sprecher-Label ins Feld ein."],
+    items: [
+      { id: "I1", who: "R", say: "Kannst du von dort aus das Whiteboard sehen?", ref: "Can you see the whiteboard from there?" },
+      { id: "I2", who: "V", say: "Yes, but the writing is too small for me.", ref: "Ja, aber die Schrift ist zu klein für mich." },
+      { id: "I3", who: "R2", say: "Dann stellen wir Reachy einfach näher hin.", ref: "Then we'll just move Reachy closer." },
+      { id: "I4", who: "V", say: "Thanks, now I can read everything.", ref: "Danke, jetzt kann ich alles lesen." },
+      { id: "I5", who: "R", act: "Über Block G und I prüfen", say: "Gab es einen Untertitel von Reachys eigener Stimme?", expect: "Erfolgreich = nein. Danach Translate me aus.", kind: "check" },
+    ] },
+  { id: "K", part: 2, title: "Notizen", sub: "am Schluss", kind: "edge",
+    items: [
+      { id: "K1", who: "V", act: "Notizen-Karte öffnen", expect: "Zusammenfassung in der eingestellten Sprache. Stimmen die Punkte (Budget, Demo, Donnerstag)?" },
+      { id: "K2", who: "V", act: "„Mail“ auf der Notizen-Karte", expect: "Auf dem Laptop öffnet sich ein Mail-Entwurf mit den Notizen." },
+    ] },
+];
+const PART_TITLES = { 0: "Vorbereitung", 1: "Teil 1 · Raum → Brille", 2: "Teil 2 · Brille → Raum" };
+const PART_RULES = {
+  1: "R sagt zuerst die Nummer („B zwei“), wartet 2 s und liest dann. Danach schweigt R, bis V „weiter“ sagt. V meldet Text, Übersetzung, Sprecher und Zeit (Satzende bis Untertitel nicht mehr kursiv).",
+  2: "V spricht, R notiert, was aus Reachy kommt, und sagt nur „weiter“ (gesprochene Rückmeldungen würden die Sprache von Reachy verstellen).",
+};
+const ITEMS = [];
+for (const b of BLOCKS) for (const it of b.items) ITEMS.push({ ...it, block: b, kind: it.kind || b.kind, fields: it.kind === "prep" ? [] : it.kind === "check" ? [] : (b.fields || []) });
+const BY_ID = Object.fromEntries(ITEMS.map((it) => [it.id, it]));
+const RUN_FIELDS = [["room", "Raum"], ["laptop", "Laptop"], ["app", "App-Version"], ["where", "Wo sitzt V"]];
+
+/* ---------------- state ---------------- */
+let db = null, user = null, room = null, myId = null;
+let runs = [];                 // [{id, data}]
+let runId = null;              // the run shown here
+let live = null;               // {runId, current, by, at}
+let results = {};              // itemId -> data
+let runMeta = {};
+let role = "";
+let focusItem = null;          // item whose fields this viewer edits right now (presence)
+let unsubItems = null, unsubRun = null;
+let canWrite = true;
+let profiles = {};
+try { role = localStorage.getItem("reachy-sprachtest-role") || ""; } catch {}
+
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
+const ago = (iso) => { if (!iso) return ""; const s = Math.max(0, Math.round((Date.now() - Date.parse(iso)) / 1000)); return s < 60 ? `vor ${s} s` : s < 3600 ? `vor ${Math.round(s / 60)} min` : new Date(iso).toLocaleString("de-CH", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }); };
+const currentId = () => (live && live.runId === runId ? live.current : null) || ITEMS[0].id;
+const banner = (text) => { $("banner").hidden = !text; $("banner").textContent = text || ""; };
+
+/* ---------------- writes: one at a time per document ---------------- */
+const chains = {};
+function write(path, fn) {
+  if (!db || !canWrite) return Promise.resolve();
+  const run = () => fn(db.doc(path)).catch((e) => {
+    if (e && e.code === "invalid_argument") { canWrite = false; banner("Du kannst hier nur lesen: Ergebnisse eintragen dürfen Personen mit Bearbeitungsrecht auf dieses Artefakt."); renderAll(); }
+    else if (e && e.code === "quota_exceeded") banner("Der Speicher dieses Artefakts ist voll. Alte Testläufe löschen lassen.");
+    else console.warn(e);
+  });
+  chains[path] = (chains[path] || Promise.resolve()).then(run);
+  return chains[path];
+}
+const itemPath = (id) => `runs/${runId}/items/${id.replace(/[^A-Za-z0-9_.-]/g, "_")}`;
+function saveItem(id, patch) {
+  if (!runId) return;
+  const next = { ...(results[id] || {}), ...patch, by: myId, at: new Date().toISOString() };
+  results[id] = next;
+  renderItem(id); renderProgress(); renderNow();
+  write(itemPath(id), (ref) => ref.set(next));
+}
+const timers = {};
+function saveItemDebounced(id, patch) {
+  results[id] = { ...(results[id] || {}), ...patch };
+  clearTimeout(timers[id]);
+  timers[id] = setTimeout(() => saveItem(id, {}), 700);
+}
+function setCurrent(id) {
+  if (!runId) return;
+  live = { runId, current: id, by: myId, at: new Date().toISOString() };
+  renderAll();
+  write("live/state", (ref) => ref.set(live));
+  scrollToItem(id, false);
+}
+function nextId(id, dir = 1) { const i = ITEMS.findIndex((x) => x.id === id); return ITEMS[Math.min(ITEMS.length - 1, Math.max(0, i + dir))].id; }
+
+async function newRun() {
+  const now = new Date();
+  const id = "run-" + now.toISOString().slice(0, 16).replace(/[-:T]/g, "");
+  const data = { createdAt: now.toISOString(), by: myId, label: now.toLocaleString("de-CH", { weekday: "short", day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" }) };
+  if (!db) { runs = [{ id, data }]; selectRun(id); return; }
+  await write(`runs/${id}`, (ref) => ref.set(data));
+  live = { runId: id, current: ITEMS[0].id, by: myId, at: now.toISOString() };
+  await write("live/state", (ref) => ref.set(live));
+  selectRun(id);
+}
+
+/* ---------------- subscriptions ---------------- */
+function selectRun(id) {
+  if (id === runId && unsubItems) return;
+  runId = id; results = {}; runMeta = {};
+  unsubItems?.(); unsubRun?.(); unsubItems = unsubRun = null;
+  if (db && id) {
+    unsubItems = db.collection(`runs/${id}/items`).onSnapshot((snap) => {
+      const next = {};
+      for (const d of snap.docs) next[d.id] = d.data();
+      // keep what this viewer is typing right now
+      for (const k of Object.keys(timers)) if (results[k] && document.activeElement?.closest?.(`[data-item="${k}"]`)) next[k.replace(/[^A-Za-z0-9_.-]/g, "_")] = results[k];
+      results = {}; for (const it of ITEMS) { const v = next[it.id.replace(/[^A-Za-z0-9_.-]/g, "_")]; if (v) results[it.id] = v; }
+      renderAll(true);
+    }, (e) => banner("Ergebnisse konnten nicht geladen werden (" + e.code + ")."));
+    unsubRun = db.doc(`runs/${id}`).onSnapshot((s) => { runMeta = s.exists ? s.data() : {}; renderRunMeta(); renderRunSelect(); });
+  }
+  renderAll();
+}
+
+/* ---------------- rendering ---------------- */
+function statusButtons(it, small) {
+  const set = it.kind === "prep" ? PREP_STATUS : STATUS;
+  const cur = results[it.id]?.status;
+  return set.map(([k, label]) => `<button class="st ${k}" data-act="status" data-item="${it.id}" data-val="${k}" aria-pressed="${cur === k}" ${canWrite && runId ? "" : "disabled"}>${small ? SHORT[k] + " " : ""}${label}</button>`).join("");
+}
+function fieldsHtml(it) {
+  const r = results[it.id] || {};
+  const dis = canWrite && runId ? "" : "disabled";
+  const f = [];
+  if (it.fields.includes("said")) f.push(`<input class="said" id="said-${it.id}" data-field="said" data-item="${it.id}" placeholder="${it.id.endsWith("0") ? "→ XX und was Reachy sagte" : "Reachy sagte (wörtlich)"}" value="${esc(r.said)}" ${dis}>`);
+  if (it.fields.includes("time")) f.push(`<input class="time" id="time-${it.id}" data-field="time" data-item="${it.id}" inputmode="decimal" placeholder="Zeit s" value="${esc(r.time)}" ${dis}>`);
+  if (it.kind !== "prep" || it.id.startsWith("0.4") === false) f.push(`<input class="note" id="note-${it.id}" data-field="note" data-item="${it.id}" placeholder="Bemerkung" value="${esc(r.note)}" ${dis}>`);
+  return `<div class="fields">${f.join("")}</div>`;
+}
+function textHtml(it) {
+  const parts = [];
+  if (it.act) parts.push(`<div class="iexp"><b>${esc(it.act)}</b></div>`);
+  if (it.say) parts.push(`<div class="isay">„${esc(it.say)}“</div>`);
+  if (!it.say && !it.act) parts.push(`<div class="isay">${esc(it.say)}</div>`);
+  if (it.ref) parts.push(`<div class="iexp">Referenz: ${esc(it.ref)}</div>`);
+  if (it.expect) parts.push(`<div class="iexp">Erwartet: ${esc(it.expect)}</div>`);
+  return parts.join("");
+}
+function rolesHtml(who) { return who.split("+").map((w) => `<span class="role ${w}">${w}</span>`).join(" "); }
+function metaHtml(r) {
+  if (!r || !r.status) return "";
+  const p = r.by && profiles[r.by];
+  return `<span class="meta">${p ? `<img alt="" src="${esc(p.avatarUrl)}">` : ""}${p ? esc(p.name || "Jemand") : ""} ${ago(r.at)}</span>`;
+}
+function peersAt(id) {
+  if (!room) return "";
+  const ps = room.peers().filter((p) => p.presence && p.presence.editing === id && !p.sameTab);
+  return ps.length ? `<span class="here">${ps.map((p) => esc(p.presence.role || "?")).join(", ")} tippt hier</span>` : "";
+}
+function itemHtml(it) {
+  const cur = currentId() === it.id;
+  const mine = role && it.who.split("+").includes(role);
+  return `<div class="item ${cur ? "current" : ""} ${mine ? "mine" : ""}" id="item-${it.id}" data-row="${it.id}">
+    <div class="iid">${it.id}</div>
+    <div class="ibody">
+      <div class="ihead">${rolesHtml(it.who)} <div style="min-width:0;flex:1 1 260px">${textHtml(it)}</div></div>
+      <div class="row">${statusButtons(it)} ${cur ? `<span class="here">● jetzt dran</span>` : `<button class="tiny-btn" data-act="goto" data-item="${it.id}" ${canWrite && runId ? "" : "disabled"}>hier weitermachen</button>`} ${metaHtml(results[it.id])} ${peersAt(it.id)}</div>
+      ${it.kind === "prep" && !it.fields.length ? "" : fieldsHtml(it)}
+    </div></div>`;
+}
+function renderBlocks() {
+  const open = {}; document.querySelectorAll("details.block").forEach((d) => (open[d.dataset.block] = d.open));
+  let html = "", part = -1;
+  for (const b of BLOCKS) {
+    if (b.part !== part) { part = b.part; html += `<h2>${PART_TITLES[part]}</h2>${PART_RULES[part] ? `<p class="muted" style="margin:-4px 0 12px;font-size:14px;max-width:75ch">${PART_RULES[part]}</p>` : ""}`; }
+    const done = b.items.filter((it) => results[it.id]?.status).length;
+    const isOpen = open[b.id] ?? true;
+    html += `<details class="block" data-block="${b.id}" ${isOpen ? "open" : ""}>
+      <summary><span class="bletter">${b.id}</span><span style="min-width:0"><h3>${esc(b.title)}</h3>${b.sub ? `<span class="muted" style="font-size:13px">${esc(b.sub)}</span>` : ""}</span><span class="bcount">${done}/${b.items.length}</span></summary>
+      ${b.intro ? `<div class="bintro">${b.intro.map((p) => `<p>${esc(p)}</p>`).join("")}</div>` : ""}
+      <div class="items">${b.items.map((it) => itemHtml(BY_ID[it.id])).join("")}</div></details>`;
+  }
+  $("blocks").innerHTML = html;
+}
+function renderItem(id) {
+  const el = $("item-" + id); if (!el) return;
+  const active = document.activeElement && el.contains(document.activeElement) ? document.activeElement.id : null;
+  const caret = active ? document.activeElement.selectionStart : null;
+  el.outerHTML = itemHtml(BY_ID[id]);
+  if (active && $(active)) { $(active).focus(); try { $(active).setSelectionRange(caret, caret); } catch {} }
+  const b = BY_ID[id].block, det = document.querySelector(`details.block[data-block="${b.id}"] .bcount`);
+  if (det) det.textContent = `${b.items.filter((it) => results[it.id]?.status).length}/${b.items.length}`;
+}
+function renderNow() {
+  const el = $("now");
+  if (!runId) {
+    el.innerHTML = `<div class="now-top"><span class="now-id">–</span><h3>Noch kein Testlauf</h3></div>
+      <p style="margin:0" class="muted">Starte einen Lauf: Alle, die diese Seite offen haben, sehen danach live, welcher Test dran ist und was abgehakt wurde.</p>
+      <div class="nav"><button class="btn primary" data-act="newrun" ${db && !canWrite ? "disabled" : ""}>Testlauf starten</button></div>`;
+    return;
+  }
+  const it = BY_ID[currentId()];
+  const reader = it.who.split("+");
+  const youRead = role && reader.includes(role);
+  const by = live && live.runId === runId && live.by && profiles[live.by];
+  el.innerHTML = `<div class="now-top"><span class="now-id">${it.id}</span><h3>${esc(it.block.title)}</h3>${rolesHtml(it.who)}
+      ${youRead ? `<span class="here">${it.say && !it.act ? "du liest vor" : "du bist dran"}</span>` : ""}</div>
+    ${it.act ? `<div><b>${esc(it.act)}</b></div>` : ""}
+    ${it.say ? `<div class="now-say">„${esc(it.say)}“</div>` : ""}
+    ${it.ref ? `<div class="exp muted">Referenz: ${esc(it.ref)}</div>` : ""}
+    ${it.expect ? `<div class="exp muted">Erwartet: ${esc(it.expect)}</div>` : ""}
+    ${!it.expect && it.block.intro ? `<div class="exp muted">${esc(it.block.intro[it.block.intro.length - 1])}</div>` : ""}
+    <div class="row">${statusButtons(it, true)}</div>
+    ${it.kind === "prep" && !it.fields.length ? "" : fieldsHtml(it).replace(/id="(said|time|note)-/g, 'id="now-$1-')}
+    <div class="nav">
+      <button class="btn" data-act="prev" ${canWrite ? "" : "disabled"}>← Zurück</button>
+      <button class="btn primary" data-act="next" ${canWrite ? "" : "disabled"}>Weiter →</button>
+      <span class="live-note muted">${by ? `zuletzt weitergeschaltet von ${esc(by.name || "jemandem")} ${ago(live.at)}` : db ? "live für alle auf dieser Seite" : "nur in diesem Fenster (nicht geteilt)"}</span>
+    </div>`;
+}
+function renderProgress() {
+  const n = ITEMS.length, c = { ok: 0, part: 0, fail: 0, skip: 0 };
+  for (const it of ITEMS) { const s = results[it.id]?.status; if (s) c[s]++; }
+  const color = { ok: "var(--ok)", part: "var(--part)", fail: "var(--fail)", skip: "var(--skip)" };
+  $("progress").innerHTML = Object.keys(c).map((k) => `<i style="width:${(c[k] / n) * 100}%;background:${color[k]}"></i>`).join("");
+  $("progress").parentElement.title = `${c.ok} erfolgreich, ${c.part} teilweise, ${c.fail} nicht erfolgreich, ${c.skip} übersprungen, von ${n}`;
+}
+function renderRunSelect() {
+  const sel = $("run-select");
+  const list = runs.length ? runs : [];
+  sel.innerHTML = list.map((r) => `<option value="${esc(r.id)}" ${r.id === runId ? "selected" : ""}>${esc(r.data.label || r.id)}${live && live.runId === r.id ? " · aktiv" : ""}</option>`).join("")
+    + `<option value="__new">+ Neuer Testlauf</option>`;
+  if (!list.length) sel.value = "__new";
+}
+function renderRunMeta() {
+  const el = $("runmeta");
+  const active = document.activeElement && el.contains(document.activeElement) ? document.activeElement.id : null;
+  el.innerHTML = RUN_FIELDS.map(([k, label]) => `<label>${label}<input id="meta-${k}" data-meta="${k}" value="${esc(runMeta[k])}" ${canWrite && runId ? "" : "disabled"}></label>`).join("");
+  if (active && $(active)) $(active).focus();
+}
+function renderPeople() {
+  const el = $("people");
+  if (!room) { el.innerHTML = ""; return; }
+  const peers = room.peers().filter((p) => p.kind === "viewer");
+  el.innerHTML = peers.map((p) => {
+    const id = p.by || p.presence?.id; const prof = id && profiles[id];
+    const r = p.presence?.role ? `<b>${esc(p.presence.role)}</b>` : "";
+    const at = p.presence?.editing ? ` · ${esc(p.presence.editing)}` : "";
+    return `<span class="who">${prof ? `<img alt="" src="${esc(prof.avatarUrl)}">` : ""}${esc(prof?.name || (p.isMe ? "du" : "Jemand"))}${p.sameTab ? " (du)" : ""} ${r}${at}</span>`;
+  }).join("");
+}
+let rendering = false;
+function renderAll(fromSnapshot) {
+  if (rendering) return; rendering = true;
+  try {
+    if (fromSnapshot && document.activeElement?.dataset?.field) {   // don't rebuild under the cursor: update rows one by one
+      for (const it of ITEMS) renderItem(it.id);
+    } else renderBlocks();
+    renderNow(); renderProgress(); renderRunSelect(); renderPeople();
+  } finally { rendering = false; }
+  resolveNames();
+}
+async function resolveNames() {
+  if (!user) return;
+  const ids = new Set();
+  for (const r of Object.values(results)) if (r.by) ids.add(r.by);
+  if (live?.by) ids.add(live.by);
+  if (room) for (const p of room.peers()) { const id = p.by || p.presence?.id; if (id) ids.add(id); }
+  const missing = [...ids].filter((i) => !profiles[i]);
+  if (!missing.length) return;
+  const got = await user.profiles([...ids]);
+  profiles = { ...profiles, ...got };
+  renderAll();
+}
+function scrollToItem(id, smooth = true) {
+  const el = $("item-" + id); if (!el) return;
+  const det = el.closest("details"); if (det && !det.open) det.open = true;
+  const r = el.getBoundingClientRect();
+  if (r.top < 120 || r.bottom > innerHeight) el.scrollIntoView({ block: "center", behavior: smooth && !matchMedia("(prefers-reduced-motion: reduce)").matches ? "smooth" : "auto" });
+}
+
+/* ---------------- events ---------------- */
+document.addEventListener("click", (e) => {
+  const b = e.target.closest("[data-act]"); if (!b) return;
+  const act = b.dataset.act, id = b.dataset.item;
+  if (act === "status") {
+    const cur = results[id]?.status;
+    saveItem(id, { status: cur === b.dataset.val ? null : b.dataset.val });
+    if (id === currentId() && cur !== b.dataset.val) setTimeout(() => { if (currentId() === id) setCurrent(nextId(id)); }, 500);
+  } else if (act === "goto") setCurrent(id);
+  else if (act === "next") setCurrent(nextId(currentId(), 1));
+  else if (act === "prev") setCurrent(nextId(currentId(), -1));
+  else if (act === "newrun") newRun();
+});
+document.addEventListener("input", (e) => {
+  const f = e.target.dataset.field, id = e.target.dataset.item;
+  if (f && id) {
+    saveItemDebounced(id, { [f]: e.target.value });
+    // mirror into the other copy of the same field (row and now card)
+    const twin = [$(`${f}-${id}`), $(`now-${f}-${id}`)].find((x) => x && x !== e.target); if (twin) twin.value = e.target.value;
+  }
+  const m = e.target.dataset.meta;
+  if (m && runId) {
+    runMeta = { ...runMeta, [m]: e.target.value };
+    clearTimeout(timers.__meta);
+    timers.__meta = setTimeout(() => write(`runs/${runId}`, (ref) => ref.set({ ...runMeta })), 700);
+  }
+});
+document.addEventListener("focusin", (e) => {
+  const id = e.target.dataset?.item; if (!id || !e.target.dataset.field) return;
+  focusItem = id; room?.presence({ editing: id }).catch(() => {});
+});
+document.addEventListener("focusout", (e) => {
+  const id = e.target.dataset?.item;
+  if (id && e.target.dataset.field) { clearTimeout(timers[id]); saveItem(id, {}); }
+  setTimeout(() => { if (!document.activeElement?.dataset?.field) { focusItem = null; room?.presence({ editing: null }).catch(() => {}); } }, 50);
+});
+$("run-select").addEventListener("change", (e) => {
+  if (e.target.value === "__new") newRun(); else selectRun(e.target.value);
+});
+$("role-seg").addEventListener("click", (e) => {
+  const b = e.target.closest("button[data-role]"); if (!b) return;
+  role = role === b.dataset.role ? "" : b.dataset.role;
+  try { localStorage.setItem("reachy-sprachtest-role", role); } catch {}
+  syncRole(); room?.presence({ role: role || null }).catch(() => {}); renderAll();
+});
+function syncRole() { document.querySelectorAll("#role-seg button").forEach((x) => x.setAttribute("aria-pressed", String(x.dataset.role === role))); }
+$("copy-md").addEventListener("click", () => {
+  const md = exportMd(); const ta = $("export"); ta.value = md; ta.hidden = false;
+  const ok = () => ($("copy-msg").textContent = "Kopiert. In docs/measurements/speech-JJJJ-MM-TT.md einfügen.");
+  try { navigator.clipboard.writeText(md).then(ok, () => { ta.select(); $("copy-msg").textContent = "Text unten markiert: mit Cmd+C kopieren."; }); }
+  catch { ta.select(); }
+});
+function exportMd() {
+  const cell = (s) => String(s ?? "").replace(/\|/g, "\\|").replace(/\n/g, " ");
+  const label = (s) => (s ? SHORT[s] : "");
+  let md = `# Sprachtest ${runMeta.label || runId || ""}\n\n`;
+  md += RUN_FIELDS.map(([k, l]) => `- ${l}: ${cell(runMeta[k])}`).join("\n") + "\n\n";
+  md += "## Teil 1: Raum → Brille\n\n| Nr | Ergebnis | Zeit (s) | Bemerkung |\n|---|---|---|---|\n";
+  for (const it of ITEMS.filter((x) => x.block.part === 1)) { const r = results[it.id] || {}; md += `| ${it.id} | ${label(r.status)} | ${cell(r.time)} | ${cell(r.note)} |\n`; }
+  md += "\n## Teil 2: Brille → Raum\n\n| Nr | Ergebnis | Reachy sagte | Zeit (s) | Bemerkung |\n|---|---|---|---|---|\n";
+  for (const it of ITEMS.filter((x) => x.block.part === 2)) { const r = results[it.id] || {}; md += `| ${it.id} | ${label(r.status)} | ${cell(r.said)} | ${cell(r.time)} | ${cell(r.note)} |\n`; }
+  md += "\n✓ erfolgreich · ~ teilweise · ✗ nicht erfolgreich · – übersprungen\n";
+  return md;
+}
+setInterval(() => { if (!document.activeElement?.dataset?.field) renderNow(); }, 15000);   // "vor x s" stays fresh
+
+/* ---------------- start: render first, then light up ---------------- */
+syncRole(); renderAll(); renderRunMeta();
+(async () => {
+  const [d, u, r] = await Promise.all([window.claude?.use?.("db") ?? null, window.claude?.use?.("user") ?? null, window.claude?.use?.("room") ?? null]);
+  db = d; user = u; room = r;
+  if (user) {
+    myId = await user.id();
+    const w = await user.can("data.write");
+    if (w === false) { canWrite = false; banner("Du kannst hier nur mitlesen. Eintragen dürfen Personen mit Bearbeitungsrecht auf dieses Artefakt."); }
+  }
+  if (!db) banner("Die Ergebnisse werden nicht geteilt (nicht angemeldet oder hier nicht verfügbar). Du kannst trotzdem abhaken, aber nur in diesem Fenster.");
+  if (room) {
+    room.presence({ role: role || null, id: myId, editing: null }).catch(() => {});
+    room.onPeers(() => { renderPeople(); resolveNames(); for (const it of ITEMS) { const el = $("item-" + it.id); if (el) { const here = el.querySelector(".here"); } } updatePeerMarks(); });
+  }
+  if (!db) { renderAll(); return; }
+  let loaded = false;
+  const t = setTimeout(() => { if (!loaded) banner("Die gespeicherten Läufe sind noch nicht erreichbar. Die Seite versucht es weiter."); }, 10000);
+  db.collection("runs").orderBy("createdAt", "desc").onSnapshot((snap) => {
+    runs = snap.docs.map((x) => ({ id: x.id, data: x.data() }));
+    if (!snap.metadata.fromCache) { loaded = true; clearTimeout(t); if ($("banner").textContent.startsWith("Die gespeicherten")) banner(""); }
+    if (!runId && runs.length && !live) selectRun(runs[0].id);
+    renderRunSelect();
+  }, (e) => { clearTimeout(t); banner("Läufe konnten nicht geladen werden (" + e.code + ")."); });
+  db.doc("live/state").onSnapshot((s) => {
+    const prev = live && live.current;
+    live = s.exists ? s.data() : null;
+    if (live && live.runId && live.runId !== runId) selectRun(live.runId);
+    else renderAll(true);
+    if (live && live.current !== prev && live.runId === runId && !document.activeElement?.dataset?.field) scrollToItem(live.current);
+  }, () => {});
+})();
+function updatePeerMarks() {
+  for (const it of ITEMS) {
+    const row = $("item-" + it.id); if (!row) continue;
+    const old = row.querySelector(".peer-mark"); const html = peersAt(it.id);
+    if (old) old.remove();
+    if (html) row.querySelector(".row").insertAdjacentHTML("beforeend", html.replace('class="here"', 'class="here peer-mark"'));
+  }
+}
+</script>
