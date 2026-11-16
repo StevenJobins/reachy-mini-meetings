@@ -173,24 +173,41 @@ public class PoseTests
     {
         var a = new AudioJitterBuffer();
         var output = new float[320];
-        a.PushPcm16(Pcm(1000, 16384), 2000);   // 62 ms, below the 120 ms target
+        a.PushPcm16(Pcm(2000, 16384), 4000);   // 125 ms, below the 200 ms target
         a.Read(output, 0, 320);
         Assert.That(output[319], Is.EqualTo(0).Within(1e-6), "still filling");
-        a.PushPcm16(Pcm(1000, 16384), 2000);
+        a.PushPcm16(Pcm(2000, 16384), 4000);
         a.Read(output, 0, 320);
         Assert.That(output[0], Is.EqualTo(0.5f).Within(1e-3), "playing");
-        for (int i = 0; i < 6; i++) a.Read(output, 0, 320);
+        for (int i = 0; i < 14; i++) a.Read(output, 0, 320);
         Assert.That(a.Underruns, Is.EqualTo(1));
         Assert.That(output[319], Is.LessThan(0.01f), "faded out");
     }
 
     [Test]
-    public void AudioBufferDropsOldSoundAfterAStall()
+    public void AudioBufferKeepsTheWordsAfterAStallAndCatchesUp()
     {
         var a = new AudioJitterBuffer();
-        a.PushPcm16(Pcm(16000, 1000), 32000);   // 1 s burst
+        var output = new float[640];
+        a.PushPcm16(Pcm(16000, 1000), 32000);   // 1 s in one burst after a hang
+        a.Read(output, 0, 640);
+        Assert.That(a.BufferedMs, Is.GreaterThan(900), "nothing thrown away");
+        for (int i = 0; i < 250; i++)   // 10 s of steady sound, 40 ms at a time
+        {
+            a.PushPcm16(Pcm(640, 1000), 1280);
+            a.Read(output, 0, 640);
+        }
+        Assert.That(a.BufferedMs, Is.LessThan(450), "played faster until the delay was gone");
+        Assert.That(a.Underruns, Is.EqualTo(0));
+    }
+
+    [Test]
+    public void AudioBufferDropsOldSoundAfterALongStall()
+    {
+        var a = new AudioJitterBuffer();
+        a.PushPcm16(Pcm(32000, 1000), 64000);   // 2 s burst
         a.Read(new float[160], 0, 160);
-        Assert.That(a.BufferedMs, Is.LessThan(125));
+        Assert.That(a.BufferedMs, Is.LessThan(205));
     }
 
     [Test]

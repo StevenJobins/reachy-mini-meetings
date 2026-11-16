@@ -7,12 +7,16 @@
 using System;
 
 /// <summary>Ring buffer: starts at a small target, refills after an underrun with a short fade, and drops single samples
-/// when too full, so clock drift and bursts do not add delay.</summary>
+/// when too full, so clock drift and bursts do not add delay.
+/// After a stall on the Wi-Fi the sound that then comes in one burst is kept and played a little faster (4 % above
+/// Slack, 12 % above Fast) until the delay is gone. Until 2026-11-16 everything above 0.45 s was thrown away at once:
+/// words were missing in the headset after every hang. Only above Hard is old sound dropped. The target was 120 ms:
+/// every pause longer than that between two packets was a gap.</summary>
 public class AudioJitterBuffer
 {
     public const int SampleRate = 16000;
-    const int Target = SampleRate * 12 / 100, Slack = SampleRate / 5, Hard = SampleRate * 45 / 100;
-    const int SkipEvery = 25;
+    const int Target = SampleRate / 5, Slack = SampleRate * 3 / 10, Fast = SampleRate / 2, Hard = SampleRate * 3 / 2;
+    const int SkipEvery = 25, SkipEveryFast = 8;
 
     readonly float[] buf = new float[SampleRate * 4];
     readonly object gate = new object();
@@ -53,7 +57,12 @@ public class AudioJitterBuffer
                     output[i] = last;
                     continue;
                 }
-                if (count > Slack && ++skip >= SkipEvery) { skip = 0; read = (read + 1) % buf.Length; count--; }
+                if (count > Slack && ++skip >= (count > Fast ? SkipEveryFast : SkipEvery))
+                {
+                    skip = 0;
+                    read = (read + 1) % buf.Length;
+                    count--;
+                }
                 last = output[i] = buf[read];
                 read = (read + 1) % buf.Length;
                 count--;
