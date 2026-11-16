@@ -8,12 +8,20 @@ laptop-app/build_app.sh --standalone   # dist/standalone/Reachy Meetings.app: fo
 laptop-app/build_app.sh                # dist/Reachy Meetings.app: a thin shell around this checkout, for development
 ```
 
-Open *Reachy Meetings* from there, or drag it to Applications first. The window shows:
+Open *Reachy Meetings* from there, or drag it to Applications first. The window is laid out like a video meeting
+(since 2026-11-16; dark, resizable):
 
+- **the stage**: the person in the headset as a little Reachy with the headset's name, a green ring while they
+  speak. With no headset connected it says so and shows the pairing code large;
+- **the last caption** under it (what was said in the room, or by the headset user, and its translation);
+- **a row of round buttons**: *share this screen* with the headset (`robot/scripts/share_screen.py`; macOS asks once
+  for Screen Recording; needs Reachy Mini Control on this Mac, same Wi-Fi only), *captions* on / off, *other
+  networks* (below), *people* (the side panel), the *translation key*, and in red *end* (quits, stops the parts);
+- **the side panel**, described in the points below:
 - **the parts** with a dot each: robot (Reachy Mini Control is opened if it does not answer), camera stream,
   captions and translation, the door for headsets, and which headsets are connected;
-- **Other networks**: a switch for headsets at home (the same as `--remote`: a Cloudflare quick tunnel; remembered
-  for the next start). Switching restarts the door; headsets reconnect by themselves;
+- **Other networks**: the globe button, for headsets at home (the same as `--remote`: a Cloudflare quick tunnel;
+  remembered for the next start). Switching restarts the door; headsets reconnect by themselves;
 - **Reachy speaks for the headset in**: the language Reachy says the headset user's words in, with *Translate me* on
   in the headset. *Auto* (the default) is the language most spoken in the room; the people in the room know it better,
   so set it here when it is clear. Remembered; changing it restarts the backend (captions pause a few seconds, headsets
@@ -89,10 +97,13 @@ the app's program stay as installed, and the backend's libraries follow when a n
 
 - `reachy_meetings_app/supervisor.py`: starts and watches the gateway (`robot/scripts/gateway.py`) and the backend,
   and gathers the status. No window in it; tests in `tests/` (`pytest -q` with the backend's Python).
-- `reachy_meetings_app/window.py`: the window, native (AppKit through pyobjc, already in the backend's environment).
+- `reachy_meetings_app/window.py`: the window, native (AppKit through pyobjc, already in the backend's environment;
+  Cocoa only, everything drawn in `drawRect`).
+- `reachy_meetings_app/live.py`: listens to the backend's messages on `ws://127.0.0.1:8766` for the caption line and
+  the speaking ring (standard library only; it never sends a setting).
 - The DeepL key: the one set in the app counts. Without one, the supervisor asks a login shell for `DEEPL_AUTH_KEY`
   once (an app opened from the Finder does not read `~/.zshrc`) and hands it to the backend without writing it down.
-- Logs as before: `~/Library/Logs/reachy-meetings/gateway.log` and `backend.log`.
+- Logs as before: `~/Library/Logs/reachy-meetings/gateway.log` and `backend.log`, and `screen.log` while sharing.
 
 To look at the window without starting anything: `python -m reachy_meetings_app --snapshot window.png` (add `--demo`
-for made-up values). The picture has no background; lay it on a dark or light one.
+for a meeting with made-up values, `--demo-waiting` for no headset yet).

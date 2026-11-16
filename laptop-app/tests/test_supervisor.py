@@ -310,3 +310,42 @@ def test_translation_key_set_in_the_app_wins_and_restarts_the_backend(made):
     assert "deepl_key" not in json.loads((tmp / "app.json").read_text())
     assert started[3].kw["env"]["DEEPL_AUTH_KEY"] == "key-from-shell"
     assert "key-from-the-app" not in repr(s.status())
+
+
+def test_sharing_the_screen_starts_and_stops_its_sender(made):
+    s, started, tmp = made
+    python = tmp / "control-python"
+    python.write_text("")
+    s.set_sharing(True, python)
+    assert started[-1].args == [str(python), "-u", str(s.repo / "robot" / "scripts" / "share_screen.py")]
+    assert s.status().sharing
+    s.set_sharing(False)
+    assert started[-1].terminated and not s.status().sharing
+
+
+def test_sharing_without_reachy_mini_control_says_so(made):
+    s, started, tmp = made
+    s.set_sharing(True, tmp / "nothing-here")
+    status = s.status()
+    assert not started and not status.sharing and "Reachy Mini Control" in status.share_note
+
+
+def test_a_sender_that_stopped_is_reported_once_with_its_last_words(made):
+    s, started, tmp = made
+    python = tmp / "control-python"
+    python.write_text("")
+    s.set_sharing(True, python)
+    (s.logs / "screen.log").write_text("no picture of the screen: allow Screen Recording\n")
+    started[-1].code = 1
+    status = s.status()
+    assert not status.sharing and "Screen Recording" in status.share_note
+    assert s.screen is None and s.status().share_note == status.share_note   # still shown, not started again
+
+
+def test_stop_also_ends_a_shared_screen(made):
+    s, started, tmp = made
+    python = tmp / "control-python"
+    python.write_text("")
+    s.set_sharing(True, python)
+    s.stop()
+    assert started[-1].terminated and s.screen is None

@@ -23,6 +23,8 @@ Protocol (server -> headset, one JSON per message; keep in sync with xr-client):
   me       {"text": str, "lang": str, "translation": str | null, "target": str, "t": s}   what the remote
            user said (their headset mic, see below) and what Reachy said for them in the meeting language
            (translation null in transcribe-only mode)
+  me_vad   {"speaking": bool, "t": s}   the remote user starts / stops speaking (their headset mic, neural VAD); for
+           the laptop app, which lights up their tile; headsets ignore it
   vad      {"speaking": bool, "doa_deg": float | null, "azimuth_deg": float | null, "t": s}   instantly from
            the neural VAD (~0.1 s), long before any text: sent when speech starts/ends and every 0.25 s while it
            lasts; directions = the mic over the last second (headset: "someone is speaking over there")
@@ -313,6 +315,9 @@ class CaptionServer:
 
     def send_me(self, me: dict) -> None:
         websockets.broadcast(self.clients, json.dumps({"type": "me", **me}))
+
+    def send_me_vad(self, speaking: bool) -> None:
+        websockets.broadcast(self.clients, json.dumps({"type": "me_vad", "speaking": speaking, "t": round(time.time(), 3)}))
 
     def send_summary(self, notes: dict) -> None:
         self.summary = json.dumps({"type": "summary", **notes})
@@ -681,6 +686,7 @@ class Pipeline:
         sentence (ends in . ! ?): the utterance is cut there and Reachy says it while the user talks on."""
         cfg = self.me_segmenter.cfg
         prepared: dict[int, tuple[int, asyncio.Task, float]] = {}   # seg id -> (samples, task, speech end)
+        speaking = False
         while True:
             timeout = False
             try:
@@ -693,6 +699,9 @@ class Pipeline:
                 segs, silence = ([seg] if seg else []), (1.0 if timeout else 0.0)
             else:
                 segs, silence = self.me_segmenter.push(chunk), cfg.silence_s
+            if self.me_segmenter.active != speaking:
+                speaking = self.me_segmenter.active
+                self.server.send_me_vad(speaking)
             for seg in segs:
                 if seg.early:
                     old = prepared.pop(seg.id, None)

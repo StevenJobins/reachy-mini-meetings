@@ -3,6 +3,7 @@
     Reachy Mini Control   Pollen's app with the daemon; opened if it does not answer, never stopped by us
     gateway               robot/scripts/gateway.py: the door for headsets (pairing code, tokens, other networks)
     backend               captions, translation, faces, room sound (backend/)
+    screen                robot/scripts/share_screen.py, only while the screen is shared (set_sharing)
 
 The app that brings its own Python (libraries.standalone()) first fetches the backend's libraries, once
 (libraries.py); the gateway needs none of them and is up meanwhile, so a headset can already be paired.
@@ -33,7 +34,9 @@ DAEMON_PATCHED_FILE = Path.home() / ("Library/Application Support/com.pollen-rob
 PATCH_MARK = "# >>> reachy-meetings video patch"
 # An app opened from the Finder gets a bare PATH: cloudflared (Homebrew) would not be found
 EXTRA_PATH = "/opt/homebrew/bin:/usr/local/bin"
-CONNECTION = re.compile(r"^(\S+) (.+) (daemon|signalling|backend|time): (connected|closed)$")
+CONNECTION = re.compile(r"^(\S+) (.+) (daemon|signalling|backend|time|screen): (connected|closed)$")
+# share_screen.py needs GStreamer with webrtcsink: the Python of Reachy Mini Control has it (like fake_camera.py)
+SCREEN_PYTHON = Path.home() / "Library/Application Support/com.pollen-robotics.reachy-mini/.venv/bin/python"
 FACES = re.compile(r"([0-9.]+) faces per frame, brightness ([0-9]+)")
 
 
@@ -133,6 +136,8 @@ class Status:
     setup: str = ""              # first start: what is being fetched; "" when there is nothing to set up
     setup_fraction: float = 0.0  # how far that is, 0..1
     meeting_lang: str = "auto"   # what Reachy speaks for the headset user (MEETING_LANGS)
+    sharing: bool = False        # this laptop's screen goes to the headset
+    share_note: str = ""         # why sharing stopped or cannot start
 
 
 class Supervisor:
@@ -142,7 +147,8 @@ class Supervisor:
         self.environ = dict(os.environ if environ is None else environ)
         self.shell_key = shell_key
         self.gateway_module = load_gateway(repo)
-        self.gateway = self.backend = None
+        self.gateway = self.backend = self.screen = None
+        self.share_note = ""
         self.opened_control = False
         self.settings = self._load_settings()
         self.standalone = libraries.standalone() if environ is None else environ.get("REACHY_STANDALONE") == "1"
@@ -298,10 +304,11 @@ class Supervisor:
             proc.kill()
 
     def stop(self) -> None:
-        """Gateway and backend. Reachy Mini Control keeps running: the robot is its business."""
+        """Gateway, backend and a shared screen. Reachy Mini Control keeps running: the robot is its business."""
         self._stop(self.gateway)
         self._stop(self.backend)
-        self.gateway = self.backend = None
+        self._stop(self.screen)
+        self.gateway = self.backend = self.screen = None
 
     # ------------------------------------------------------------ what the window asks for
     def set_remote(self, on: bool) -> None:
@@ -313,6 +320,19 @@ class Supervisor:
         if self.gateway is not None:
             self._stop(self.gateway)
             self.start_gateway()
+
+    def set_sharing(self, on: bool, python: Path = SCREEN_PYTHON) -> None:
+        """This laptop's screen as a second picture in the headset, until switched off or the app quits. macOS asks
+        once whether this app may record the screen."""
+        self._stop(self.screen)
+        self.screen, self.share_note = None, ""
+        if not on:
+            return
+        if not Path(python).exists():
+            self.share_note = "Sharing needs Reachy Mini Control on this Mac (its video parts send the screen)."
+            return
+        script = self.repo / "robot" / "scripts" / "share_screen.py"
+        self.screen = self._start("screen", [str(python), "-u", str(script)], self.repo, self.child_env())
 
     def set_meeting_lang(self, lang: str) -> None:
         """The language Reachy speaks for the headset user. The backend starts again with it: captions pause for a few
@@ -358,7 +378,11 @@ class Supervisor:
             setup=self.setup_text, setup_fraction=self.setup_fraction,
             version=self.version, update=self.update_ready,
             meeting_lang=self.meeting_lang,
+            sharing=self.screen is not None and self.screen.poll() is None, share_note=self.share_note,
         )
+        if self.screen is not None and self.screen.poll() is not None:   # it stopped by itself: say why, once
+            s.share_note = self.share_note = "Sharing stopped: " + (tail(self.logs / "screen.log", 2, 200) or "no reason given")
+            self.screen = None
         if self.setup_error:
             s.problem = self.setup_error
         for name, proc, log in (("gateway", self.gateway, gateway_log), ("backend", self.backend, self.logs / "backend.log")):
