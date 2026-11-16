@@ -35,6 +35,7 @@ class Segment:
     t_end: float
     early: bool = False   # tentative end (see early_s), final is False
     quiet: float = 0.0    # live text only: seconds of silence at the end of `audio`
+    age: float = 0.0      # early and final: how long ago `audio` ended (the silence waited for since)
 
 
 @dataclass
@@ -132,8 +133,8 @@ class Segmenter:
         if c.early_s > 0 and self._quiet == max(1, round(c.early_s / dt)):
             audio = self._audio()
             if audio is not None:
-                return Segment(self._next_id, False, audio, self._t_start,
-                               self._t_start + len(audio) / SAMPLE_RATE, early=True)
+                t_end = self._t_start + len(audio) / SAMPLE_RATE
+                return Segment(self._next_id, False, audio, self._t_start, t_end, early=True, age=self._t - t_end)
         if self._since_partial >= (c.partial_every_s if self._had_partial else c.first_partial_s):
             self._since_partial = 0.0
             self._had_partial = True
@@ -175,4 +176,5 @@ class Segmenter:
         self._next_id += 1
         if audio is None:
             return None
-        return Segment(sid, True, audio, self._t_start, self._t_start + len(audio) / SAMPLE_RATE)
+        t_end = self._t_start + len(audio) / SAMPLE_RATE
+        return Segment(sid, True, audio, self._t_start, t_end, age=self._t - t_end)

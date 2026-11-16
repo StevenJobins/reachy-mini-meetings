@@ -416,6 +416,8 @@ class Pipeline:
 
     def _caption(self, seg: Segment, wall_end: float, text: str, lang: str,
                  translation: str | None = None, speaker: int | None = None) -> dict:
+        """wall_end = wall clock at the end of the segment's audio (the last word, not the silence waited for
+        after it: with that silence in it, the next speaker's mouth counted for this sentence)."""
         t_start = wall_end - (seg.t_end - seg.t_start)
         doa_deg, azimuth_deg = self.doa.direction(t_start, wall_end) if self.doa else (None, None)
         at = None
@@ -506,7 +508,7 @@ class Pipeline:
         cap = self._caption(seg, wall_end, text, lang, translation, speaker)
         self.server.send(cap)
         log.info("[%d %s speaker %s] %s  (%.2f s after the last word%s)", seg.id, lang, speaker or "?", text,
-                 time.time() - wall_end + self.segmenter.cfg.silence_s, ", started early" if reused else "")
+                 time.time() - wall_end, ", started early" if reused else "")
         if self.people and text:
             t1 = cap["t_end"]
             t0 = cap["t_start"]
@@ -786,12 +788,13 @@ class Pipeline:
                 self.server.send_vad(vad_on, *(self.doa.direction(now - 1.0, now) if self.doa else (None, None)))
             for seg in segs:
                 if seg.final:
-                    spawn(self._final(seg, time.time()))
+                    spawn(self._final(seg, time.time() - seg.age))
                 elif seg.early:
                     old = self.early.pop(seg.id, None)
                     if old:
                         old[1].cancel()
-                    self.early[seg.id] = (len(seg.audio), asyncio.create_task(self._early(seg, time.time())))
+                    self.early[seg.id] = (len(seg.audio),
+                                          asyncio.create_task(self._early(seg, time.time() - seg.age)))
                 elif seg.id in self.early and seg.quiet >= EARLY_S:
                     pass   # still silent: the final model is on this text already
                 else:

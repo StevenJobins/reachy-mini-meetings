@@ -32,7 +32,8 @@ REID_DEG = 12.0       # a face within this of a known person's direction is that
 CONFIRM = 8           # sightings before a new direction counts as a person (a turning head smears directions)
 MERGE_DEG = 20.0      # a new direction this close to a known person who is not in the picture is that person: the
                       # head yaw lags while Reachy turns (2026-11-11: one person became two, 8 degrees apart)
-CANDIDATE_S = 2.0     # a direction not confirmed within this long is dropped
+CANDIDATE_S = 4.0     # a direction not confirmed within this long is dropped (2 s until 2026-11-16: a small face
+                      # far away is found about 3 times a second, so it never got its 8 sightings)
 MEMORY_S = 900.0      # forget people not seen for this long
 HISTORY_S = 30.0      # mouth readings kept, to judge a whole utterance
 MIN_SAMPLES = 5       # fewer mouth readings in an utterance say nothing
@@ -124,23 +125,30 @@ class People:
                 p.mouth.append((t, f[key]))
                 while p.mouth[0][0] < t - HISTORY_S:
                     p.mouth.popleft()
-            if p.pid == 0 and p.sightings >= CONFIRM:
-                self.candidates.remove(p)
-                known = min((q for q in self.people if q.seen < t and abs(angle_diff(q.yaw, p.yaw)) < MERGE_DEG),
-                            key=lambda q: abs(angle_diff(q.yaw, p.yaw)), default=None)
-                if known:   # the same person, seen at a slightly different direction
-                    known.yaw, known.pitch, known.top, known.h, known.seen = p.yaw, p.pitch, p.top, p.h, t
-                    known.mouth.extend(p.mouth)
-                    taken.add(id(known))
-                    continue
-                p.pid, self.next_pid = self.next_pid, self.next_pid + 1
-                self.people.append(p)
+        # After all faces of the frame have found their person: a known person seen in this very frame cannot be
+        # the new one (decided inside the loop before, a second face under 20 degrees away could be folded into
+        # the first, depending on the order of the faces).
+        for p in [c for c in self.candidates if c.seen == t and c.sightings >= CONFIRM]:
+            self.candidates.remove(p)
+            known = min((q for q in self.people if q.seen < t and abs(angle_diff(q.yaw, p.yaw)) < MERGE_DEG),
+                        key=lambda q: abs(angle_diff(q.yaw, p.yaw)), default=None)
+            if known:   # the same person, seen at a slightly different direction
+                known.yaw, known.pitch, known.top, known.h, known.seen = p.yaw, p.pitch, p.top, p.h, t
+                known.mouth.extend(p.mouth)
+                continue
+            p.pid, self.next_pid = self.next_pid, self.next_pid + 1
+            self.people.append(p)
 
     def talker(self, t0: float, t1: float) -> Person | None:
         """The person whose mouth clearly moved most during [t0, t1], None if nobody stands out."""
         scores = sorted(((a, p) for p in self.people if (a := p.activity(t0, t1)) is not None),
                         key=lambda s: -s[0])
         if not scores or scores[0][0] < TALK_STD:
+            return None
+        # Someone else was in the picture meanwhile, but too rarely to judge their mouth: it may have been them.
+        # Without this the one face that is seen well won every utterance (headset test 2026-11-16: two faces,
+        # every bubble at the same one).
+        if any(t0 <= p.seen and p.activity(t0, t1) is None for p in self.people):
             return None
         if len(scores) > 1 and scores[0][0] < LEAD * scores[1][0]:
             return None
@@ -163,7 +171,12 @@ class People:
         v = sorted(self.votes.get(voice, {}).items(), key=lambda kv: -kv[1])
         if not v or v[0][1] < MIN_VOTES or (len(v) > 1 and v[0][1] < VOTE_LEAD * v[1][1]):
             return None
-        return next((p for p in self.people if p.pid == v[0][0]), None)
+        pid, n = v[0]
+        # One voice per person: if another voice has more votes for this person, this one has no place yet
+        # (rather the subtitle panel than a bubble at the wrong face).
+        if any(other != voice and w.get(pid, 0) > n for other, w in self.votes.items()):
+            return None
+        return next((p for p in self.people if p.pid == pid), None)
 
     @staticmethod
     def place(p: Person | None, now: float, head_yaw_deg: float | None = None) -> dict | None:

@@ -570,6 +570,66 @@ def test_who_is_seen_talking_now_beats_an_old_tie_and_empty_places_get_no_bubble
     assert People.place(p1, 26, head_yaw_deg=80)["person"] == 1, "not in view: still where they sat"
 
 
+def test_taking_turns_each_gets_their_own_bubble():
+    people = People(_flat)
+    _watch(people, 0, 1, {0.3: _still, 0.7: _still})
+    for i in range(3):                                     # person 1 talks 2 s, person 2 answers at once, 2 s
+        t = 1 + 4 * i
+        _watch(people, t, t + 2, {0.3: _talking, 0.7: _still})
+        assert people.heard(1, t, t + 2).pid == 1
+        _watch(people, t + 2, t + 4, {0.3: _still, 0.7: _talking})
+        assert people.heard(2, t + 2, t + 4).pid == 2
+    assert people.owner(1).pid == 1 and people.owner(2).pid == 2
+    # with the 0.8 s of silence after the sentence in the window (as it was), the answer counts too: nobody
+    assert people.talker(1.8, 3.8) is None
+
+
+def test_a_face_seen_too_rarely_to_judge_does_not_lose_the_vote_by_default():
+    people = People(_flat)
+    _watch(people, 0, 1, {0.3: _still, 0.7: _still})
+    for i in range(40):                                    # person 2 is found only now and then (far away)
+        faces = {0.3: _still} | ({0.7: _talking} if i == 20 else {})
+        people.update([_face(u, m(i) if u == 0.7 else 0.01 + 0.05 * (i % 2)) for u, m in faces.items()], 1 + i / 20, 0)
+    assert people.heard(1, 1, 3) is None                   # person 1's mouth moved a little, person 2 unknown
+    _watch(people, 3, 5, {0.3: _talking})                  # person 2 not in the picture at all: person 1 it is
+    assert people.heard(1, 3, 5).pid == 1
+
+
+def test_one_person_does_not_own_two_voices():
+    people = People(_flat)
+    _watch(people, 0, 1, {0.3: _still, 0.7: _still})
+    for i in range(4):                                     # voice 1 is person 1's
+        _watch(people, 1 + 2 * i, 3 + 2 * i, {0.3: _talking, 0.7: _still})
+        people.heard(1, 1 + 2 * i, 3 + 2 * i)
+    for i in range(2):                                     # two sentences of voice 2 land on person 1 by mistake
+        _watch(people, 9 + 2 * i, 11 + 2 * i, {0.3: _talking, 0.7: _still})
+        people.heard(2, 9 + 2 * i, 11 + 2 * i)
+    assert people.owner(1).pid == 1 and people.owner(2) is None
+    _watch(people, 13, 15, {0.3: _still, 0.7: _still})     # nobody seen talking: voice 2 gets no bubble at person 1
+    assert people.heard(2, 13, 15) is None
+
+
+def test_a_far_face_found_a_few_times_a_second_becomes_a_person():
+    people = People(_flat)
+    for i in range(12):                                    # 3 sightings a second
+        people.update([_face(0.7)], i / 3, 0)
+    assert [round(p.yaw) for p in people.people] == [-18]
+
+
+def test_two_faces_close_together_stay_two_people():
+    people = People(_flat)
+    _watch(people, 0, 1, {0.5: _still})                    # person 1 at 0 degrees
+    _watch(people, 1, 2, {0.34: _still, 0.5: _still})      # a second face 14 degrees to the left, listed first
+    assert {p.pid: round(p.yaw) for p in people.people} == {1: 0, 2: 14}   # person 1 stays who and where they were
+
+
+def test_early_and_final_segments_say_how_long_ago_the_speech_ended():
+    cfg = SegmenterCfg(early_s=0.3)
+    out = feed(Segmenter(cfg), np.concatenate([noise(1.0), tone(2.0), noise(1.2)]), block=640)
+    early, final = next(s for s in out if s.early), next(s for s in out if s.final)
+    assert 0.25 < early.age < 0.4 and 0.75 < final.age < 0.9
+
+
 def test_notes_as_a_mail_draft():
     link = mail_draft({"summary": ["Budget geklärt & Termin offen"], "next_steps": ["Folien bis Donnerstag"], "t": 0,
                        "actions": [{"who": "Anna", "what": "Offerte schicken", "when": "Freitag"}]}, german=True)
