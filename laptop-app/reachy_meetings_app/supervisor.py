@@ -103,6 +103,13 @@ def tail(path: Path, lines: int = 4, width: int = 110) -> str:
         return ""
 
 
+# The language Reachy speaks for the headset user (Translate me): "auto" = the one most spoken in the room. Set here
+# on the laptop, because the people in the room know it; passed to the backend as --meeting-lang. The headset sends
+# "auto", which leaves this choice in place (captions.py meeting_lang()).
+MEETING_LANGS = [("auto", "Auto (most spoken in the room)"), ("de", "Deutsch"), ("en", "English"), ("fr", "Français"),
+                 ("it", "Italiano"), ("es", "Español")]
+
+
 @dataclass
 class Status:
     robot: str = ""              # "running", "starting", another state of the daemon, or "" = no answer
@@ -125,6 +132,7 @@ class Status:
     update: str = ""             # a newer version that was fetched and is used from the next start
     setup: str = ""              # first start: what is being fetched; "" when there is nothing to set up
     setup_fraction: float = 0.0  # how far that is, 0..1
+    meeting_lang: str = "auto"   # what Reachy speaks for the headset user (MEETING_LANGS)
 
 
 class Supervisor:
@@ -157,6 +165,11 @@ class Supervisor:
     @property
     def remote(self) -> bool:
         return bool(self.settings.get("remote"))
+
+    @property
+    def meeting_lang(self) -> str:
+        lang = self.settings.get("meeting_lang", "auto")
+        return lang if lang in dict(MEETING_LANGS) else "auto"
 
     # ------------------------------------------------------------ the parts
     def child_env(self) -> dict:
@@ -191,8 +204,10 @@ class Supervisor:
         # Models already on this laptop: no questions to Hugging Face at the start (an expired login stops them loading)
         if (Path.home() / ".cache/huggingface/hub/models--microsoft--wavlm-base-plus-sv").is_dir():
             env["HF_HUB_OFFLINE"] = "1"
-        self.backend = self._start("backend", [self.python, "-m", "reachy_meetings_backend.captions"],
-                                   self.repo / "backend", env)
+        args = [self.python, "-m", "reachy_meetings_backend.captions"]
+        if self.meeting_lang != "auto":
+            args += ["--meeting-lang", self.meeting_lang]
+        self.backend = self._start("backend", args, self.repo / "backend", env)
 
     def open_control(self) -> None:
         """Reachy Mini Control, if its daemon does not answer. Once: it takes a while to come up."""
@@ -299,6 +314,17 @@ class Supervisor:
             self._stop(self.gateway)
             self.start_gateway()
 
+    def set_meeting_lang(self, lang: str) -> None:
+        """The language Reachy speaks for the headset user. The backend starts again with it: captions pause for a few
+        seconds and the headsets reconnect by themselves."""
+        if lang not in dict(MEETING_LANGS) or lang == self.meeting_lang:
+            return
+        self.settings["meeting_lang"] = lang
+        self._save_settings()
+        if self.backend is not None:
+            self._stop(self.backend)
+            self.start_backend()
+
     def remove_headset(self, name: str) -> None:
         g = self.gateway_module
         headsets = g.load_headsets()
@@ -331,6 +357,7 @@ class Supervisor:
             video_patch=self._patched(),
             setup=self.setup_text, setup_fraction=self.setup_fraction,
             version=self.version, update=self.update_ready,
+            meeting_lang=self.meeting_lang,
         )
         if self.setup_error:
             s.problem = self.setup_error

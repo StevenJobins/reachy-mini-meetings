@@ -12,7 +12,7 @@ from Foundation import NSObject, NSTimer
 from PyObjCTools import AppHelper
 
 from . import updates
-from .supervisor import Status, Supervisor
+from .supervisor import MEETING_LANGS, Status, Supervisor
 
 W = 520
 GREEN, GREY, AMBER = "systemGreenColor", "tertiaryLabelColor", "systemOrangeColor"
@@ -82,6 +82,16 @@ class Controller(NSObject):
         remote_line = stack(False, 10, self.rows["remote"].view, self.remote_switch)
         remote_line.setAlignment_(AppKit.NSLayoutAttributeCenterY)
 
+        # the language Reachy speaks for the headset user: the room knows it best
+        self.lang_menu = AppKit.NSPopUpButton.alloc().initWithFrame_pullsDown_(AppKit.NSMakeRect(0, 0, 240, 26), False)
+        self.lang_menu.addItemsWithTitles_([name for _, name in MEETING_LANGS])
+        self.lang_menu.setTarget_(self)
+        self.lang_menu.setAction_("chooseMeetingLang:")
+        self.lang_hint = label("", 11, color="secondaryLabelColor")
+        lang_line = stack(False, 10, label("Reachy speaks for the headset in"), self.lang_menu)
+        lang_line.setAlignment_(AppKit.NSLayoutAttributeCenterY)
+        self.lang = stack(True, 4, lang_line, self.lang_hint)
+
         self.code_title = label("New headset? Open Reachy Meetings in it and enter this code:", 12, color="secondaryLabelColor")
         self.code = label("", 34, mono=True)
         self.code_hint = label("", 11, color="secondaryLabelColor")
@@ -107,6 +117,8 @@ class Controller(NSObject):
 
         parts = stack(True, 8, *(self.rows[n].view for n in ("robot", "camera", "backend", "door")), remote_line,
                       self.rows["headset"].view)
+        parts.addArrangedSubview_(self.lang)
+        parts.setCustomSpacing_afterView_(14, self.rows["headset"].view)
         code = stack(True, 2, self.code_title, self.code, self.code_hint)
         self.content = stack(True, 18, self.setup, parts, rule(), code, rule(), self.headsets_title, self.headsets,
                              self.notice, self.update)
@@ -162,6 +174,13 @@ class Controller(NSObject):
             rows["remote"].set(AMBER if s.remote_note else GREY, f"Other networks: {s.remote_note or 'opening …'}")
         self.remote_switch.setState_(AppKit.NSControlStateValueOn if s.remote_wanted else AppKit.NSControlStateValueOff)
         self.remote_switch.setEnabled_(not self.busy)
+        codes = [c for c, _ in MEETING_LANGS]
+        self.lang_menu.selectItemAtIndex_(codes.index(s.meeting_lang) if s.meeting_lang in codes else 0)
+        self.lang_hint.setStringValue_(
+            "With Translate me on in the headset, Reachy says the headset user's words in this language."
+            if s.meeting_lang == "auto" else
+            "With Translate me on in the headset, Reachy says the headset user's words in this language, "
+            "whatever the room speaks.")
         rows["headset"].set(GREEN if s.connected else GREY,
                             "Connected: " + ", ".join(s.connected) if s.connected else "No headset connected")
 
@@ -237,6 +256,11 @@ class Controller(NSObject):
     def toggleRemote_(self, sender) -> None:
         on = sender.state() == AppKit.NSControlStateValueOn
         threading.Thread(target=self.supervisor.set_remote, args=(on,), daemon=True).start()
+
+    def chooseMeetingLang_(self, sender) -> None:
+        i = sender.indexOfSelectedItem()
+        if 0 <= i < len(MEETING_LANGS):
+            threading.Thread(target=self.supervisor.set_meeting_lang, args=(MEETING_LANGS[i][0],), daemon=True).start()
 
     def removeHeadset_(self, sender) -> None:
         names = self.shown_headsets or []

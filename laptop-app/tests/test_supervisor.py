@@ -112,6 +112,24 @@ def test_remote_switch_is_remembered_and_restarts_only_the_gateway(made):
     assert "--remote" not in started[3].args
 
 
+def test_meeting_language_is_remembered_and_restarts_only_the_backend(made):
+    s, started, tmp = made
+    s.start()
+    gateway, backend = started
+    assert "--meeting-lang" not in backend.args and s.status().meeting_lang == "auto"
+    s.set_meeting_lang("de")
+    assert json.loads((tmp / "app.json").read_text()) == {"meeting_lang": "de"}
+    assert backend.terminated and not gateway.terminated
+    assert started[2].args[-2:] == ["--meeting-lang", "de"] and s.status().meeting_lang == "de"
+    s.set_meeting_lang("de")                # no change: nothing restarts
+    s.set_meeting_lang("klingon")           # not offered: ignored
+    assert len(started) == 3
+    again = sup.Supervisor(logs=tmp / "logs", settings_path=tmp / "app.json", popen=Proc, environ={})
+    assert again.meeting_lang == "de"
+    s.set_meeting_lang("auto")
+    assert "--meeting-lang" not in started[3].args
+
+
 def test_stop_ends_what_it_started_and_nothing_else(made):
     s, started, _ = made
     s.start()

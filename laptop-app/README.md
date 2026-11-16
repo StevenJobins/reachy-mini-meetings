@@ -14,6 +14,10 @@ Open *Reachy Meetings* from there, or drag it to Applications first. The window 
   captions and translation, the door for headsets, and which headsets are connected;
 - **Other networks**: a switch for headsets at home (the same as `--remote`: a Cloudflare quick tunnel; remembered
   for the next start). Switching restarts the door; headsets reconnect by themselves;
+- **Reachy speaks for the headset in**: the language Reachy says the headset user's words in, with *Translate me* on
+  in the headset. *Auto* (the default) is the language most spoken in the room; the people in the room know it better,
+  so set it here when it is clear. Remembered; changing it restarts the backend (captions pause a few seconds, headsets
+  reconnect by themselves). Passed to the backend as `--meeting-lang`;
 - **the pairing code** for a new headset, large;
 - **the headsets that may connect**, each with *Remove*;
 - in orange, **what needs a look**: a part that stopped (with its last log lines), no DeepL key, or the
