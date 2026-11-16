@@ -7,7 +7,7 @@
 // again when its address changed; on another network (at home) the headset looks up the public address the laptop
 // posted for it (RemoteAddress), and the app carries on there.
 //
-// Keys are pressed like everything else: point with either hand, or look, and pinch (RobotControl.HandlePress).
+// Keys are pressed like everything else: point with either hand and pinch (RobotControl.HandlePress).
 // For tests without wearing the headset:  adb shell am start -n <app> -e pair <code>
 
 using System;

@@ -68,7 +68,7 @@ The app uses the daemon's WebRTC signalling on the robot laptop (GStreamer `webr
 
 The video itself (WebRTC, UDP) still goes straight between headset and laptop.
 
-**A new headset pairs itself, with a code (`Pairing.cs`, no cable).** A headset that knows no laptop shows a number pad (after the tutorial on the very first start). Type the six-digit code that the laptop shows (in the window of its *Reachy Meetings* app, or in `./start_meeting.sh`): point at a key with either hand, or look at it, and pinch. The headset then
+**A new headset pairs itself, with a code (`Pairing.cs`, no cable).** A headset that knows no laptop shows a number pad (after the tutorial on the very first start). Type the six-digit code that the laptop shows (in the window of its *Reachy Meetings* app, or in `./start_meeting.sh`): point at a key with either hand and pinch. The headset then
 
 1. asks the Wi-Fi who is a gateway (`LanSearch` in `Pose/PairingCode.cs`: a UDP broadcast `reachy-meetings?` to port 8790, answered with `reachy-meetings 1 <port> <laptop id> <laptop name>`),
 2. sends the code to it (`POST /pair {"code", "name"}`, the one request that needs no token) and gets its token.
@@ -177,8 +177,10 @@ Speech bubbles above the speaker's head came first: picking the face from mouth 
 | You do | What happens |
 |---|---|
 | Turn your head | Reachy looks along (Phase 2) |
+| Look at the top left | The time of day, small, moving with your head (`ViewOverlay.cs`) |
+| **Pinch** (either hand, anywhere) | A small blue dot pops up between thumb and index finger when the pinch counts, and fades when you let go: the headset saw it (`ViewOverlay.cs`) |
 | **Menu tile *Mic*** (far left) | On at every start: they hear you whenever you speak (the tile lights up while you do); pinch: muted, pinch again: on. Muting only stops your voice: room sound, captions and translation go on. With *Translate me* on, Reachy says your sentences in the room's language, otherwise your own voice comes out of Reachy |
-| **Menu tile *I want to talk*** | Reachy waves its right antenna and swings its body for 3 s, so the room sees you want the word |
+| **Menu tile *I want to talk*** | Reachy slowly waves its right antenna for 3 s (calm, so the motors stay quiet; the body stays still since 2026-11-16), so the room sees you want the word |
 | **Nod or shake your head** | Reachy shows it with its antennas (both for a nod, against each other for a shake) and its head holds still, so your picture does not move (`Gestures.cs`) |
 | **Raise a hand above your head** | the same as the *Raise hand* tile: Reachy waves for 3 s |
 | **Thumbs up / thumbs down** (four fingers curled) | the antennas bounce up / sink for a moment |
@@ -194,16 +196,16 @@ With controllers instead of hands: the trigger does what the pinch does.
 
 **Mute button instead of push to talk (2026-11-16).** Until then you held the right pinch to talk. Now the *Mic* tile mutes and unmutes, and the right pinch only works menu and notes. The mic is still not streamed all the time: `MicSender` sends only while you speak (`Pose/VoiceGate.cs`: opens after 60 ms above −40 dBFS, closes after 0.6 s 6 dB below), with 0.3 s from before the gate opened for the transcription, and `voice_end` when it closes. Reason: the backend mutes the room for as long as your voice comes in, so that your voice from Reachy's speaker is not captioned as a room speaker or played back to you: with *Translate me* off, room captions and the room sound in the headset stop while frames of your voice arrive and 0.8 s after (`captions.py` `ECHO_S`); with it on, while Reachy speaks your translated sentence (+0.4 s). A mic that sent all the time would mute the room for good. **Not yet tried in the headset:** the −40 dBFS is a first guess. `adb logcat -s Unity` shows `[mic] level median … max … dBFS, gate …, speaking …%` every 2 s; `-e micgate -35` on the `am start` line sets another threshold. If the room's voices from the headset's own speakers open the gate, raise it.
 
-### Hands and eyes
+### Hands
 
-`XrInput.cs`. Android XR only gives hand joints and eye gaze after runtime permissions, so the app asks for **microphone, hand tracking (`HAND_TRACKING`) and eye tracking (`EYE_TRACKING_FINE`)** at the first start; the manifest entries come from the OpenXR features *Hand Tracking Subsystem* (XR Hands) and *Eye Gaze Interaction*, switched on in `ProjectConfigure`.
+`XrInput.cs`. Android XR only gives hand joints after a runtime permission, so the app asks for **microphone and hand tracking (`HAND_TRACKING`)** at the first start (plus face tracking for the smile, `FaceInput.cs`); the manifest entry comes from the OpenXR feature *Hand Tracking Subsystem* (XR Hands), switched on in `ProjectConfigure`. **No eye tracking since 2026-11-16:** only a hand picks, so looking at something never chooses it (until then the eyes picked wherever no hand pointed). *Eye Gaze Interaction* is off, and `EYE_TRACKING_FINE` is no longer asked for.
 
-- **Pinch:** the larger of the hand interaction profile's pinch value and the distance of thumb tip and index tip from the hand joints (4.5 cm = 0, 1.2 cm = 1). On the first headset test with the tour, pinches were not recognised; the joints are the second source, and `adb logcat -s Unity` shows `[input]` every 2 s with the joint pinch per hand, whether each hand is tracked, and both permissions.
-- **Gaze:** menu tiles, the notes handle and the tour's "look at" tasks follow the **eyes** when the headset tracks them (slightly smoothed), else the head. The tour card and the notes while dragging follow the head, which is steadier.
+- **Pinch:** the larger of the hand interaction profile's pinch value and the distance of thumb tip and index tip from the hand joints (4.5 cm = 0, 1.2 cm = 1). On the first headset test with the tour, pinches were not recognised; the joints are the second source, and `adb logcat -s Unity` shows `[input]` every 2 s with the joint pinch per hand, whether each hand is tracked, and the permission.
+- **Gaze:** the head direction, for the tour's "look at" tasks (the notes to your right) and for panels that glide after you. It picks nothing.
 
 ### Pointing (menu and notes)
 
-Like the headset's own menus: each hand has its system aim ray (`XrInput.Aim`, the hand interaction profile's `pointer` pose, or the controller's). Where it meets the menu or the notes card, `Ui.Cursor` draws a dot and a ring around it; the ring closes from 6 cm to the dot's size as thumb and index finger come together, and the dot turns yellow once the pinch counts, so you see whether you are about to pick something. A pinch of that hand picks what it points at. Hit areas are a bit larger than the tiles, and a tile stays picked for 0.3 s after the ray leaves it, against jitter. Without an aim ray (no hand tracking) the eyes pick, as before.
+Like the headset's own menus: each hand has its system aim ray (`XrInput.Aim`, the hand interaction profile's `pointer` pose, or the controller's). Where it meets the menu or the notes card, `Ui.Cursor` draws a dot and a ring around it; the ring closes from 6 cm to the dot's size as thumb and index finger come together, and the dot turns yellow once the pinch counts, so you see whether you are about to pick something. A pinch of that hand picks what it points at. Hit areas are a bit larger than the tiles, and a tile stays picked for 0.3 s after the ray leaves it, against jitter. Without an aim ray (no hand tracking, no controller) nothing can be picked.
 
 The menu is no longer on the video window: it moved whenever Reachy turned, so looking at it made it slide away. It now stays still relative to straight ahead like the notes (`QuickMenu.SideDeg` −28°, `DownDeg` 14°, 1.5 m, three quarters size).
 

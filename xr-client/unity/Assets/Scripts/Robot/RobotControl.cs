@@ -62,7 +62,7 @@ public class RobotControl : MonoBehaviour
     public string Summary { get; private set; } = "";
     public bool IsFollowing => mode == Mode.Following;
     public bool Waking => mode == Mode.Waking;
-    /// <summary>"I want to talk": Reachy waves its right antenna and swings its body for 3 s (menu tile).</summary>
+    /// <summary>"I want to talk": Reachy slowly waves its right antenna for 3 s (menu tile).</summary>
     public bool Waving => wantToTalk.Active(Time.unscaledTimeAsDouble);
 
     public void WantToTalk()

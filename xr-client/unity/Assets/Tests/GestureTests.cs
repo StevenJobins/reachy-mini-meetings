@@ -94,22 +94,26 @@ public class GestureTests
     }
 
     [Test]
-    public void WantToTalkWavesTheRightAntennaAndSwingsTheBody()
+    public void WantToTalkWavesTheRightAntennaCalmlyAndKeepsTheBodyStill()
     {
         var w = new WantToTalk();
         w.Step(0, out var r0, out _, out var b0);
         Assert.That(new[] { r0, b0 }, Is.EqualTo(new[] { 0.0, 0 }), "idle");
         w.Trigger(10);
-        double antenna = 0, body = 0;
-        for (double t = 10; t < 13; t += 1 / 72.0)
+        double antenna = 0, body = 0, speed = 0, prev = 0;
+        const double dt = 1 / 72.0;
+        for (double t = 10; t < 13; t += dt)
         {
             w.Step(t, out var r, out var l, out var b);
             Assert.That(l, Is.EqualTo(0));
             antenna = Math.Max(antenna, Math.Abs(r));
             body = Math.Max(body, Math.Abs(b));
+            speed = Math.Max(speed, Math.Abs(r - prev) / dt);
+            prev = r;
         }
-        Assert.That(antenna, Is.InRange(30, 39));
-        Assert.That(body, Is.InRange(20, WantToTalk.BodyDeg));
+        Assert.That(antenna, Is.InRange(30, WantToTalk.AntennaDeg));
+        Assert.That(body, Is.EqualTo(0), "the body stays still");
+        Assert.That(speed, Is.LessThan(400), "slow enough that the motor does not buzz (was ~1000 deg/s)");
         Assert.That(w.Active(13.1), Is.False);
     }
 

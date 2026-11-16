@@ -252,7 +252,7 @@ public class Tutorial : MonoBehaviour
         }
         DrawFingers(c);
 
-        // Skip and Next, picked with either hand's ray (or the gaze) and a pinch of that hand
+        // Skip and Next, picked with either hand's ray and a pinch of that hand
         for (int hand = 0; hand < 2; hand++)
         {
             bool right = hand == 1;

@@ -1,13 +1,13 @@
 // The app's few settings, as a column of tiles at the lower left, always visible. It stays still in the room
-// (relative to straight ahead, like the notes), not on the video window, which moves whenever Reachy turns. Look at a
+// (relative to straight ahead, like the notes), not on the video window, which moves whenever Reachy turns. Point at a
 // tile with either hand (a dot shows where it points, its ring closes as you pinch, like the headset's own menus) and
-// pinch with that hand (RobotControl); without hand rays the eyes pick. The tile pointed at gets a little lighter:
+// pinch with that hand (RobotControl); only hands pick, never the eyes. The tile pointed at gets a little lighter:
 //   Mic           on / muted: on at every start; on, they hear you whenever you speak (MicSender's voice gate),
 //                 and the tile lights up while you do. Replaced push to talk on 2026-11-16
 //   Translate me  on / off: your voice goes to the backend, Reachy says it in the room's language (MicSender)
 //   Language      opens a short list next to it: the language the room is translated into (bubbles and notes);
 //                 starts as the headset's system language
-//   I want to talk  Reachy waves an antenna and swings its body for 3 s, so the room sees you want the word
+//   I want to talk  Reachy slowly waves its right antenna for 3 s, so the room sees you want the word
 //   Reachy        awake / asleep: sends Reachy to sleep (lies down, motors off) and wakes it up again, so the
 //                 remote user needs nobody at the robot for it (RobotControl.Sleep / WakeUp)
 //   Help          the guided tour again (Tutorial)

@@ -1,7 +1,8 @@
 // Expressive feedback for the people in the room. Pure maths, no Unity; angles in degrees, time in seconds.
 //
-// WantToTalk: port of xr-client/pages/gestures.js. The right antenna waves (fast, a bit irregular), the left one stays
-//   still, and the body swings around where it is, faded in and out. The head keeps following the user.
+// WantToTalk: the right antenna waves slowly, faded in and out; the left one and the body stay still. The head keeps
+//   following the user. Until 2026-11-16 (port of xr-client/pages/gestures.js) the antenna waved at 4.5 Hz with
+//   random jitter and the body swung 27° at 1 Hz: the motors buzzed loudly in the room. Now a calm 1.5 Hz sine.
 // NodShake: a nod or a head shake of the user is shown by the antennas, and the head (the camera) holds still
 //   meanwhile. Moving the head with the nod, let alone larger, moved the picture in the headset up and down, which is
 //   very unpleasant (headset test 2026-11-11). While the head swings back and forth, the quick part of pitch (nod) or
@@ -14,9 +15,8 @@ using System.Collections.Generic;
 
 public class WantToTalk
 {
-    public const double DurationS = 3, AntennaDeg = 32, AntennaHz = 4.5, BodyDeg = 27, BodyHz = 1, FadeS = 0.3;
+    public const double DurationS = 3, AntennaDeg = 35, AntennaHz = 1.5, FadeS = 0.3;
 
-    readonly Random random = new Random(1);
     double start = double.NegativeInfinity, until = double.NegativeInfinity;
 
     /// <summary>Start, or extend while already waving (like pressing the button again).</summary>
@@ -34,15 +34,14 @@ public class WantToTalk
 
     public bool Active(double t) => t <= until;
 
-    /// <summary>Antennas (right, left) and the body's offset from where it is. Zero when idle.</summary>
+    /// <summary>Antennas (right, left) and the body's offset from where it is (always 0 now). Zero when idle.</summary>
     public void Step(double t, out double right, out double left, out double bodyOffset)
     {
         right = left = bodyOffset = 0;
         if (!Active(t)) return;
         double s = t - start;
         double env = Math.Max(0, Math.Min(1, Math.Min(s / FadeS, (until - t) / FadeS)));
-        right = AntennaDeg * Math.Sin(2 * Math.PI * AntennaHz * t) + (random.NextDouble() * 12 - 6);
-        bodyOffset = env * BodyDeg * Math.Sin(2 * Math.PI * BodyHz * s);
+        right = env * AntennaDeg * Math.Sin(2 * Math.PI * AntennaHz * s);
     }
 }
 

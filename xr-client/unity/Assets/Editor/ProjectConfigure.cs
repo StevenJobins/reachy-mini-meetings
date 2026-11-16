@@ -114,7 +114,7 @@ public static class ProjectConfigure
         openxr.GetFeature<AndroidXRSupportFeature>().enabled = true;
         openxr.GetFeature<HandInteractionProfile>().enabled = true;       // Galaxy XR hands
         openxr.GetFeature<HandTracking>().enabled = true;                 // hand joints (XR Hands): pinch fallback, adds HAND_TRACKING
-        openxr.GetFeature<EyeGazeInteraction>().enabled = true;           // eye gaze for picking, adds EYE_TRACKING_FINE
+        openxr.GetFeature<EyeGazeInteraction>().enabled = false;          // no eye tracking (2026-11-16): only hands pick
         openxr.GetFeature<ARFaceFeature>().enabled = true;                // the user's own face (smile), adds FACE_TRACKING
         openxr.GetFeature<KHRSimpleControllerProfile>().enabled = true;
         openxr.GetFeature<OculusTouchControllerProfile>().enabled = true; // Galaxy XR controllers report Touch-compatible input
@@ -296,6 +296,13 @@ public static class ProjectConfigure
         pairing.panelMaterial = video.captions.panelMaterial;
         video.control.pairing = pairing;
         curtain.pairing = pairing;
+
+        // The time of day at the top left of the view, and a dot between the fingers when a pinch counts
+        var overlay = new GameObject("View Overlay").AddComponent<ViewOverlay>();
+        overlay.control = video.control;
+        overlay.head = camGo.transform;
+        overlay.textMaterial = hud.textMaterial;
+        overlay.panelMaterial = video.captions.panelMaterial;
 
         EditorSceneManager.SaveScene(scene, ScenePath);
         EditorBuildSettings.scenes = new[] { new EditorBuildSettingsScene(ScenePath, true) };
