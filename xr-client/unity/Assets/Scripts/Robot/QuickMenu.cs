@@ -330,7 +330,7 @@ public class QuickMenu : MonoBehaviour
         int lang = System.Array.IndexOf(Langs, Target);
         // one line under each icon; the value arrays stay empty (the look of 2026-11-11: icon + line, glass, fine edge)
         string soft = Ui.SoftHex;
-        labels[0].text = (de ? "Übersetzen" : "Translate") + (Translate
+        labels[0].text = "Translate me" + (Translate   // the tutorial's name for it, in both languages
             ? $" <color={Ui.AccentHex}>{(de ? "an" : "on")}{(meetingLang != null ? " → " + meetingLang.ToUpper() : "")}</color>"
             : $" <color={soft}>{(de ? "aus" : "off")}</color>");
         labels[1].text = (lang >= 0 ? LangNames[lang] : Target.ToUpper()) + $" <color={soft}>{(listOpen ? "‹" : "›")}</color>";
