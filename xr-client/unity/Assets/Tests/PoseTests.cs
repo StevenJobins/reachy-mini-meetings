@@ -246,6 +246,25 @@ public class PoseTests
     }
 
     [Test]
+    public void VoiceGateOpensOnSpeechNotOnAClickAndHoldsThroughShortPauses()
+    {
+        const double block = 0.014;   // one frame at 72 fps
+        double voice = Math.Pow(10, -25 / 20.0), quiet = Math.Pow(10, -60 / 20.0);
+        var g = new VoiceGate();
+        Assert.That(g.Step(voice, block), Is.False, "one loud block (a click) does not open it");
+        g.Step(quiet, block);
+        Assert.That(g.Step(voice, block), Is.False, "the click before does not count towards the next");
+        for (int i = 0; i < 5; i++) g.Step(voice, block);
+        Assert.That(g.Open, Is.True, "speech for ~80 ms opens it");
+        for (int i = 0; i < 30; i++) g.Step(quiet, block);   // 0.42 s between words
+        Assert.That(g.Open, Is.True, "a pause between words keeps it open");
+        g.Step(voice, block);
+        for (int i = 0; i < 50; i++) g.Step(quiet, block);   // 0.7 s
+        Assert.That(g.Open, Is.False, "closes after the sentence");
+        Assert.That(new VoiceGate().Step(Math.Pow(10, -45 / 20.0), 1.0), Is.False, "a quiet room stays out");
+    }
+
+    [Test]
     public void SubtitleLinesUpdateByIdAndKeepTheNewestThree()
     {
         var s = new Subtitles();

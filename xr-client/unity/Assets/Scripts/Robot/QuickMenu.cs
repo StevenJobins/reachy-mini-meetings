@@ -2,6 +2,8 @@
 // (relative to straight ahead, like the notes), not on the video window, which moves whenever Reachy turns. Look at a
 // tile with either hand (a dot shows where it points, its ring closes as you pinch, like the headset's own menus) and
 // pinch with that hand (RobotControl); without hand rays the eyes pick. The tile pointed at gets a little lighter:
+//   Mic           on / muted: on at every start; on, they hear you whenever you speak (MicSender's voice gate),
+//                 and the tile lights up while you do. Replaced push to talk on 2026-11-16
 //   Translate me  on / off: your voice goes to the backend, Reachy says it in the room's language (MicSender)
 //   Language      opens a short list next to it: the language the room is translated into (bubbles and notes);
 //                 starts as the headset's system language
@@ -35,7 +37,7 @@ public class QuickMenu : MonoBehaviour
     const int MeChars = 30, MeLines = 4;
     static readonly Color Back = Ui.Glass;
     static readonly Color Tile = new Color(1, 1, 1, 0.06f);
-    static readonly string[] IconNames = { "translate", "globe", "hand", "moon", "help" };
+    static readonly string[] IconNames = { "mic-off", "translate", "globe", "hand", "moon", "help" };
     readonly Renderer[] icons = new Renderer[Tiles];
     static readonly Color On = new Color(0.22f, 0.74f, 0.97f, 0.9f);       // #38bdf8
     // What you point at or look at only gets a little lighter, as in the headsets' own menus (a soft highlight, no
@@ -51,10 +53,10 @@ public class QuickMenu : MonoBehaviour
     /// <summary>Not there at all (Curtain: while Reachy gets ready there is nothing to work yet).</summary>
     public bool Hidden;
 
-    enum Item { None = -1, Translate, Language, Talk, Robot, Help }
+    enum Item { None = -1, Mic, Translate, Language, Talk, Robot, Help }
     /// <summary>The laptop answers, but the robot behind it does not run (e.g. a motor fault).</summary>
     bool RobotFault => control.DaemonState != null && control.DaemonState != "running" && control.DaemonState != "unreachable";
-    const int Tiles = 5;
+    const int Tiles = 6;
 
     Material text;
     Ui.Rect back, listBack;
@@ -72,6 +74,7 @@ public class QuickMenu : MonoBehaviour
     float listLookedAt;
     int sentConnects = -1;
     float meUntil;
+    Texture2D micOn, micOff;
     string meetingLang;   // what Reachy speaks for you, known from the first "me" message
 
     public bool Translate { get; private set; }
@@ -82,6 +85,8 @@ public class QuickMenu : MonoBehaviour
     public bool LanguageGazed => hover[0].Item == Item.Language || hover[1].Item == Item.Language;
     public bool ListOpen => listOpen;
     public int LanguagePicks { get; private set; }
+    public int MicToggles { get; private set; }
+    public bool MicGazed => hover[0].Item == Item.Mic || hover[1].Item == Item.Mic;
 
     void Awake()
     {
@@ -115,7 +120,7 @@ public class QuickMenu : MonoBehaviour
 
         // the language list, above the Language tile
         float listH = rows.Length * RowH + 2 * Pad * 0.6f;
-        var listCentre = new Vector3(tileAt[1].x, h / 2 + 0.03f + listH / 2, -0.003f);
+        var listCentre = new Vector3(tileAt[(int)Item.Language].x, h / 2 + 0.03f + listH / 2, -0.003f);
         listBack = Ui.Quad(transform, "ListBack", panelMaterial, 3034);
         listBack.Set(RowW + 1.2f * Pad, listH, 0.04f, listCentre, Back);
         listBack.Border(Ui.Edge);
@@ -132,9 +137,11 @@ public class QuickMenu : MonoBehaviour
         }
 
         me = Ui.Text(transform, "Me", text, 36, 1f, TextAnchor.LowerCenter);
-        me.transform.localPosition = new Vector3(tileAt[3].x, h / 2 + 0.03f, -0.002f);   // above the right part
+        me.transform.localPosition = new Vector3(tileAt[(int)Item.Robot].x, h / 2 + 0.03f, -0.002f);   // above the right part
         me.gameObject.SetActive(false);
         for (int i = 0; i < 2; i++) cursors[i] = new Ui.Cursor(transform, panelMaterial);
+        micOn = Resources.Load<Texture2D>("Icons/mic");
+        micOff = Resources.Load<Texture2D>("Icons/mic-off");
         ShowList(false);
         Redraw();
     }
@@ -253,6 +260,10 @@ public class QuickMenu : MonoBehaviour
         }
         switch (hv.Item)
         {
+            case Item.Mic:
+                control.ToggleMute();
+                MicToggles++;
+                break;
             case Item.Translate:
                 Translate = !Translate;
                 PlayerPrefs.SetInt(TranslateKey, Translate ? 1 : 0);
@@ -330,24 +341,29 @@ public class QuickMenu : MonoBehaviour
         int lang = System.Array.IndexOf(Langs, Target);
         // one line under each icon; the value arrays stay empty (the look of 2026-11-11: icon + line, glass, fine edge)
         string soft = Ui.SoftHex;
-        labels[0].text = "Translate me" + (Translate   // the tutorial's name for it, in both languages
+        labels[0].text = control.Muted ? $"Mic <color={soft}>{(de ? "stumm" : "muted")}</color>"
+            : $"Mic <color={Ui.AccentHex}>{(de ? "an" : "on")}</color>";
+        icons[0].sharedMaterial.mainTexture = control.Muted ? micOff : micOn;
+        labels[1].text = "Translate me" + (Translate   // the tutorial's name for it, in both languages
             ? $" <color={Ui.AccentHex}>{(de ? "an" : "on")}{(meetingLang != null ? " → " + meetingLang.ToUpper() : "")}</color>"
             : $" <color={soft}>{(de ? "aus" : "off")}</color>");
-        labels[1].text = (lang >= 0 ? LangNames[lang] : Target.ToUpper()) + $" <color={soft}>{(listOpen ? "‹" : "›")}</color>";
-        labels[2].text = control.Waving ? (de ? "Stopp" : "Stop") : de ? "Wortmeldung" : "Raise hand";
-        labels[3].text = control.Restarting ? (de ? "startet neu …" : "restarting …")
+        labels[2].text = (lang >= 0 ? LangNames[lang] : Target.ToUpper()) + $" <color={soft}>{(listOpen ? "‹" : "›")}</color>";
+        labels[3].text = control.Waving ? (de ? "Stopp" : "Stop") : de ? "Wortmeldung" : "Raise hand";
+        labels[4].text = control.Restarting ? (de ? "startet neu …" : "restarting …")
             : RobotFault ? $"<color=#ff9500>{(de ? "Fehler: neu starten" : "error: restart")}</color>"
             : control.GoingToSleep || control.Waking ? "Reachy …"
             : control.Asleep ? $"Reachy <color={soft}>{(de ? "schläft" : "asleep")}</color>"
             : control.IsFollowing ? $"Reachy <color={Ui.AccentHex}>{(de ? "wach" : "awake")}</color>"
             : $"Reachy <color={soft}>{(de ? "nicht da" : "not there")}</color>";
-        labels[4].text = de ? "Hilfe" : "Help";
+        labels[5].text = de ? "Hilfe" : "Help";
         for (int i = 0; i < Tiles; i++)
         {
-            bool on = i == 0 && Translate || i == 2 && control.Waving;
-            bool look = hover[0].Item == (Item)i || hover[1].Item == (Item)i;
+            var item = (Item)i;
+            bool on = item == Item.Mic && !control.Muted || item == Item.Translate && Translate || item == Item.Talk && control.Waving;
+            bool look = hover[0].Item == item || hover[1].Item == item;
+            bool lit = look || item == Item.Mic && control.Speaking;   // the mic tile also lights up while you speak
             tiles[i].Set(TileW, TileH, 0.04f, tileAt[i],
-                on ? new Color(Ui.Accent.r, Ui.Accent.g, Ui.Accent.b, look ? 0.32f : 0.2f) : look ? HoverFill : Tile);
+                on ? new Color(Ui.Accent.r, Ui.Accent.g, Ui.Accent.b, lit ? 0.32f : 0.2f) : look ? HoverFill : Tile);
             tiles[i].Border(on ? Ui.Accent : look ? HoverEdge : new Color(1, 1, 1, 0.12f), 0.003f);
             icons[i].sharedMaterial.color = on ? Ui.Accent : Color.white;
         }

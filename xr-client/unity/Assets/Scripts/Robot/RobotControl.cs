@@ -1,6 +1,6 @@
 // Reachy follows the user's head. Starts by itself once the app has the robot: wake if needed, take the current head
-// direction as "straight ahead", follow. Hands: hold the right pinch (or trigger) to talk, like a walkie-talkie, so the
-// mic can never stay on by accident (a right pinch on a menu tile or the notes works those instead); a left pinch held for 0.7 s recenters, or skips the room scan while it runs; a short one, while you look
+// direction as "straight ahead", follow. The mic is open unless muted (the mic tile in the QuickMenu, muted at every
+// start; MicSender sends only while you speak). Hands: a right pinch works a menu tile or the notes; a left pinch held for 0.7 s recenters, or skips the room scan while it runs; a short one, while you look
 // at an entry of the QuickMenu, switches that; on the notes card's handle, drags it; while the Tutorial is open, it
 // goes to the tutorial, and Reachy neither follows nor hears you (practice): it wakes up and scans the room meanwhile
 // (RoomPanorama, behind the Curtain), then waits looking straight ahead; closing the tutorial recenters. Reachy only turns
@@ -17,7 +17,6 @@ public class RobotControl : MonoBehaviour
     enum Mode { Idle, Waking, Following }
 
     const float PressLevel = 0.8f, ReleaseLevel = 0.5f;
-    const float MicHoldS = 0.15f;      // a tracking dropout for a few frames must not cut a word
     // Recentering and skipping the scan need the left pinch held this long: a short left pinch happens by accident
     // (headset test 2026-11-11: nine recenters in eleven seconds, and the scan skipped, while aiming at the menu)
     const float RecenterHoldS = 0.7f;
@@ -35,7 +34,7 @@ public class RobotControl : MonoBehaviour
     public Pairing pairing;
 
     readonly Recenter recenter = new Recenter();
-    InputAction talk, recenterPress;
+    InputAction rightPress, recenterPress;
     DaemonClient daemon;
     HeadMirror mirror = new HeadMirror();
     readonly HeadModel headModel = new HeadModel();
@@ -46,14 +45,13 @@ public class RobotControl : MonoBehaviour
     NodShake nodShake = new NodShake();
     HeadTarget lastSent;
     Mode mode = Mode.Idle;
-    bool talking, recenterDown, started, skip, wasPaused;
-    bool rightDown, rightUi;   // rightUi: this right pinch went to the menu or the notes, so it is not talking
+    bool recenterDown, started, skip, wasPaused;
+    bool rightDown;
     bool leftUsed;             // this left pinch already did something
     float leftSince;
     float restartUntil;
     int misses;
     [System.Serializable] class DaemonStatus { public string state, error; }
-    float talkReleasedAt = float.NegativeInfinity;
     int sent, sentAtMark;
     float markAt;
     float sendHz;
@@ -91,7 +89,19 @@ public class RobotControl : MonoBehaviour
     /// 502 = it is there but the daemon behind it is not, 0 = no answer at all.</summary>
     public long LaptopAnswer { get; private set; }
     public bool Restarting => Time.unscaledTime < restartUntil;
-    public bool MicOn { get; private set; }
+    /// <summary>Mic open: not muted, and not in the tutorial (practice). MicSender still sends only while you speak.</summary>
+    public bool MicOn => !Muted && !Paused;
+    /// <summary>The mic tile. On (not muted) at every start. Muting only stops your voice going out: room sound,
+    /// captions and translation in the headset go on as they are.</summary>
+    public bool Muted { get; private set; }
+    /// <summary>You are speaking into the open mic (MicSender's voice gate): the "You ●" line, the tile lights up.</summary>
+    public bool Speaking { get; set; }
+
+    public void ToggleMute()
+    {
+        Muted = !Muted;
+        Debug.Log($"[control] mic {(Muted ? "muted" : "open")}");
+    }
     /// <summary>Pinch strength 0..1, for the tutorial's live view of the fingers.</summary>
     public float RightLevel { get; private set; }
     public float LeftLevel { get; private set; }
@@ -112,7 +122,7 @@ public class RobotControl : MonoBehaviour
 
     void Awake()
     {
-        talk = Press("Talk", "RightHand");
+        rightPress = Press("Pick", "RightHand");
         recenterPress = Press("Recenter", "LeftHand");
         sweep = RobotVideo.ReadIntentExtra("sweep") == "1";
     }
@@ -128,7 +138,7 @@ public class RobotControl : MonoBehaviour
 
     void OnDestroy()
     {
-        talk.Dispose();
+        rightPress.Dispose();
         recenterPress.Dispose();
         daemon?.Dispose();
     }
@@ -213,28 +223,19 @@ public class RobotControl : MonoBehaviour
 
     void HandlePress()
     {
-        float level = Mathf.Max(talk.ReadValue<float>(), XrInput.PinchRight);   // profile or hand joints
+        float level = Mathf.Max(rightPress.ReadValue<float>(), XrInput.PinchRight);   // profile or hand joints
         RightLevel = level;
         bool rightNow = level > PressLevel || rightDown && level > ReleaseLevel;
         if (rightNow && !rightDown)
         {
-            // a right pinch on the notes or a menu tile works them, like the left one, and does not talk
-            if (pairing != null && pairing.Hovered(true)) { pairing.Press(true); rightUi = true; }
-            else if (curtain != null && curtain.Hovered(true)) { curtain.Press(true); rightUi = true; }
-            else if (tutorial != null && tutorial.Hovered(true)) { tutorial.Press(true); rightUi = true; }
-            else if (notes != null && notes.Hovered(true)) { notes.Press(true); rightUi = true; }
-            else if (menu != null && menu.Hovered(true)) { menu.Select(true); rightUi = true; }
+            // a right pinch on the notes or a menu tile works them, like the left one
+            if (pairing != null && pairing.Hovered(true)) pairing.Press(true);
+            else if (curtain != null && curtain.Hovered(true)) curtain.Press(true);
+            else if (tutorial != null && tutorial.Hovered(true)) tutorial.Press(true);
+            else if (notes != null && notes.Hovered(true)) notes.Press(true);
+            else if (menu != null && menu.Hovered(true)) menu.Select(true);
         }
-        if (!rightNow) rightUi = false;
         rightDown = rightNow;
-        talking = rightNow && !rightUi;
-        if (talking) talkReleasedAt = Time.unscaledTime;
-        bool mic = !Paused && (talking || Time.unscaledTime - talkReleasedAt < MicHoldS);
-        if (mic != MicOn)
-        {
-            MicOn = mic;
-            Debug.Log($"[control] mic {(mic ? "on" : "off")}");
-        }
 
         float left = Mathf.Max(recenterPress.ReadValue<float>(), XrInput.PinchLeft);
         LeftLevel = left;

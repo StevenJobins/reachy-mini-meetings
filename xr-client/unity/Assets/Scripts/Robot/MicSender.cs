@@ -1,7 +1,9 @@
 // Your voice -> Reachy's speaker, over the same WebRTC connection as the video. The audio transceiver is send-only:
 // receiving the robot's audio would hold the video back (see RobotVideo.Answer), and the room sound comes another way.
-// Push to talk: on only while the user holds the right pinch (RobotControl), so it can never stay on by accident.
-// While it is on, the same mic also goes to the backend (16 kHz PCM), which transcribes it for the "You" subtitles.
+// Open unless muted (the mic tile, RobotControl.Muted, on at every start), and then only sent while you speak
+// (VoiceGate): the backend mutes the room for as long as your voice comes in. While you speak, the same mic also goes
+// to the backend (16 kHz PCM, with 0.3 s from before the gate opened), which transcribes it for the "You" subtitles;
+// "voice_end" when the gate closes ends the sentence.
 // Translate me (QuickMenu): the WebRTC track stays off and the backend translates your words and lets Reachy say
 // them (the menu tells the backend which of the two, "me_mode").
 
@@ -25,8 +27,12 @@ public class MicSender : MonoBehaviour
     AudioStreamTrack track;
     RTCRtpSender sender;
     // to the backend: read position in the looping mic clip, box-filter decimation state, samples not sent yet
-    int readPos;
+    const int PreRoll = BackendRate * 3 / 10;   // 0.3 s kept while quiet: the gate opens ~60 ms into the first word
+    int readPos, rmsSamples, openBlocks;
     bool teeing;
+    VoiceGate gate;
+    readonly List<float> levels = new List<float>();
+    float loggedAt;
     float sum;
     int count, phase;
     float[] read = new float[0];
@@ -48,6 +54,9 @@ public class MicSender : MonoBehaviour
             }
         }
 #endif
+        gate = double.TryParse(RobotVideo.ReadIntentExtra("micgate"), System.Globalization.NumberStyles.Float,
+                               System.Globalization.CultureInfo.InvariantCulture, out var db)
+            ? new VoiceGate(db) : new VoiceGate();
         source = gameObject.AddComponent<AudioSource>();
         source.clip = Microphone.Start(null, true, 1, SampleRate);
         if (source.clip == null) { Status = "mic: none found"; yield break; }
@@ -69,42 +78,55 @@ public class MicSender : MonoBehaviour
     void Update()
     {
         if (track == null) return;
-        bool on = control.MicOn;
+        bool open = control.MicOn;
         bool translate = menu != null && menu.Translate;
-        if (track.Enabled != (on && !translate)) track.Enabled = on && !translate;
-        Tee(on);
         var backend = room != null ? room.Backend : null;
-        Status = translate
-            ? backend == null || !backend.Connected ? "translate: no backend"
-              : on ? "translate: speaking" : "translate on, hold right pinch to talk"
-            : sender == null ? "mic: no connection" : on ? $"mic on {Kbps:0} kbps" : "mic off, hold right pinch to talk";
-    }
-
-    /// <summary>The mic since the last frame, down to 16 kHz, to the backend while talking; "voice_end" on release.</summary>
-    void Tee(bool on)
-    {
-        var backend = room != null ? room.Backend : null;
-        var clip = source.clip;
-        int pos = Microphone.GetPosition(null);
-        if (!on || backend == null || !backend.Connected)
+        bool connected = backend != null && backend.Connected;
+        float rms = ReadMic();
+        if (!open) gate.Reset();
+        else if (rmsSamples > 0) gate.Step(rms, rmsSamples / (double)source.clip.frequency);
+        bool speaking = open && gate.Open;
+        if (speaking != control.Speaking)
+        {
+            control.Speaking = speaking;
+            Debug.Log($"[mic] {(speaking ? "speaking" : "quiet")}");
+        }
+        if (track.Enabled != (speaking && !translate)) track.Enabled = speaking && !translate;
+        if (speaking && connected)
+        {
+            teeing = true;
+            Flush(backend, false);   // the pre-roll first, then the voice as it comes
+        }
+        else
         {
             if (teeing)
             {
-                Flush(backend, true);
-                backend?.Send(VoiceEnd);
+                if (connected) { Flush(backend, true); backend.Send(VoiceEnd); }
                 teeing = false;
             }
-            readPos = pos;
-            return;
+            if (pcm.Count > PreRoll) pcm.RemoveRange(0, pcm.Count - PreRoll);
         }
-        teeing = true;
+        LogLevel(rms, speaking);
+        Status = !open ? control.Muted ? "mic muted" : "mic off (tutorial)"
+            : translate ? !connected ? "translate: no backend" : speaking ? "translate: speaking" : "translate: listening"
+            : sender == null ? "mic: no connection" : speaking ? $"mic: speaking {Kbps:0} kbps" : "mic: listening";
+    }
+
+    /// <summary>The mic since the last frame: its RMS, and down to 16 kHz into pcm (the pre-roll while quiet).</summary>
+    float ReadMic()
+    {
+        var clip = source.clip;
+        int pos = Microphone.GetPosition(null);
         int n = (pos - readPos + clip.samples) % clip.samples;
-        if (n == 0) return;
+        rmsSamples = n;
+        if (n == 0) return 0;
         if (read.Length < n) read = new float[n];
         clip.GetData(read, readPos);   // wraps around the end of the clip
         readPos = pos;
+        double sq = 0;
         for (int i = 0; i < n; i++)
         {
+            sq += read[i] * read[i];
             sum += read[i];
             count++;
             phase += BackendRate;
@@ -114,7 +136,23 @@ public class MicSender : MonoBehaviour
             sum = 0;
             count = 0;
         }
-        Flush(backend, false);
+        return Mathf.Sqrt((float)(sq / n));
+    }
+
+    /// <summary>Every 2 s: the loudest and the median block, and how much of the time the gate was open, for tuning
+    /// the threshold in the headset (adb logcat -s Unity).</summary>
+    void LogLevel(float rms, bool speaking)
+    {
+        if (rmsSamples == 0) return;
+        levels.Add((float)VoiceGate.Db(rms));
+        if (speaking) openBlocks++;
+        if (Time.unscaledTime - loggedAt < 2f) return;
+        levels.Sort();
+        Debug.Log($"[mic] level median {levels[levels.Count / 2]:0} max {levels[levels.Count - 1]:0} dBFS, " +
+                  $"gate {gate.OpenDb:0} dB, speaking {100f * openBlocks / levels.Count:0}%{(control.MicOn ? "" : " (muted)")}");
+        levels.Clear();
+        openBlocks = 0;
+        loggedAt = Time.unscaledTime;
     }
 
     void Flush(BackendClient backend, bool all)

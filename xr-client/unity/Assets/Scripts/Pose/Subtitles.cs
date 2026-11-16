@@ -1,7 +1,7 @@
 // What the subtitles show: the last few things said in the room and by the headset user, oldest first. Pure logic, no
 // Unity, tested in Assets/Tests. Room lines are updated by caption id (partial -> final -> + translation) and carry
 // the backend's speaker id (from the voice); "You" lines are the backend's transcription of the headset mic, and while
-// push to talk is held (and until that text arrives) a live "You" line stands at the end.
+// you speak into the open mic (and until that text arrives) a live "You" line stands at the end.
 
 using System;
 using System.Collections.Generic;
@@ -68,7 +68,7 @@ public class Subtitles
             lines.Add(new SubtitleLine { You = true, Final = true, Text = text, Seq = seq++, Until = now + FinalS });
     }
 
-    /// <summary>Every frame: push to talk held or not.</summary>
+    /// <summary>Every frame: speaking into the open mic or not (MicSender's voice gate).</summary>
     public void Mic(bool on, double now)
     {
         if (on) liveUntil = now + YouWaitS;

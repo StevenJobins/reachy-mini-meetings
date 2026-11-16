@@ -1,7 +1,7 @@
 // Connection to the caption backend on the laptop (backend/, port 8766 there, reached through the gateway:
 // Endpoints.Backend; protocol in captions.py).
 // Binary frames are the room sound; JSON messages wait in a queue for the main thread. Reconnects by itself.
-// Out: JSON, and binary frames = the headset mic while push to talk is held (MicSender), for the "You" subtitles
+// Out: JSON, and binary frames = the headset mic while you speak, unmuted (MicSender), for the "You" subtitles
 // and for Translate me; one queue, so they keep their order.
 
 using System;

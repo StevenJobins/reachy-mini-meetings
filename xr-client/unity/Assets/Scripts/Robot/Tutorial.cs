@@ -1,7 +1,7 @@
 // Interactive guided tour on the first start. Reachy stays still meanwhile (RobotControl: no wake-up, no following,
 // mic to nobody): you practise each gesture and the card tells you when it worked. The two dots on the card are your
 // real thumb and index finger (pinch strength from the hand tracking), so you see the pinch being recognised.
-// Cards: welcome, talking (hold right), straight ahead (hold left), raise your hand, menu + language (look + pinch left), translation,
+// Cards: welcome, straight ahead (hold left), raise your hand, menu + language (look + pinch left), mic (switch it on), translation,
 // meeting notes (look right), ready. Opened again from Help in the menu. German if the headset is German, else English.
 
 using UnityEngine;
@@ -15,14 +15,14 @@ public class Tutorial : MonoBehaviour
     const float BodyScale = 0.7f, TitleScale = 0.95f;
     const int BodyChars = 42;
     const float Pad = 0.06f, StripH = 0.012f, Dot = 0.018f, Illus = 0.14f;
-    const float HoldS = 1.5f, NotesDeg = 20f;
+    const float NotesDeg = 20f;
     static readonly Color Panel = new Color(0.08f, 0.11f, 0.17f, 0.97f);
     static readonly Color Left = new Color(0.22f, 0.74f, 0.97f);           // #38bdf8
     static readonly Color Right = new Color(1f, 0.58f, 0f);                // #ff9500
     static readonly Color Good = new Color(0.29f, 0.87f, 0.5f);            // #4ade80
     static readonly Color DotOff = new Color(1, 1, 1, 0.25f);
 
-    enum Task { Start, HoldRight, Recenter, RaiseHand, PickLanguage, Info, LookNotes, Finish }
+    enum Task { Start, Recenter, RaiseHand, PickLanguage, Mic, Info, LookNotes, Finish }
     enum Hand { None, Left, Right }
 
     class Card
@@ -55,9 +55,8 @@ public class Tutorial : MonoBehaviour
     float width, height;
     string hintText;
     bool done;
-    float doneAt, heldSince = -1f;
-    bool wasHolding;
-    int picksAtStart;
+    float doneAt;
+    int picksAtStart, togglesAtStart;
 
     public bool Open => index >= 0;
     /// <summary>This card's task is the held left pinch (RobotControl counts the time).</summary>
@@ -102,9 +101,6 @@ public class Tutorial : MonoBehaviour
             new Card { Task = Task.Start, Hand = Hand.Left, Title = "Willkommen bei Reachy Meetings",
                 Body = "Du sitzt gleich durch Reachy mit am Tisch. Bedient wird alles mit einer Geste: Daumen und Zeigefinger zusammen, ein «Pinch». Reachy macht sich währenddessen bereit.",
                 Footer = "Auf «Weiter» zeigen und pinchen" },
-            new Card { Task = Task.HoldRight, Hand = Hand.Right, Title = "Sprechen",
-                Body = "Rechte Hand: Daumen und Zeigefinger zusammen und halten, wie bei einem Walkie-Talkie. Probier es jetzt.",
-                Footer = "Rechts pinchen und halten" },
             new Card { Task = Task.Recenter, Hand = Hand.Left, Title = "Geradeaus festlegen",
                 Body = "Schau dorthin, wo für dich «geradeaus» sein soll, und halte den linken Pinch etwa eine Sekunde. Das geht später jederzeit wieder.",
                 Footer = "Links pinchen und halten" },
@@ -114,6 +110,9 @@ public class Tutorial : MonoBehaviour
             new Card { Task = Task.PickLanguage, Hand = Hand.Left, Stay = true, DoneS = 2.5f, Title = "Menü und Sprache",
                 Body = "Unten am Bild ist das Menü. Zeig mit einer Hand auf «Sprache»: Ein Punkt zeigt, wohin du zeigst, und sein Ring schliesst sich beim Pinchen. Wird «Sprache» heller, pinche mit dieser Hand.",
                 Footer = "Auf «Sprache» zeigen, pinchen" },
+            new Card { Task = Task.Mic, Hand = Hand.Left, Stay = true, DoneS = 2.5f, Title = "Sprechen",
+                Body = "Ganz links im Menü ist dein Mikrofon. Es ist an: Man hört dich, sobald du sprichst. Zeig darauf und pinche, um es stumm zu schalten, und nochmals, um es wieder einzuschalten (die Übung bleibt still).",
+                Footer = "Auf «Mic» zeigen, pinchen" },
             new Card { Task = Task.Info, Hand = Hand.Left, Title = "Übersetzung",
                 Body = "Was im Raum gesagt wird, erscheint als Sprechblase über der Person, in deiner Sprache. Ist «Translate me» an (im Menü), sagt Reachy deine Sätze übersetzt in der Sprache des Raums. Ist es aus, hört man deine eigene Stimme.",
                 Footer = "«Weiter»" },
@@ -129,9 +128,6 @@ public class Tutorial : MonoBehaviour
             new Card { Task = Task.Start, Hand = Hand.Left, Title = "Welcome to Reachy Meetings",
                 Body = "You are about to sit at the table through Reachy. Everything works with one gesture: thumb and index finger together, a \"pinch\". Reachy gets ready meanwhile.",
                 Footer = "Point at \"Next\" and pinch" },
-            new Card { Task = Task.HoldRight, Hand = Hand.Right, Title = "Talking",
-                Body = "Right hand: touch thumb and index finger and hold, like a walkie-talkie. Try it now.",
-                Footer = "Pinch right and hold" },
             new Card { Task = Task.Recenter, Hand = Hand.Left, Title = "Set straight ahead",
                 Body = "Look where \"straight ahead\" should be for you and hold the left pinch for about a second. You can do this again any time.",
                 Footer = "Pinch left and hold" },
@@ -141,6 +137,9 @@ public class Tutorial : MonoBehaviour
             new Card { Task = Task.PickLanguage, Hand = Hand.Left, Stay = true, DoneS = 2.5f, Title = "Menu and language",
                 Body = "The menu is at the foot of the picture. Point at \"Language\" with one hand: a dot shows where you point, and its ring closes as you pinch. Once \"Language\" lights up, pinch with that hand.",
                 Footer = "Point at \"Language\", pinch" },
+            new Card { Task = Task.Mic, Hand = Hand.Left, Stay = true, DoneS = 2.5f, Title = "Talking",
+                Body = "On the far left of the menu is your mic. It is on: they hear you whenever you speak. Point at it and pinch to mute it, and again to switch it back on (the practice stays silent).",
+                Footer = "Point at \"Mic\", pinch" },
             new Card { Task = Task.Info, Hand = Hand.Left, Title = "Translation",
                 Body = "What is said in the room appears as a speech bubble above the person, in your language. With \"Translate me\" on (in the menu), Reachy says your sentences in the room's language. With it off, they hear your own voice.",
                 Footer = "\"Next\"" },
@@ -168,9 +167,8 @@ public class Tutorial : MonoBehaviour
         index = i;
         done = false;
         hintText = null;
-        heldSince = -1f;
-        wasHolding = false;
         picksAtStart = menu != null ? menu.LanguagePicks : 0;
+        togglesAtStart = menu != null ? menu.MicToggles : 0;
         Redraw();
     }
 
@@ -224,6 +222,7 @@ public class Tutorial : MonoBehaviour
                 Succeed(De ? "Gesetzt: Das ist jetzt geradeaus." : "Set: this is straight ahead now.");
                 break;
             case Task.PickLanguage:
+            case Task.Mic:
                 Hint(De ? "Zeig dazu auf das Menü unten am Bild." : "Point at the menu at the foot of the picture for this.");
                 break;
             case Task.Finish:
@@ -277,22 +276,15 @@ public class Tutorial : MonoBehaviour
     {
         switch (c.Task)
         {
-            case Task.HoldRight:
-                bool holding = control.RightLevel > 0.8f || wasHolding && control.RightLevel > 0.5f;
-                if (holding && heldSince < 0) heldSince = Time.unscaledTime;
-                float held = heldSince < 0 ? 0 : Time.unscaledTime - heldSince;
-                if (holding)
-                    Hint(held < HoldS
-                        ? De ? "Gut! Die Finger berühren sich: Jetzt würde man dich hören. (Übung, das Mikro ist noch aus.)"
-                             : "Good! Your fingers touch: now they would hear you. (Practice, the mic is still off.)"
-                        : De ? "Und jetzt loslassen: Mikro aus." : "Now let go: mic off.");
-                else if (wasHolding)
-                {
-                    if (held >= HoldS) Succeed(De ? "Genau so. Solange du hältst, hört man dich." : "Exactly. While you hold, they hear you.");
-                    else Hint(De ? "Etwas länger halten, so lange du sprichst." : "Hold a bit longer, as long as you talk.");
-                    heldSince = -1f;
-                }
-                wasHolding = holding;
+            case Task.Mic:
+                // done once it was switched and is on again, so the meeting does not start muted
+                if (menu.MicToggles > togglesAtStart && !control.Muted)
+                    Succeed(De ? "Das Mikro ist wieder an: Im Meeting hört man dich, sobald du sprichst."
+                               : "The mic is on again: in the meeting they hear you whenever you speak.");
+                else if (control.Muted)
+                    Hint(De ? "Stumm: Jetzt hört dich niemand. Pinche nochmals darauf, um es wieder einzuschalten."
+                            : "Muted: now nobody hears you. Pinch it again to switch it back on.");
+                else if (menu.MicGazed) Hint(De ? "Genau, jetzt pinchen." : "That's it, now pinch.");
                 break;
             case Task.PickLanguage:
                 if (menu.LanguagePicks > picksAtStart)

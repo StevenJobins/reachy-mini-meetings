@@ -113,7 +113,7 @@ The app talks to the daemon on the laptop through the gateway (`/daemon/...`, se
 **The daemon's API has no password of its own**, and since daemon 1.14 (desktop app update, 2026-11-06) it listens on 127.0.0.1 only on the Lite. The gateway is what lets a headset reach it, and only with a token: nobody else on the Wi-Fi can move Reachy. (Until 2026-11-13 a relay, `daemon_lan_relay.py`, opened port 8000 to the whole Wi-Fi; it is gone.) Keep Reachy Mini Control open; `./start_meeting.sh` starts the gateway next to it.
 
 - **Opening the app** starts everything: as soon as video and robot are there, Reachy wakes if needed, your current head direction becomes straight ahead, and Reachy follows you.
-- **Hold the right pinch** (or trigger) to talk, like a walkie-talkie: the mic is on only while you hold, so it cannot stay on by accident.
+- **The *Mic* tile** in the menu mutes and unmutes you (on at every start); while it is on, your voice goes out whenever you speak (see *Mute button instead of push to talk*).
 - **Left pinch** (or trigger) **held for 0.7 s** recenters: your current head direction becomes straight ahead. A short left pinch only works what the hand points at (menu, notes): on the first test with both hands, short left pinches next to the menu recentered nine times in eleven seconds and skipped the room scan.
 - **Front half only** (`YawRange` in `Pose.cs`): Reachy turns with you up to 100° each way (head + body, the body at most 35°). Further round it waits at the edge, and with your back to the room (140° to 180°) it comes back through the middle. Before this, a full turn of the user crossed the ±180° wrap and swung Reachy all the way round, past its cables.
 - To put Reachy to sleep, use Reachy Mini Control: closing the app leaves it awake, holding its last pose.
@@ -144,7 +144,7 @@ The time the window looks back is the jitter buffer + decode from the WebRTC sta
 
 ## Audio (Phase 4)
 
-- **Your voice to Reachy:** the headset mic goes over WebRTC to the robot's speaker (`MicSender.cs`) while you hold the right pinch. The audio transceiver is send-only, so the video delay stays low (see *Audio is declined by default*). The first start asks for microphone access in the headset.
+- **Your voice to Reachy:** the headset mic goes over WebRTC to the robot's speaker (`MicSender.cs`) while you speak, unmuted. The audio transceiver is send-only, so the video delay stays low (see *Audio is declined by default*). The first start asks for microphone access in the headset.
 - **Room sound:** Reachy's mic array reaches the laptop over USB, and the backend streams it to the app (`BackendClient.cs`, `RoomSound.cs`, `RoomAudio.cs`: jitter buffer and speech filter, port of `roomaudio.js`).
 
 Start it in **Terminal.app** the first time, so macOS can ask for microphone and camera access:
@@ -162,7 +162,7 @@ The backend listens on 127.0.0.1 only; the headset reaches it through the gatewa
 Live captions from the backend and your own words, on a panel low in front of you (`CaptionView.cs`, what is shown when in `Subtitles.cs`). The panel stays put while you look around and glides after you once you look clearly elsewhere. The last 3 lines, newest at the bottom; a line fades 10 s after its last update. Italic text is still changing.
 
 - **Who said it:** each line starts with "Speaker A", "B", … in its own colour. The backend tells people apart by their **voice** (`backend/.../speakers.py`), so it works for people out of the picture and doesn't depend on where Reachy looks. Utterances under ~1 s stay grey (too short to tell), and a new person's first sentence may take the wrong colour until their voice is known.
-- **You:** while you hold the right pinch, your mic also goes to the backend, which transcribes it: a "You ● …" line while you talk, then your words about 1 s after you stop (with *Translate me* as well: the line shows what you said, the text under the menu what Reachy said for you). The room mic is ignored for captions while you talk (+0.8 s), so your voice from Reachy's speaker doesn't show up a second time as a room speaker.
+- **You:** while you speak into the open mic, it also goes to the backend, which transcribes it: a "You ● …" line while you talk, then your words about 1 s after you stop (with *Translate me* as well: the line shows what you said, the text under the menu what Reachy said for you). The room mic is ignored for captions while you talk (+0.8 s), so your voice from Reachy's speaker doesn't show up a second time as a room speaker.
 - **Next to the speaker** (`SpeakerBubbles.cs`, 2026-11-10, not yet tried in the headset): when the caption says where the speaker's face is (`"at"`, backend `people.py`: the voice tied to a person in the room over several utterances), the text stands above that person's head instead of on the panel, with a frame in the speaker's colour around the face. One bubble per person. While the window is world-locked the bubble is fixed in the room, also outside the live picture; while the window stands in front of you, only people inside the picture get one. No place known (new voice, nobody seen talking yet): the line stays on the panel as before.
 - **Translation:** the translation is the main text, the original small underneath. Needs `DEEPL_AUTH_KEY` on the backend; without it, lines are in the original language.
 
@@ -177,7 +177,7 @@ Speech bubbles above the speaker's head came first: picking the face from mouth 
 | You do | What happens |
 |---|---|
 | Turn your head | Reachy looks along (Phase 2) |
-| **Hold the right pinch** (thumb + index finger) | Talk, like a walkie-talkie; let go = mic off. With *Translate me* on, Reachy says your sentences in the room's language, otherwise your own voice comes out of Reachy |
+| **Menu tile *Mic*** (far left) | On at every start: they hear you whenever you speak (the tile lights up while you do); pinch: muted, pinch again: on. Muting only stops your voice: room sound, captions and translation go on. With *Translate me* on, Reachy says your sentences in the room's language, otherwise your own voice comes out of Reachy |
 | **Menu tile *I want to talk*** | Reachy waves its right antenna and swings its body for 3 s, so the room sees you want the word |
 | **Nod or shake your head** | Reachy shows it with its antennas (both for a nod, against each other for a shake) and its head holds still, so your picture does not move (`Gestures.cs`) |
 | **Raise a hand above your head** | the same as the *Raise hand* tile: Reachy waves for 3 s |
@@ -192,7 +192,7 @@ Speech bubbles above the speaker's head came first: picking the face from mouth 
 
 With controllers instead of hands: the trigger does what the pinch does.
 
-Why push to talk: the mic can never stay on by accident; Reachy's own voice from its speaker cannot be picked up and translated again in a loop; and letting go tells the backend that the sentence is finished, so Translate me does not wait for a pause.
+**Mute button instead of push to talk (2026-11-16).** Until then you held the right pinch to talk. Now the *Mic* tile mutes and unmutes, and the right pinch only works menu and notes. The mic is still not streamed all the time: `MicSender` sends only while you speak (`Pose/VoiceGate.cs`: opens after 60 ms above −40 dBFS, closes after 0.6 s 6 dB below), with 0.3 s from before the gate opened for the transcription, and `voice_end` when it closes. Reason: the backend mutes the room for as long as your voice comes in, so that your voice from Reachy's speaker is not captioned as a room speaker or played back to you: with *Translate me* off, room captions and the room sound in the headset stop while frames of your voice arrive and 0.8 s after (`captions.py` `ECHO_S`); with it on, while Reachy speaks your translated sentence (+0.4 s). A mic that sent all the time would mute the room for good. **Not yet tried in the headset:** the −40 dBFS is a first guess. `adb logcat -s Unity` shows `[mic] level median … max … dBFS, gate …, speaking …%` every 2 s; `-e micgate -35` on the `am start` line sets another threshold. If the room's voices from the headset's own speakers open the gate, raise it.
 
 ### Hands and eyes
 
@@ -203,7 +203,7 @@ Why push to talk: the mic can never stay on by accident; Reachy's own voice from
 
 ### Pointing (menu and notes)
 
-Like the headset's own menus: each hand has its system aim ray (`XrInput.Aim`, the hand interaction profile's `pointer` pose, or the controller's). Where it meets the menu or the notes card, `Ui.Cursor` draws a dot and a ring around it; the ring closes from 6 cm to the dot's size as thumb and index finger come together, and the dot turns yellow once the pinch counts, so you see whether you are about to pick something. A pinch of that hand picks what it points at; a **right** pinch on the menu or the notes does that instead of talking. Hit areas are a bit larger than the tiles, and a tile stays picked for 0.3 s after the ray leaves it, against jitter. Without an aim ray (no hand tracking) the eyes pick, as before.
+Like the headset's own menus: each hand has its system aim ray (`XrInput.Aim`, the hand interaction profile's `pointer` pose, or the controller's). Where it meets the menu or the notes card, `Ui.Cursor` draws a dot and a ring around it; the ring closes from 6 cm to the dot's size as thumb and index finger come together, and the dot turns yellow once the pinch counts, so you see whether you are about to pick something. A pinch of that hand picks what it points at. Hit areas are a bit larger than the tiles, and a tile stays picked for 0.3 s after the ray leaves it, against jitter. Without an aim ray (no hand tracking) the eyes pick, as before.
 
 The menu is no longer on the video window: it moved whenever Reachy turned, so looking at it made it slide away. It now stays still relative to straight ahead like the notes (`QuickMenu.SideDeg` −28°, `DownDeg` 14°, 1.5 m, three quarters size).
 
@@ -214,9 +214,9 @@ The menu is no longer on the video window: it moved whenever Reachy turned, so l
 | Card | Task | The card answers |
 |---|---|---|
 | Welcome | pinch left | next card |
-| Talking | hold the right pinch | "Good! Your fingers touch: now they would hear you (practice, the mic is still off)", after 1.5 s "now let go", on release "exactly" |
 | Straight ahead | look where it should be, hold the left pinch | recenters, "set" |
 | Menu and language | look at *Language* in the menu, pinch left, pick a language | hints while you do it, then "bubbles and notes now come in …" |
+| Talking | point at *Mic* (far left in the menu), pinch to mute, pinch again | "muted: now nobody hears you", then "the mic is on again" (the tour itself stays silent) |
 | Translation | read, pinch left | |
 | Meeting notes | look to your right | "here they are", how to drag them |
 | Ready | pinch left | Reachy wakes up, the room scan follows |
@@ -228,7 +228,7 @@ The card follows the gaze when it is more than 18° away, except on the cards wh
 Both directions, with as few buttons as possible. Most of it is automatic:
 
 - **The room to you:** the bubbles are translated into the **headset's system language** (de, en, fr, it, es; otherwise English). The app sends it to the backend as `{"type": "lang", "meeting": "auto", "target": …}` on every (re)connect (`BackendClient.Connects`), so a backend restart picks it up again. *Language* in the menu picks another one from a list.
-- **You to the room (Translate me, on by default):** while you hold the right pinch, the WebRTC mic track stays off and only the backend gets your voice (`MicSender.cs`): the 48 kHz mic clip averaged down to 16 kHz, int16, in 40 ms frames (640 samples), `{"type": "voice_end"}` on release, the same protocol as `../pages/mic.js`. The menu tells the backend what to do with it: `{"type": "me_mode", "speak": true}` with Translate me, `false` without (then Reachy plays your own voice over WebRTC and the backend only transcribes it for the "You" line); sent on every connection and when you switch. The backend cuts it into sentences, Whisper transcribes them (your language is detected per sentence), DeepL translates them into the language most spoken in the room (`auto`), and Reachy says them in order. If you already speak that language, Reachy says your words as they are.
+- **You to the room (Translate me, on by default):** while you speak, unmuted, the WebRTC mic track stays off and only the backend gets your voice (`MicSender.cs`): the 48 kHz mic clip averaged down to 16 kHz, int16, in 40 ms frames (640 samples), `{"type": "voice_end"}` when you stop speaking (the gate closes) or mute, the same protocol as `../pages/mic.js`. The menu tells the backend what to do with it: `{"type": "me_mode", "speak": true}` with Translate me, `false` without (then Reachy plays your own voice over WebRTC and the backend only transcribes it for the "You" line); sent on every connection and when you switch. The backend cuts it into sentences, Whisper transcribes them (your language is detected per sentence), DeepL translates them into the language most spoken in the room (`auto`), and Reachy says them in order. If you already speak that language, Reachy says your words as they are.
 - **What Reachy said for you:** the backend's `me` message shows for 6 s under the menu as *Reachy (de→en): …*. The *Translate me* tile shows the room's language once the first sentence went through (*ON → EN*).
 - **Menu** (`QuickMenu.cs`): a row of four tiles (*Translate me*, *Language*, *Reachy*, *Help*) at the foot of the picture, 31° below eye height, below the subtitles; it stays put while you look around and glides after you once you look more than 25° away, like the subtitles (2026-11-11, after a headset test: fixed in the room it covered things, at the lower left it was too far out), 1.5 m away, still in the room (see *Pointing*; on the video window at 49°, 37° and 26° it was too far out or slid away when Reachy turned). *Translate me* is blue while on and shows the room's language once known (*ON → EN*). *Language* opens a list of the five languages right next to it (the current one blue); it closes after a choice or 3 s without looking at it. Gaze is a ray from the head onto the column's plane, no colliders (`Ui.GazeOn`). Settings are remembered on the headset (`PlayerPrefs`: `translate`, `target`, `tutorial`, `notes_yaw`, `notes_up`). What Reachy said for you and "notes updated" show for a few seconds under the column.
 

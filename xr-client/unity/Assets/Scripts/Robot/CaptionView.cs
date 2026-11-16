@@ -2,7 +2,7 @@
 // backend/.../captions.py; what is shown when: Subtitles.cs.
 //
 // Each line starts with who said it: "Speaker A", "B", ... in its own colour, from the voice (backend speakers.py),
-// or "You" (push to talk: the backend transcribes the headset mic). Italic text is still changing; with translation
+// or "You" (while you speak into the open mic, the backend transcribes it). Italic text is still changing; with translation
 // the translation is the main text and the original stands small underneath.
 // The panel stays where it is while you look around and glides after you once you look clearly elsewhere, like the
 // video window when it stands in front of you: text fixed to the head is uncomfortable.
@@ -112,7 +112,7 @@ public class CaptionView : MonoBehaviour
         var backend = room.Backend;
         if (backend != null)
             while (backend.TryGetMessage(out var json)) Handle(json, now);
-        subs.Mic(control.MicOn, now);
+        subs.Mic(control.Speaking, now);
 
         var lines = subs.Shown(now);
         var body = Compose(lines);
