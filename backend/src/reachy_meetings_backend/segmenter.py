@@ -8,6 +8,9 @@ Feed it 16 kHz mono float32 chunks of any size. It emits:
                         now, so slow work can start before the final; the final has the same audio length
                         unless speech resumed in between
 
+`quiet` on a live segment = how long nobody has spoken at its end. `split()` ends the utterance at an earlier
+point while it goes on (a sentence known to be complete), the rest becomes the next utterance.
+
 With a neural VAD (vad.SileroVad, the default in captions.py) a frame is speech above `speech_prob`
 (and keeps the utterance going above `keep_prob`). Without one, it falls back to loudness: noise floor
 (EMA over quiet frames) + `margin_db`.
@@ -31,6 +34,7 @@ class Segment:
     t_start: float      # stream time in s
     t_end: float
     early: bool = False   # tentative end (see early_s), final is False
+    quiet: float = 0.0    # live text only: seconds of silence at the end of `audio`
 
 
 @dataclass
@@ -133,8 +137,27 @@ class Segmenter:
         if self._since_partial >= (c.partial_every_s if self._had_partial else c.first_partial_s):
             self._since_partial = 0.0
             self._had_partial = True
-            return Segment(self._next_id, False, np.concatenate(self._speech), self._t_start, self._t)
+            return Segment(self._next_id, False, np.concatenate(self._speech), self._t_start, self._t,
+                           quiet=self._quiet * dt)
         return None
+
+    def split(self, sid: int, n: int) -> bool:
+        """Utterance `sid` ends after its first `n` samples (the audio of an early segment); what came after
+        is the next utterance, or nothing if it was only silence. False if `sid` is no longer the current one."""
+        k = n // FRAME
+        if self._speech is None or sid != self._next_id or not 0 < k <= len(self._speech):
+            return False
+        self._next_id += 1
+        self._speech = self._speech[k:]
+        if self._quiet >= len(self._speech):   # nothing but silence since
+            self._speech = None
+            self._loud = 0
+            return True
+        self._t_start += k * FRAME / SAMPLE_RATE
+        self._preroll_n = 0
+        self._since_partial = 0.0
+        self._had_partial = False
+        return True
 
     def _audio(self) -> np.ndarray | None:
         """The utterance so far without its trailing silence, None if too short (cough, click)."""

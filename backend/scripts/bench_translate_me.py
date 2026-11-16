@@ -30,7 +30,8 @@ import numpy as np
 SR = 16000
 FRAME = 640
 
-# (name, voice, text). "|" = a 0.5 s pause inside the sentence (a hesitation, must not cut the sentence).
+# (name, voice, text). "|" = a 0.5 s pause: a hesitation (s7, must not cut the sentence) or the end of a
+# sentence (s5: the first one is spoken while the second is still coming in, so its latency is negative).
 SENTENCES = [
     ("s1", "Markus", "Ja, das passt mir gut."),
     ("s2", "Petra (Premium)", "Können wir das Meeting auf morgen verschieben?"),
@@ -189,10 +190,9 @@ async def run(d: Path, port: int, server_log: Path | None, play_log: Path, reps:
                     await stream(noise(0.2))
                     lines = play_log.read_text().splitlines() if play_log.exists() else []
                     if len(lines) > plays_before and len(me) > n_me:
-                        p = json.loads(lines[plays_before])
-                        if play is None:
-                            play = p
-                            deadline = p["t"] + p["dur"] + 1.0
+                        play = json.loads(lines[plays_before])
+                        last = json.loads(lines[-1])   # a sentence cut in two: wait for all of it
+                        deadline = max(last["t"] + last["dur"] + 1.0, sent[-1] + 3.0)
                 got = me[n_me:]
                 hyp = " ".join(m["text"] for m in got)
                 err, n = word_errors(ref, hyp)

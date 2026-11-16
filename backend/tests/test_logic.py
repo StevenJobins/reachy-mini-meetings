@@ -6,7 +6,7 @@ from itertools import pairwise
 
 import numpy as np
 
-from reachy_meetings_backend.captions import CaptionServer, NoiseGate
+from reachy_meetings_backend.captions import CaptionServer, NoiseGate, whole_sentence
 from reachy_meetings_backend.doa import DoaTracker, circular_mean_deg, doa_to_head_deg
 from reachy_meetings_backend.people import People, image_to_angles, to_base
 from reachy_meetings_backend.segmenter import SAMPLE_RATE, Segmenter, SegmenterCfg
@@ -252,6 +252,40 @@ def test_early_end_comes_before_final_with_the_same_audio():
     assert [s.early or s.final for s in out if s.early or s.final] == [True, True]
     assert out[-1] is final[0]
     assert early[0].id == final[0].id and len(early[0].audio) == len(final[0].audio)
+
+
+def test_split_at_an_early_end_makes_the_rest_the_next_utterance():
+    seg = Segmenter(SegmenterCfg(early_s=0.3))
+    out = feed(seg, np.concatenate([noise(1.0), tone(1.0), noise(0.5), tone(0.5)]), block=640)
+    early = next(s for s in out if s.early)
+    assert seg.split(early.id, len(early.audio))
+    assert not seg.split(early.id, len(early.audio))   # that utterance is over
+    final = [s for s in feed(seg, np.concatenate([tone(0.5), noise(1.2)]), block=640) if s.final]
+    assert len(final) == 1 and final[0].id == early.id + 1
+    assert 1.3 < len(final[0].audio) / SAMPLE_RATE < 1.7   # the 0.5 s pause and the second tone, not the first
+    assert final[0].t_start >= early.t_end
+
+
+def test_split_with_only_silence_after_it_ends_the_utterance():
+    seg = Segmenter(SegmenterCfg(early_s=0.3))
+    out = feed(seg, np.concatenate([noise(1.0), tone(1.0), noise(0.5)]), block=640)
+    early = next(s for s in out if s.early)
+    assert seg.split(early.id, len(early.audio)) and not seg.active
+    assert feed(seg, noise(1.5), block=640) == []
+
+
+def test_whole_sentence():
+    assert whole_sentence("Ich schicke sie euch gleich per Mail.")
+    assert whole_sentence("Können wir das auf morgen verschieben?")
+    assert not whole_sentence("Also ich glaube.")                    # a hesitation
+    assert not whole_sentence("Ich habe die Folien gestern Abend,")
+    assert not whole_sentence("Wir sollten das Budget noch einmal...")
+
+
+def test_live_text_says_how_long_it_has_been_quiet():
+    out = feed(Segmenter(), np.concatenate([noise(1.0), tone(2.0), noise(0.7)]), block=640)
+    live = [s for s in out if not s.final]
+    assert live[0].quiet == 0 and live[-1].quiet > 0.3
 
 
 def test_early_end_then_speech_goes_on():

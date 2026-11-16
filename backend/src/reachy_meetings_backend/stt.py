@@ -68,8 +68,12 @@ def default_engine() -> str:
 
 class Transcriber:
     def __init__(self, model: str, language: str | None = None, engine: str | None = None,
-                 langs: tuple[str, ...] = ()) -> None:
+                 langs: tuple[str, ...] = (), retry: bool = True) -> None:
         self.engine = engine or default_engine()
+        # retry=False (live text): one pass only. Whisper decodes unclear audio again at up to five higher
+        # temperatures; 0.9 s of a sentence start took 1.25 s instead of 0.3 s that way and was dropped anyway,
+        # and everything behind it in the queue waited (2026-11-16).
+        self.temperature = (0.0, 0.2, 0.4, 0.6, 0.8, 1.0) if retry else 0.0
         self.language = language
         # Auto-detection only picks among these (empty = any). Short far-away clips came out as Czech or
         # Polish in a German/English meeting (robot test 2026-11-06).
@@ -113,13 +117,14 @@ class Transcriber:
         if self.engine == "mlx":
             self._holder.model, self._holder.model_path = self._model, self.repo   # no reload (see top)
             r = self._mlx.transcribe(audio, path_or_hf_repo=self.repo, language=language,
-                                     condition_on_previous_text=False, verbose=None)
+                                     condition_on_previous_text=False, verbose=None,
+                                     temperature=self.temperature)
             parts = [s["text"] for s in r["segments"]
                      if plausible(s["text"], s["no_speech_prob"], s["avg_logprob"], s["compression_ratio"])]
             lang = r["language"]
         else:
             segments, info = self._fw.transcribe(audio, language=language, beam_size=1,
-                                                  condition_on_previous_text=False)
+                                                  condition_on_previous_text=False, temperature=self.temperature)
             parts = [s.text for s in segments
                      if plausible(s.text, s.no_speech_prob, s.avg_logprob, s.compression_ratio)]
             lang = info.language

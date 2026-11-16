@@ -97,6 +97,14 @@ PROTOCOL_VERSION = "0.3"
 # and 1.2 s (DeepL quota); the headset shows only the translation while one is on its way, so that wait is seen.
 PARTIAL_TR_CHARS, PARTIAL_TR_S = 6, 0.5
 RESHOW_S = 12  # finals younger than this are still on show in the headset (it keeps a line 10 s)
+# Room: the final model starts on an utterance after this much silence, not only when it is known to be over
+# (silence_s = 0.8 s). The whole sentence and its translation stood in the bubble 1.9 s after the last word
+# before and 1.4 s with it (median of 8 German sentences, 2026-11-16). Shorter fires inside sentences, and each
+# time the large model keeps Whisper busy for 0.7 s.
+EARLY_S = 0.3
+LANG_MIN_S = 2.0
+SENTENCE_END = re.compile(r"[.!?][\"'»”)]*$")
+SPLIT_WORDS = 4   # Translate me: a sentence this long is said at once; "Also ich glaube." was a hesitation
 ECHO_S = 0.8   # the remote user's voice from Reachy's speaker: room captions muted this long after its last frame
 HEADSET_LOG = Path.home() / "Library/Logs/reachy-headset.log"   # the page's log lines ({"type": "log"})
 
@@ -147,6 +155,11 @@ def parse_lang(msg: dict) -> tuple[str | None, str | None]:
     target = target.lower() if isinstance(target, str) else None
     return (meeting if meeting == "auto" or (meeting and LANG_RE.fullmatch(meeting)) else None,
             target if target and LANG_RE.fullmatch(target) else None)
+
+
+def whole_sentence(text: str) -> bool:
+    """A sentence that can be said before the speaker is known to have finished (Translate me)."""
+    return len(text.split()) >= SPLIT_WORDS and bool(SENTENCE_END.search(text)) and not text.endswith("...")
 
 
 class Worker:
@@ -312,7 +325,7 @@ class Pipeline:
 
         self.args = args
         self.stt = Transcriber(args.model, args.lang, args.engine, args.langs)
-        self.stt_partial = (Transcriber(args.partial_model, args.lang, args.engine, args.langs)
+        self.stt_partial = (Transcriber(args.partial_model, args.lang, args.engine, args.langs, retry=False)
                             if args.partial_model != "none" else None)
         self.speakers = None
         if args.speakers == "voice":
@@ -325,16 +338,19 @@ class Pipeline:
         self.shown: deque[dict] = deque(maxlen=4)   # the last finals, to translate again when the language is switched
         self.partial_tr: dict[int, tuple[float, int]] = {}   # id -> (time, text length) of last partial translation
         # Language per utterance, detected by the fast partial model, so the big model needn't detect it
-        # again (that costs ~1 s): auto language at no extra delay.
+        # again (that costs 0.75 s): auto language at no extra delay. Only from live text of LANG_MIN_S or more:
+        # the first second of German sentences came out as English ("Ja" -> "Yeah").
         self.seg_lang: dict[int, str] = {}
+        self.early: dict[int, tuple[int, asyncio.Task]] = {}   # id -> (samples, _early task): final text under way
+        self.translated: dict[int, tuple[str, str]] = {}       # id -> (text, its translation) from the live text
         self.server = CaptionServer(args.host, args.port, args.target, args.allow_hf, args.lan_secret)
         try:
             from .vad import SileroVad
 
-            self.segmenter = Segmenter(vad=SileroVad())
+            self.segmenter = Segmenter(SegmenterCfg(early_s=EARLY_S), vad=SileroVad())
         except (ImportError, OSError) as e:  # onnxruntime missing / no download: loudness fallback
             log.warning("Silero VAD unavailable (%s), using the loudness threshold", e)
-            self.segmenter = Segmenter()
+            self.segmenter = Segmenter(SegmenterCfg(early_s=EARLY_S))
         # Languages, switchable from the page ({"type": "lang"}): the bubbles' language, and the one Reachy
         # speaks for the remote user ("auto" = --meeting-lang, else the language most spoken in the room)
         self.target = args.target
@@ -427,7 +443,8 @@ class Pipeline:
         speaker = await speaker if speaker else None
         if not text or seg.id in self.finalized:
             return
-        self.seg_lang[seg.id] = lang
+        if len(seg.audio) >= LANG_MIN_S * 16000:
+            self.seg_lang[seg.id] = lang
         cap = self._caption(seg, wall_end, text, lang, speaker=speaker)
         self.server.send(cap)
         # Translate live text too, so the bubble is readable while the person still talks. Throttled
@@ -437,19 +454,59 @@ class Pipeline:
         if (self.translator and lang != self.target and len(text) - last_len >= PARTIAL_TR_CHARS
                 and now - last_t >= PARTIAL_TR_S):
             self.partial_tr[seg.id] = (now, len(text))
+            target = self.target
             translation = await self.translator(text, remember=False)
-            if translation and seg.id not in self.finalized:
+            if translation and seg.id not in self.finalized and target == self.target:
+                self.translated[seg.id] = (text, translation)
                 self.server.send({**cap, "translation": translation, "translating": False})
+
+    def _final_stt(self, audio: np.ndarray, language: str | None = None) -> tuple[str, str]:
+        """The final model; a language the live text did not give comes from the fast model (0.1 s, the large
+        one takes 0.75 s for it)."""
+        if not language and self.stt_partial and not self.args.lang:
+            language = self.stt_partial.detect_language(audio)
+        return self.stt(audio, language)
+
+    async def _early(self, seg: Segment, wall_end: float) -> tuple[str, str]:
+        """The utterance as it stands after EARLY_S of silence, with the final model: shown as live text at once,
+        and the final takes text and translation from here if nothing more was said."""
+        me = asyncio.current_task()
+        speaker = self._speaker(seg)
+        text, lang = await self._stt(self._final_stt, seg.audio, self.seg_lang.get(seg.id))
+        speaker = await speaker if speaker else None
+        target, translator = self.target, self.translator
+        if text and self.early.get(seg.id, (0, None))[1] is me:   # not if speech went on or the final took over
+            cap = self._caption(seg, wall_end, text, lang, speaker=speaker)
+            self.server.send(cap)
+        if text and lang != target and translator:
+            translation = await translator(text, remember=False)
+            if translation and target == self.target:
+                self.translated[seg.id] = (text, translation)
+                if self.early.get(seg.id, (0, None))[1] is me:
+                    self.server.send({**cap, "translation": translation, "translating": False})
+        return text, lang
 
     async def _final(self, seg: Segment, wall_end: float) -> None:
         speaker = self._speaker(seg)
-        text, lang = await self._stt(self.stt, seg.audio, self.seg_lang.pop(seg.id, None))
+        n, early = self.early.pop(seg.id, (0, None))
+        reused = bool(early and n == len(seg.audio))
+        if reused:
+            text, lang = await early
+        else:
+            if early:
+                early.cancel()
+            text, lang = await self._stt(self._final_stt, seg.audio, self.seg_lang.get(seg.id))
+        self.seg_lang.pop(seg.id, None)
         speaker = await speaker if speaker else None
         self.finalized.add(seg.id)
         self.partial_tr.pop(seg.id, None)
-        cap = self._caption(seg, wall_end, text, lang, speaker=speaker)
+        known_text, translation = self.translated.pop(seg.id, ("", None))
+        if known_text != text:
+            translation = None
+        cap = self._caption(seg, wall_end, text, lang, translation, speaker)
         self.server.send(cap)
-        log.info("[%d %s speaker %s] %s", seg.id, lang, speaker or "?", text)
+        log.info("[%d %s speaker %s] %s  (%.2f s after the last word%s)", seg.id, lang, speaker or "?", text,
+                 time.time() - wall_end + self.segmenter.cfg.silence_s, ", started early" if reused else "")
         if self.people and text:
             t1 = cap["t_end"]
             t0 = cap["t_start"]
@@ -461,7 +518,11 @@ class Pipeline:
         if text:
             self.room_langs.append((time.time(), lang))
         target, translator = self.target, self.translator
-        if text and lang != target and translator:
+        if translation:   # the live text was already this sentence: no second request
+            log.info("[%d %s] %s", seg.id, target, translation)
+            if translator:
+                translator.history.append(text)
+        elif text and lang != target and translator:
             translation = await translator(text)
             if target == self.target:   # not if the bubble language changed meanwhile
                 if translation:
@@ -505,6 +566,7 @@ class Pipeline:
             if target and target != self.target:
                 self.target = self.server.target = target
                 self.translator = self._new_translator(target)
+                self.translated.clear()
                 asyncio.create_task(self._retranslate())
                 if self.summarizer:
                     self.summarizer.set_target(target)
@@ -613,7 +675,8 @@ class Pipeline:
     async def _me_loop(self) -> None:
         """The remote user's voice -> sentences. Work on a sentence starts at the tentative end (early_s of
         silence) and is kept if the sentence really ends there (silence_s), so Whisper, DeepL and the synthesis
-        mostly run while we still wait for the end of the sentence."""
+        mostly run while we still wait for the end of the sentence. It is also kept if the text is a whole
+        sentence (ends in . ! ?): the utterance is cut there and Reachy says it while the user talks on."""
         cfg = self.me_segmenter.cfg
         prepared: dict[int, tuple[int, asyncio.Task, float]] = {}   # seg id -> (samples, task, speech end)
         while True:
@@ -643,6 +706,14 @@ class Pipeline:
                     self.me_out.put_nowait((task, t_end))
                     for sid in [i for i in prepared if i < seg.id]:   # tentative ends of dropped blips
                         prepared.pop(sid)[1].cancel()
+            # A whole sentence before a short pause is spoken now, also while the user talks on. Push to talk:
+            # several sentences in one go came out only after the last one (three sentences, 9.3 s: Reachy began
+            # 7.8 s after the first one, now 1.0-1.3 s; 2026-11-16).
+            for sid, (n, task, t_end) in list(prepared.items()):
+                if (task.done() and not task.cancelled() and not task.exception() and task.result()
+                        and whole_sentence(task.result()["text"]) and self.me_segmenter.split(sid, n)):
+                    del prepared[sid]
+                    self.me_out.put_nowait((task, t_end))
 
     def _me_voice(self, frame: bytes | None) -> None:
         if frame is not None and not self.me_speak:
@@ -716,8 +787,19 @@ class Pipeline:
             for seg in segs:
                 if seg.final:
                     spawn(self._final(seg, time.time()))
-                elif self.stt_partial and self.pending == 0:  # skip partials while Whisper is behind
-                    spawn(self._partial(seg, time.time()))
+                elif seg.early:
+                    old = self.early.pop(seg.id, None)
+                    if old:
+                        old[1].cancel()
+                    self.early[seg.id] = (len(seg.audio), asyncio.create_task(self._early(seg, time.time())))
+                elif seg.id in self.early and seg.quiet >= EARLY_S:
+                    pass   # still silent: the final model is on this text already
+                else:
+                    old = self.early.pop(seg.id, None)   # speech went on
+                    if old:
+                        old[1].cancel()
+                    if self.stt_partial and self.pending == 0:  # skip partials while Whisper is behind
+                        spawn(self._partial(seg, time.time()))
         if jobs:
             await asyncio.gather(*jobs)
         src.result()
