@@ -227,6 +227,19 @@ public static class ProjectConfigure
         video.captions.notes = notesPanel;
         video.control.notes = notesPanel;
 
+        // A screen shared on the laptop, left of straight ahead, there only while someone shares
+        var shareGo = new GameObject("Shared Screen");
+        shareGo.transform.SetParent(offset.transform, false);
+        var screenShare = shareGo.AddComponent<ScreenShare>();
+        screenShare.video = video;
+        var sharePanel = shareGo.AddComponent<SharePanel>();
+        sharePanel.control = video.control;
+        sharePanel.head = camGo.transform;
+        sharePanel.share = screenShare;
+        sharePanel.panelMaterial = video.captions.panelMaterial;
+        sharePanel.screenMaterial = SaveMaterial("ScreenPanel", Shader.Find("Reachy/ScreenPanel"), Color.white);
+        video.control.share = sharePanel;
+
         // Interactive guided tour on the first start (Reachy waits), again from "Help" in the menu
         var tour = new GameObject("Tutorial");
         tour.transform.SetParent(offset.transform, false);
@@ -274,6 +287,7 @@ public static class ProjectConfigure
         curtain.room = video.room;
         curtain.menu = quick;
         curtain.notes = notesPanel;
+        curtain.share = sharePanel;
         curtain.captions = video.captions;
         curtain.bubbles = bubbles;
         curtain.panorama = video.panorama;

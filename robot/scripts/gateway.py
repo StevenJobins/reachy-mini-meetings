@@ -6,6 +6,7 @@ Everything the Unity app needs here goes through it, so the parts themselves can
     /signalling    -> 127.0.0.1:8443   video signalling (the daemon's webrtcsink)
     /backend       -> 127.0.0.1:8766   captions, translation, room sound
     /time          -> 127.0.0.1:8444   clock for the latency tests
+    /screen        -> 127.0.0.1:8445   signalling of the shared screen (share_screen.py; answers only while sharing)
 
 Every request must carry `Authorization: Bearer <token>` of a known headset, else it gets 401 and nothing is
 forwarded. The video itself (WebRTC, UDP) still goes straight between headset and laptop. Standard library only,
@@ -53,7 +54,7 @@ import urllib.request
 from pathlib import Path
 
 PORT = 8790   # not 8770: macOS itself listens there (sharingd)
-ROUTES = {"daemon": 8000, "signalling": 8443, "backend": 8766, "time": 8444}
+ROUTES = {"daemon": 8000, "signalling": 8443, "backend": 8766, "time": 8444, "screen": 8445}
 CONFIG = Path.home() / ".config" / "reachy-meetings"
 HEADSETS = CONFIG / "headsets.json"
 PAIRING_CODE = CONFIG / "pairing_code.json"   # the running gateway's current code, for the status view

@@ -30,6 +30,7 @@ public class RobotControl : MonoBehaviour
     public QuickMenu menu;
     public Tutorial tutorial;
     public NotesPanel notes;
+    public SharePanel share;
     public Curtain curtain;
     public Pairing pairing;
 
@@ -233,6 +234,7 @@ public class RobotControl : MonoBehaviour
             else if (curtain != null && curtain.Hovered(true)) curtain.Press(true);
             else if (tutorial != null && tutorial.Hovered(true)) tutorial.Press(true);
             else if (notes != null && notes.Hovered(true)) notes.Press(true);
+            else if (share != null && share.Hovered(true)) share.Press(true);
             else if (menu != null && menu.Hovered(true)) menu.Select(true);
         }
         rightDown = rightNow;
@@ -249,6 +251,7 @@ public class RobotControl : MonoBehaviour
             else if (curtain != null && curtain.Hovered(false)) curtain.Press(false);
             else if (tutorial != null && tutorial.Hovered(false)) tutorial.Press(false);
             else if (notes != null && notes.Hovered(false)) notes.Press(false);
+            else if (share != null && share.Hovered(false)) share.Press(false);
             else if (menu != null && menu.Hovered(false)) menu.Select(false);
             else if (Paused && !tutorial.WantsHold) tutorial.LeftPinch();
             else leftUsed = false;   // nothing under it: held long enough, it recenters

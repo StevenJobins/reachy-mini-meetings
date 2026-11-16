@@ -27,6 +27,10 @@ fi
 
 remote=()
 if (( ${@[(I)--remote]} )); then remote=(--remote); set -- ${@:#--remote}; fi
+# --share: this laptop's screen as a second picture in the headset (robot/scripts/share_screen.py, needs the
+# Python of Reachy Mini Control for its GStreamer; macOS asks once for Screen Recording)
+share=0
+if (( ${@[(I)--share]} )); then share=1; set -- ${@:#--share}; fi
 python3 -u robot/scripts/gateway.py $remote > $logs/gateway.log 2>&1 &
 gateway=$!
 # Models already on this laptop: no questions to Hugging Face at the start (an expired login there stops them loading)
@@ -34,7 +38,12 @@ gateway=$!
 # The backend stays on 127.0.0.1 (its default): the headset reaches it through the gateway
 (cd backend && PYTHONPATH=src PYTHONUNBUFFERED=1 exec $py -m reachy_meetings_backend.captions "$@") > $logs/backend.log 2>&1 &
 backend=$!
-trap 'kill $gateway $backend 2>/dev/null; echo; echo "Stopped. Reachy Mini Control keeps running."; exit' INT TERM
+screen=
+if (( share )); then
+  "$HOME/Library/Application Support/com.pollen-robotics.reachy-mini/.venv/bin/python" -u robot/scripts/share_screen.py > $logs/screen.log 2>&1 &
+  screen=$!
+fi
+trap 'kill $gateway $backend $screen 2>/dev/null; echo; echo "Stopped. Reachy Mini Control keeps running."; exit' INT TERM
 
 mark() { [[ $1 == 1 ]] && print -n "  ok    " || print -n "  --    " }
 while true; do

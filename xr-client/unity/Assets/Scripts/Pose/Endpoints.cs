@@ -2,6 +2,7 @@
 // this headset's token. Everything goes through that one door, each part under its own path:
 //   /daemon/...   Reachy daemon (set_target, state, wake-up)     /signalling   video signalling
 //   /backend      captions, translation, room sound              /time         clock for the latency tests
+//   /screen       signalling of a screen shared on the laptop (answers only while someone shares)
 // The gateway lets a request in only with the token in the Authorization header (Sign, Authorization).
 // No Unity in here.
 
@@ -12,7 +13,7 @@ public class Endpoints
 {
     /// <summary>The address everything hangs under, as given: ws://laptop:8790.</summary>
     public readonly string Gateway;
-    public readonly Uri Signalling, Backend, Clock, DaemonTarget, DaemonState;
+    public readonly Uri Signalling, Backend, Clock, Screen, DaemonTarget, DaemonState;
     /// <summary>For the daemon's HTTP calls: append the daemon's own path, e.g. "/api/daemon/status".</summary>
     public readonly string DaemonHttp;
     /// <summary>Value of the Authorization header for HTTP requests.</summary>
@@ -24,6 +25,7 @@ public class Endpoints
         Signalling = new Uri(ws + "/signalling");
         Backend = new Uri(ws + "/backend");
         Clock = new Uri(ws + "/time");
+        Screen = new Uri(ws + "/screen");
         DaemonTarget = new Uri(ws + "/daemon/api/move/ws/set_target");
         DaemonState = new Uri(ws + "/daemon/api/state/ws/full?frequency=60&with_head_pose=true&with_body_yaw=true&with_antenna_positions=false");
         DaemonHttp = "http" + ws.Substring(2) + "/daemon";   // ws -> http, wss -> https

@@ -16,6 +16,7 @@ public class EndpointsTests
         var e = Endpoints.From("ws://192.168.1.5:8790", "tok");
         Assert.AreEqual("ws://192.168.1.5:8790/signalling", e.Signalling.ToString());
         Assert.AreEqual("ws://192.168.1.5:8790/backend", e.Backend.ToString());
+        Assert.AreEqual("ws://192.168.1.5:8790/screen", e.Screen.ToString());
         Assert.AreEqual("ws://192.168.1.5:8790/time", e.Clock.ToString());
         Assert.AreEqual("ws://192.168.1.5:8790/daemon/api/move/ws/set_target", e.DaemonTarget.ToString());
         Assert.AreEqual("/daemon/api/state/ws/full", e.DaemonState.AbsolutePath);

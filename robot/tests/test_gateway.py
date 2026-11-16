@@ -18,10 +18,11 @@ def test_route_strips_the_first_part_and_keeps_the_query():
     assert gateway.route("/signalling") == ("signalling", 8443, "/")
     assert gateway.route("/backend/") == ("backend", 8766, "/")
     assert gateway.route("/time") == ("time", 8444, "/")
+    assert gateway.route("/screen") == ("screen", 8445, "/")
 
 
 @pytest.mark.parametrize("target", ["/", "/api/daemon/status", "/daemonx/api", "/Daemon/api", "/../daemon"])
-def test_route_knows_only_its_four_parts(target):
+def test_route_knows_only_its_parts(target):
     assert gateway.route(target) is None
 
 

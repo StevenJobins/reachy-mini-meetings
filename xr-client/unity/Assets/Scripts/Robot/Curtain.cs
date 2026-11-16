@@ -22,6 +22,7 @@ public class Curtain : MonoBehaviour
     public RoomSound room;
     public QuickMenu menu;
     public NotesPanel notes;
+    public SharePanel share;
     public CaptionView captions;
     public SpeakerBubbles bubbles;
     public RoomPanorama panorama;
@@ -165,6 +166,7 @@ public class Curtain : MonoBehaviour
         // While Reachy gets ready there is nothing to work yet: no menu, notes or subtitles, a plain loading screen.
         // In the tutorial they are there: it shows them.
         menu.Hidden = notes.Hidden = captions.Hidden = bubbles.Hidden = hide && !tour;
+        if (share != null) share.Hidden = hide;
         string problem = Problem();
         if (!hide)
         {

@@ -1,5 +1,6 @@
 // Client for GStreamer webrtcsink's signalling server (the daemon's, port 8443 on the robot laptop, reached through
-// the gateway: Endpoints.Signalling), consumer side.
+// the gateway: Endpoints.Signalling), consumer side. The shared screen has a signalling server of its own
+// (Endpoints.Screen, ScreenShare.cs), same protocol.
 // Same protocol as xr-client/web/index.html:
 //   -> {type:"list"}                               <- {type:"list", producers:[{id, meta:{name}}]}
 //   -> {type:"startSession", peerId}               <- {type:"sessionStarted", peerId, sessionId}
@@ -55,10 +56,11 @@ public class GstSignalling : IDisposable
     public State Status { get; private set; } = State.Connecting;
     public string LastError { get; private set; }
 
-    public GstSignalling(Endpoints laptop)
+    /// <summary>server: another signalling server behind the same gateway; default the camera's.</summary>
+    public GstSignalling(Endpoints laptop, Uri server = null)
     {
         laptop.Sign(ws);
-        _ = Run(laptop.Signalling);
+        _ = Run(server ?? laptop.Signalling);
     }
 
     async Task Run(Uri uri)
