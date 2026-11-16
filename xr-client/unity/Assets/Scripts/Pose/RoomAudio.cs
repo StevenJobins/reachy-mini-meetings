@@ -93,15 +93,19 @@ public class Biquad
     }
 }
 
-/// <summary>Speech chain: high-pass 120 Hz against room hum, +4 dB presence at 3 kHz, compressor, make-up gain.</summary>
+/// <summary>Speech chain: high-pass 120 Hz against room hum, +4 dB presence at 3 kHz, compressor, make-up gain, soft limit.</summary>
 public class SpeechFilter
 {
-    const double ThresholdDb = -18, Ratio = 3.5, MakeUp = 1.8;
+    // Loudness (2026-11-16, "very low in the headset"): the settings before left a voice that peaks at -33 dBFS at
+    // about -32 dBFS RMS, because the level control looks at the peaks and speech peaks ~18 dB above its average.
+    // Now about -20 dBFS RMS for that voice and -15 for someone next to the robot; the soft knee above Knee keeps
+    // the make-up gain from clipping.
+    const double ThresholdDb = -24, Ratio = 4, MakeUp = 4, Knee = 0.6;
     const double AttackS = 0.005, ReleaseS = 0.15;
     // Level first: people a few metres from the robot arrive very quiet (measured 2026-11-11: speech peaks at
     // -33 dBFS, and came out of this filter at -28). A slow gain brings the loud parts of the speech to AgcTarget,
     // at most AgcMax times; it does not move in the pauses (below AgcFloor), so the noise there is not pulled up.
-    const double AgcTarget = 0.3, AgcMax = 10, AgcFloor = 0.004, AgcAttackS = 0.02, AgcReleaseS = 4;
+    const double AgcTarget = 0.6, AgcMax = 30, AgcFloor = 0.004, AgcAttackS = 0.02, AgcReleaseS = 4;
 
     readonly Biquad highPass = Biquad.HighPass(120, 0.7, AudioJitterBuffer.SampleRate);
     readonly Biquad presence = Biquad.Peaking(3000, 0.9, 4, AudioJitterBuffer.SampleRate);
@@ -124,8 +128,9 @@ public class SpeechFilter
             level = rectified > level ? attack * level + (1 - attack) * rectified : release * level + (1 - release) * rectified;
             double db = 20 * Math.Log10(Math.Max(level, 1e-6));
             double gainDb = db > ThresholdDb ? (ThresholdDb - db) * (1 - 1 / Ratio) : 0;
-            double y = x * Math.Pow(10, gainDb / 20) * MakeUp;
-            samples[i] = (float)Math.Max(-1, Math.Min(1, y));
+            double y = x * Math.Pow(10, gainDb / 20) * MakeUp, ay = Math.Abs(y);
+            if (ay > Knee) y = Math.Sign(y) * (Knee + (1 - Knee) * Math.Tanh((ay - Knee) / (1 - Knee)));
+            samples[i] = (float)y;
         }
     }
 }

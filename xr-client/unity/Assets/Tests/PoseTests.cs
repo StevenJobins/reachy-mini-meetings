@@ -225,6 +225,27 @@ public class PoseTests
     }
 
     [Test]
+    public void SpeechFilterMakesAFarVoiceLoudEnoughWithoutClipping()
+    {
+        var f = new SpeechFilter();
+        var rng = new System.Random(1);
+        var s = new float[16000 * 6];
+        double prev = 0;
+        for (int i = 0; i < s.Length; i++)   // speech-like: low-passed noise in syllables, peaks around -33 dBFS
+        {
+            double t = i / 16000.0;
+            double env = Math.Sin(2 * Math.PI * 3 * t) > 0 ? Math.Abs(Math.Sin(2 * Math.PI * 4 * t)) : 0;
+            prev = 0.9 * prev + (rng.NextDouble() * 2 - 1);
+            s[i] = (float)(0.0035 * prev * env);
+        }
+        f.Process(s, 0, s.Length);
+        var tail = s.Skip(16000 * 2).ToArray();
+        double rmsDb = 20 * Math.Log10(Math.Sqrt(tail.Average(v => (double)v * v)));
+        Assert.That(rmsDb, Is.GreaterThan(-24), "loud enough in the headset (was about -32 dBFS)");
+        Assert.That(tail.Max(v => Math.Abs(v)), Is.LessThan(1.0f), "soft limit, no hard clipping");
+    }
+
+    [Test]
     public void SubtitleLinesUpdateByIdAndKeepTheNewestThree()
     {
         var s = new Subtitles();
