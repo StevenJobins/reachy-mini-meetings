@@ -94,10 +94,13 @@ fi
 # screencap: shares one window, one app or one screen (ScreenCaptureKit), see screencap.swift. Inside the app, so
 # macOS asks about Screen Recording for the app itself
 swiftc -O -target arm64-apple-macos14.0 -o $app/Contents/MacOS/screencap $here/screencap.swift \
-  && codesign --force --sign - --identifier ch.ethz.reachymeetings.laptop.screencap $app/Contents/MacOS/screencap \
+  && codesign --force --sign - --identifier ch.ethz.reachymeetings.laptop.screencap \
+       -r='designated => identifier "ch.ethz.reachymeetings.laptop.screencap"' $app/Contents/MacOS/screencap \
   || echo "note: screencap not built (needs the Xcode command line tools): only the whole screen can be shared"
 
-# A local signature, so macOS knows the app again when it asks about microphone and camera
-codesign --force --sign - $app 2>/dev/null || echo "note: not signed (codesign failed); macOS may ask for the permissions again"
+# A local signature, so macOS knows the app again when it asks about microphone, camera and screen recording. Its
+# requirement names the app by its identifier: a plain local signature names the exact build (cdhash), and every
+# new build would then count as a stranger, its switches in Privacy & Security on but for an older build
+codesign --force --sign - -r='designated => identifier "ch.ethz.reachymeetings.laptop"' $app 2>/dev/null || echo "note: not signed (codesign failed); macOS may ask for the permissions again"
 
 echo "built $app ($(du -sh $app | cut -f1))"
