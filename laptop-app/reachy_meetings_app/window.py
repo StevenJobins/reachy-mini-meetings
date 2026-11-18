@@ -160,6 +160,8 @@ class Stage(AppKit.NSView):
     names: list = []        # headsets connected now
     speaking = False        # the person in the headset speaks
     sharing = False
+    share_label = ""        # what is shared, in words
+    share_image = None      # a small picture of it (NSImage), renewed while shared
     code, hint = "", ""
     gaze = (0.0, 0.0)
 
@@ -177,6 +179,8 @@ class Stage(AppKit.NSView):
             ring.stroke()
         x, y, w, h = tile.origin.x, tile.origin.y, tile.size.width, tile.size.height
         cx = x + w / 2
+        if self.sharing and self.share_image is not None and self.names:   # room for the picture on the right
+            cx = x + (w - min(w * 0.36, 360.0)) / 2
         if self.names:
             draw_reachy(cx, y + h * 0.53, min(w, h) * 0.5, 1.0, self.speaking, self.gaze)
             pill(", ".join(self.names), x + 14, y + 14, rgb("#000000", 0.45), rgb("#ffffff"))
@@ -188,10 +192,31 @@ class Stage(AppKit.NSView):
                             rgb("#9aa1ad"))
             top = draw_text(self.code or "– – –", cx, top - 6, 40, rgb("#ffffff"), mono=True)
             draw_text(self.hint, cx, top - 4, 11.5, rgb("#9aa1ad"))
-        if self.sharing:
+        if self.sharing:   # what the headset sees: the name, and the picture itself in the corner
+            text = f"The headset sees: {self.share_label or 'this screen'}"
             attrs = {AppKit.NSFontAttributeName: AppKit.NSFont.systemFontOfSize_weight_(12, AppKit.NSFontWeightMedium)}
-            s = text_size("The headset sees this screen", attrs)
-            pill("The headset sees this screen", x + 14, y + h - s.height - 24, rgb(ACCENT), rgb("#1a1205"))
+            s = text_size(text, attrs)
+            top = y + h - 14
+            image = self.share_image
+            if image is not None and image.size().width > 0:
+                pw = min(w * 0.36, 360.0)
+                ph = pw * image.size().height / image.size().width
+                if ph > h * 0.5:
+                    ph = h * 0.5
+                    pw = ph * image.size().width / image.size().height
+                frame = NSMakeRect(x + w - pw - 14, top - ph, pw, ph)
+                AppKit.NSGraphicsContext.saveGraphicsState()
+                AppKit.NSBezierPath.bezierPathWithRoundedRect_xRadius_yRadius_(frame, 8, 8).addClip()
+                image.drawInRect_(frame)
+                AppKit.NSGraphicsContext.restoreGraphicsState()
+                border = AppKit.NSBezierPath.bezierPathWithRoundedRect_xRadius_yRadius_(frame, 8, 8)
+                border.setLineWidth_(3)
+                rgb(ACCENT).setStroke()
+                border.stroke()
+                top -= ph + 8
+                pill(text, min(x + w - s.width - 34, x + w - pw - 14), top - s.height - 10, rgb(ACCENT), rgb("#1a1205"))
+            else:
+                pill(text, x + 14, top - s.height - 10, rgb(ACCENT), rgb("#1a1205"))
 
 
 class RoundButton(AppKit.NSView):
@@ -280,6 +305,7 @@ class Controller(NSObject):
         self.caption = ("", "")      # the line and its translation
         self.caption_at = 0.0
         self.live = None
+        self.share_choices = []    # (source, label) per item of the share menu
         return self
 
     # ------------------------------------------------------------ building
@@ -348,11 +374,15 @@ class Controller(NSObject):
         self.caption_text.setAlignment_(AppKit.NSTextAlignmentCenter)
         self.caption_text.setMaximumNumberOfLines_(2)
         self.caption_text.setLineBreakMode_(AppKit.NSLineBreakByTruncatingTail)
+        # a long caption is cut, it does not push the window wider (a label wants the width of its whole text, and
+        # that wish is stronger than the window keeping its size)
+        self.caption_text.setContentCompressionResistancePriority_forOrientation_(
+            AppKit.NSLayoutPriorityDefaultLow, AppKit.NSLayoutConstraintOrientationHorizontal)
         self.clock = label("", 13, color="secondaryLabelColor", width=260)
 
         self.buttons = {
             "share": round_button(("rectangle.inset.filled.and.person.filled", "rectangle.on.rectangle", "display"),
-                                  "Share this screen with the headset", self.toggleShare),
+                                  "Share a screen, a window or an app with the headset", self.toggleShare),
             "captions": round_button(("captions.bubble", "text.bubble"), "Captions", self.toggleCaptions),
             "remote": round_button(("globe",), "Let headsets on other networks (at home) connect", self.toggleRemote),
             "people": round_button(("person.2", "person.2.fill"), "People, pairing code and the state of the parts",
@@ -492,6 +522,12 @@ class Controller(NSObject):
 
         stage = self.stage
         stage.names, stage.code, stage.hint, stage.sharing = list(s.connected), s.code, hint, s.sharing
+        stage.share_label = s.share_label
+        stage.share_image = None
+        if s.share_thumb:   # read anew each time: screencap replaces the file every second
+            data = AppKit.NSData.dataWithContentsOfFile_(s.share_thumb)
+            stage.share_image = AppKit.NSImage.alloc().initWithData_(data) if data is not None else None
+        self.buttons["share"].setToolTip_("Stop sharing" if s.sharing else "Share a screen, a window or an app with the headset")
         if not s.connected:
             stage.speaking = False
         stage.setNeedsDisplay_(True)
@@ -575,7 +611,80 @@ class Controller(NSObject):
 
     @objc.python_method
     def toggleShare(self) -> None:
-        self.after(self.supervisor.set_sharing, not self.status.sharing)
+        if self.status.sharing:
+            self.after(self.supervisor.set_sharing, False)
+            return
+
+        def look():   # screencap lists what can be shared (it may take a moment; the first time macOS asks)
+            found = self.supervisor.shareable()
+            AppHelper.callAfter(self.pick_share, found)
+        threading.Thread(target=look, daemon=True).start()
+
+    @objc.python_method
+    def pick_share(self, found: dict) -> None:
+        """A menu at the share button, as in a video call: a whole screen, all windows of an app, or one window."""
+        if not found:   # an app without screencap: the whole screen, as before
+            self.after(self.supervisor.set_sharing, True)
+            return
+        if found.get("error"):
+            alert = AppKit.NSAlert.alloc().init()
+            alert.setMessageText_("Reachy Meetings may not record the screen yet")
+            alert.setInformativeText_("Allow it under System Settings > Privacy & Security > Screen & System Audio "
+                                      "Recording, then quit and open Reachy Meetings again.\n\n" + found["error"][:300])
+            alert.runModal()
+            return
+        self.share_choices = []
+        menu = AppKit.NSMenu.alloc().init()
+        menu.setAutoenablesItems_(False)
+
+        def item(title: str, source: str, label: str, image=None, into=menu):
+            it = into.addItemWithTitle_action_keyEquivalent_(title, "shareChosen:", "")
+            it.setTarget_(self)
+            it.setTag_(len(self.share_choices))
+            self.share_choices.append((source, label))
+            if image is not None:
+                image.setSize_(NSMakeSize(18, 18))
+                it.setImage_(image)
+            return it
+
+        def header(title: str):
+            it = menu.addItemWithTitle_action_keyEquivalent_(title, None, "")
+            it.setEnabled_(False)
+
+        header("Share with the headset")
+        screens = found.get("displays", [])
+        for d in screens:
+            name = d["name"] if len(screens) == 1 else f"{d['name']} ({d['width']}×{d['height']})"
+            item(f"Whole screen: {name}", f"display:{d['id']}", f"the whole screen ({d['name']})",
+                 AppKit.NSImage.imageWithSystemSymbolName_accessibilityDescription_("display", None))
+        apps = {}
+        for w in found.get("windows", []):
+            apps.setdefault((w["app"], w["pid"]), []).append(w)
+        if apps:
+            menu.addItem_(AppKit.NSMenuItem.separatorItem())
+            header("An app or one window")
+        for (app, pid), windows in sorted(apps.items(), key=lambda a: a[0][0].lower()):
+            running = AppKit.NSRunningApplication.runningApplicationWithProcessIdentifier_(pid)
+            icon = running.icon() if running is not None else None
+            top = menu.addItemWithTitle_action_keyEquivalent_(app, None, "")
+            if icon is not None:
+                icon = icon.copy()
+                icon.setSize_(NSMakeSize(18, 18))
+                top.setImage_(icon)
+            sub = AppKit.NSMenu.alloc().init()
+            sub.setAutoenablesItems_(False)
+            item(f"All {app} windows", f"app:{pid}", app, into=sub)
+            sub.addItem_(AppKit.NSMenuItem.separatorItem())
+            for w in windows:
+                title = w["title"] or "Window without a title"
+                item(title[:70], f"window:{w['id']}", f"{app}: {title}"[:80], into=sub)
+            top.setSubmenu_(sub)
+        button = self.buttons["share"]
+        menu.popUpMenuPositioningItem_atLocation_inView_(None, NSMakePoint(0, button.bounds().size.height + 6), button)
+
+    def shareChosen_(self, sender) -> None:
+        source, label = self.share_choices[sender.tag()]
+        self.after(lambda: self.supervisor.set_sharing(True, source=source, label=label))
 
     @objc.python_method
     def toggleRemote(self) -> None:

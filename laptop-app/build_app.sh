@@ -50,7 +50,7 @@ cat > $app/Contents/Info.plist <<PLIST
   <key>CFBundleShortVersionString</key><string>$(<$here/VERSION)</string>
   <key>CFBundleIconFile</key><string>AppIcon</string>
   <key>CFBundleVersion</key><string>$(git -C $repo rev-parse --short HEAD 2>/dev/null || echo 0)</string>
-  <key>LSMinimumSystemVersion</key><string>13.0</string>
+  <key>LSMinimumSystemVersion</key><string>14.0</string>
   <key>NSHighResolutionCapable</key><true/>
   <key>NSMicrophoneUsageDescription</key><string>Reachy's microphones bring the meeting room to the headset and are transcribed for the captions.</string>
   <key>NSCameraUsageDescription</key><string>Reachy's camera is used to find the faces of the people who are speaking.</string>
@@ -90,6 +90,12 @@ else
   cc -O2 -o $app/Contents/MacOS/reachy-meetings $here/launcher.c -I$include -L$libdir -lpython$version -Wl,-rpath,$libdir \
      -DREPO="\"$repo\"" -DPYTHON="\"$python\""
 fi
+
+# screencap: shares one window, one app or one screen (ScreenCaptureKit), see screencap.swift. Inside the app, so
+# macOS asks about Screen Recording for the app itself
+swiftc -O -target arm64-apple-macos14.0 -o $app/Contents/MacOS/screencap $here/screencap.swift \
+  && codesign --force --sign - --identifier ch.ethz.reachymeetings.laptop.screencap $app/Contents/MacOS/screencap \
+  || echo "note: screencap not built (needs the Xcode command line tools): only the whole screen can be shared"
 
 # A local signature, so macOS knows the app again when it asks about microphone and camera
 codesign --force --sign - $app 2>/dev/null || echo "note: not signed (codesign failed); macOS may ask for the permissions again"

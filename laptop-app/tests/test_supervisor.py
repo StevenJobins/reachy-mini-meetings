@@ -349,3 +349,29 @@ def test_stop_also_ends_a_shared_screen(made):
     s.set_sharing(True, python)
     s.stop()
     assert started[-1].terminated and s.screen is None
+
+
+def test_a_chosen_window_is_shared_through_screencap_with_its_name(made):
+    s, started, tmp = made
+    python, helper = tmp / "control-python", tmp / "screencap"
+    python.write_text("")
+    helper.write_text("")
+    s.environ["REACHY_SCREENCAP"] = str(helper)
+    s.set_sharing(True, python, source="window:4711", label="Safari: Budget")
+    assert started[-1].args[-6:] == ["--source", "window:4711", "--helper", str(helper), "--thumb", str(s.thumb)]
+    status = s.status()
+    assert status.sharing and status.share_label == "Safari: Budget" and status.share_thumb == ""
+    s.thumb.write_bytes(b"jpeg")
+    assert s.status().share_thumb == str(s.thumb)
+    s.set_sharing(False)
+    assert not s.thumb.exists() and s.status().share_label == ""
+
+
+def test_without_screencap_the_whole_screen_is_shared(made):
+    s, started, tmp = made
+    python = tmp / "control-python"
+    python.write_text("")
+    s.screencap = lambda: None
+    s.set_sharing(True, python, source="window:4711", label="Safari: Budget")
+    assert "--source" not in started[-1].args
+    assert s.status().share_label == "The whole screen"

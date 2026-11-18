@@ -3,7 +3,8 @@
     Reachy Mini Control   Pollen's app with the daemon; opened if it does not answer, never stopped by us
     gateway               robot/scripts/gateway.py: the door for headsets (pairing code, tokens, other networks)
     backend               captions, translation, faces, room sound (backend/)
-    screen                robot/scripts/share_screen.py, only while the screen is shared (set_sharing)
+    screen                robot/scripts/share_screen.py, only while the screen is shared (set_sharing); a window,
+                          an app or a screen chosen in the window comes from the app's screencap (screencap.swift)
 
 The app that brings its own Python (libraries.standalone()) first fetches the backend's libraries, once
 (libraries.py); the gateway needs none of them and is up meanwhile, so a headset can already be paired.
@@ -138,6 +139,8 @@ class Status:
     meeting_lang: str = "auto"   # what Reachy speaks for the headset user (MEETING_LANGS)
     sharing: bool = False        # this laptop's screen goes to the headset
     share_note: str = ""         # why sharing stopped or cannot start
+    share_label: str = ""        # what is shared, in words ("Safari: Budget 2027")
+    share_thumb: str = ""        # a small picture of it, renewed every second while shared ("" without screencap)
 
 
 class Supervisor:
@@ -148,7 +151,7 @@ class Supervisor:
         self.shell_key = shell_key
         self.gateway_module = load_gateway(repo)
         self.gateway = self.backend = self.screen = None
-        self.share_note = ""
+        self.share_note, self.share_label = "", ""
         self.opened_control = False
         self.settings = self._load_settings()
         self.standalone = libraries.standalone() if environ is None else environ.get("REACHY_STANDALONE") == "1"
@@ -321,18 +324,53 @@ class Supervisor:
             self._stop(self.gateway)
             self.start_gateway()
 
-    def set_sharing(self, on: bool, python: Path = SCREEN_PYTHON) -> None:
-        """This laptop's screen as a second picture in the headset, until switched off or the app quits. macOS asks
-        once whether this app may record the screen."""
+    def screencap(self):
+        """The app's program that captures one window, app or screen (ScreenCaptureKit); None without one, e.g. an
+        app built before 2026-11-18 running newer code: then only the whole main screen can be shared."""
+        bundle = self.bundle()
+        for path in ([Path(self.environ["REACHY_SCREENCAP"])] if self.environ.get("REACHY_SCREENCAP") else []) + (
+                [bundle / "Contents" / "MacOS" / "screencap"] if bundle else []) + [
+                self.repo / "laptop-app" / "dist" / "Reachy Meetings.app" / "Contents" / "MacOS" / "screencap"]:
+            if path.is_file():
+                return path
+        return None
+
+    @property
+    def thumb(self) -> Path:
+        return self.logs / "screen.jpg"
+
+    def shareable(self) -> dict:
+        """{"displays": [...], "windows": [...]} that can be shared, from screencap; {} without it or permission."""
+        helper = self.screencap()
+        if helper is None:
+            return {}
+        try:
+            out = subprocess.run([str(helper), "list"], capture_output=True, text=True, timeout=10)
+            return json.loads(out.stdout) if out.returncode == 0 else {"error": out.stderr.strip()}
+        except (OSError, subprocess.TimeoutExpired, ValueError) as e:
+            return {"error": str(e)}
+
+    def set_sharing(self, on: bool, python: Path = SCREEN_PYTHON, source: str = "", label: str = "") -> None:
+        """This laptop's screen as a second picture in the headset, until switched off or the app quits. `source`:
+        window:<id>, app:<pid> or display:<id> (through screencap), "" for the whole main screen. macOS asks once
+        whether this app may record the screen."""
         self._stop(self.screen)
-        self.screen, self.share_note = None, ""
+        self.screen, self.share_note, self.share_label = None, "", ""
+        try:
+            self.thumb.unlink()
+        except OSError:
+            pass
         if not on:
             return
         if not Path(python).exists():
             self.share_note = "Sharing needs Reachy Mini Control on this Mac (its video parts send the screen)."
             return
-        script = self.repo / "robot" / "scripts" / "share_screen.py"
-        self.screen = self._start("screen", [str(python), "-u", str(script)], self.repo, self.child_env())
+        args = [str(python), "-u", str(self.repo / "robot" / "scripts" / "share_screen.py")]
+        helper = self.screencap()
+        if source and helper is not None:
+            args += ["--source", source, "--helper", str(helper), "--thumb", str(self.thumb)]
+        self.share_label = label if source and helper is not None else "The whole screen"
+        self.screen = self._start("screen", args, self.repo, self.child_env())
 
     def set_meeting_lang(self, lang: str) -> None:
         """The language Reachy speaks for the headset user. The backend starts again with it: captions pause for a few
@@ -380,9 +418,12 @@ class Supervisor:
             meeting_lang=self.meeting_lang,
             sharing=self.screen is not None and self.screen.poll() is None, share_note=self.share_note,
         )
+        if s.sharing:
+            s.share_label = self.share_label
+            s.share_thumb = str(self.thumb) if self.thumb.is_file() else ""
         if self.screen is not None and self.screen.poll() is not None:   # it stopped by itself: say why, once
-            s.share_note = self.share_note = "Sharing stopped: " + (tail(self.logs / "screen.log", 2, 200) or "no reason given")
-            self.screen = None
+            s.share_note = self.share_note = "Sharing stopped: " + (tail(self.logs / "screen.log", 1, 200) or "no reason given")
+            self.screen, self.share_label = None, ""
         if self.setup_error:
             s.problem = self.setup_error
         for name, proc, log in (("gateway", self.gateway, gateway_log), ("backend", self.backend, self.logs / "backend.log")):

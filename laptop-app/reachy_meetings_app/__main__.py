@@ -30,7 +30,8 @@ def main() -> None:
     demo = Status(robot="running", camera=True, backend=True, faces="1.0 faces in view", door=True,
                   address="192.168.1.20", remote_wanted=True, remote_host="example.trycloudflare.com", code="493 201",
                   known=["Meta Quest 3 51c0", "samsung SM-I610 aba7"], connected=["samsung SM-I610 aba7"],
-                  translation_key=True, version="0.2.0", update="0.3.0", sharing=True) if args.demo else None
+                  translation_key=True, version="0.2.0", update="0.3.0", sharing=True,
+                  share_label="Keynote: Budget 2027") if args.demo else None
     if args.demo_waiting:
         demo = Status(robot="running", camera=True, backend=True, faces="2.0 faces in view", door=True,
                       address="192.168.1.20", code="493 201", known=["samsung SM-I610 aba7"], translation_key=True,

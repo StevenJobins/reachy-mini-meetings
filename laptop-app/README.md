@@ -14,7 +14,10 @@ Open *Reachy Meetings* from there, or drag it to Applications first. The window 
 - **the stage**: the person in the headset as a little Reachy with the headset's name, a green ring while they
   speak. With no headset connected it says so and shows the pairing code large;
 - **the last caption** under it (what was said in the room, or by the headset user, and its translation);
-- **a row of round buttons**: *share this screen* with the headset (`robot/scripts/share_screen.py`; macOS asks once
+- **a row of round buttons**: *share* with the headset: a menu as in a video call, a whole screen, all windows of
+  one app, or one window (also while others lie on it); while shared, the stage shows *The headset sees: …* and a
+  live picture of it, and the button stops it (`screencap.swift`, built into the app, captures with ScreenCaptureKit;
+  `robot/scripts/share_screen.py` sends it; an app built before 2026-11-18 shares only the whole screen; macOS asks once
   for Screen Recording; needs Reachy Mini Control on this Mac, same Wi-Fi only), *captions* on / off, *other
   networks* (below), *people* (the side panel), the *translation key*, and in red *end* (quits, stops the parts);
 - **the side panel**, described in the points below:
