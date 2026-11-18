@@ -4,6 +4,9 @@
 //   dot in the accent colour pops up between thumb and index finger, stays a little smaller while you hold, and fades
 //   out when you let go. Anywhere, not only on the menu, so you know the headset saw the pinch. Hands only (with
 //   controllers there is no pinch point).
+// And since 2026-11-18, Reachy's turn limits: once you look more than 8° past where Reachy can turn (100° to each
+// side, 35° up; down only from 45°, since the menu is down there), a line in the lower middle of the view says so, with the way back. The picture stays where
+// Reachy looks.
 
 using System;
 using UnityEngine;
@@ -18,6 +21,12 @@ public class ViewOverlay : MonoBehaviour
     public RobotControl control;
     public Transform head;
     public Material textMaterial, panelMaterial;
+
+    const float PastDeg = 8f, PastDownDeg = 25f;   // down: the menu is 31° below eye height, looking at it is no mistake
+    static readonly Vector3 LimitAt = new Vector3(0, -0.14f, 1.2f);
+    TextMesh limit;
+    Ui.Rect limitBack;
+    string limitShown = "";
 
     TextMesh clock;
     string shown;
@@ -35,6 +44,14 @@ public class ViewOverlay : MonoBehaviour
         clock = Ui.Text(holder, "Time", Ui.TextMaterial(textMaterial, 3060), 34, 1f, TextAnchor.UpperLeft);
         clock.color = ClockColor;
 
+        var limitHolder = new GameObject("Limit").transform;
+        limitHolder.SetParent(head, false);
+        limitHolder.localPosition = LimitAt;
+        limitBack = Ui.Quad(limitHolder, "Back", panelMaterial, 3059);
+        limit = Ui.Text(limitHolder, "Text", Ui.TextMaterial(textMaterial, 3060), 40, 1f, TextAnchor.MiddleCenter, FontStyle.Bold);
+        limit.transform.localPosition = new Vector3(0, 0, -0.001f);
+        limitBack.Show(false);
+
         for (int i = 0; i < 2; i++)
         {
             holders[i] = new GameObject(i == 0 ? "Pinch Left" : "Pinch Right").transform;
@@ -50,6 +67,28 @@ public class ViewOverlay : MonoBehaviour
         if (now != shown) clock.text = shown = now;
 
         for (int i = 0; i < 2; i++) Pinch(i, i == 0 ? control.LeftHeld : control.RightHeld);
+        Limit();
+    }
+
+    /// <summary>Says when you look past where Reachy can turn (robot angles: yaw + = left, pitch + = down).</summary>
+    void Limit()
+    {
+        bool de = Ui.German;
+        string say = "";
+        if (control.Looking is RobotAngles a)
+        {
+            if (a.Yaw > YawRange.MaxDeg + PastDeg) say = de ? "Weiter nach links dreht Reachy nicht  →" : "Reachy turns no further left  →";
+            else if (a.Yaw < -YawRange.MaxDeg - PastDeg) say = de ? "←  Weiter nach rechts dreht Reachy nicht" : "←  Reachy turns no further right";
+            else if (a.Pitch < -HeadMirror.LimPitchUp - PastDeg) say = de ? "Höher schaut Reachy nicht" : "Reachy looks no higher";
+            else if (a.Pitch > HeadMirror.LimPitchDown + PastDownDeg) say = de ? "Tiefer schaut Reachy nicht" : "Reachy looks no lower";
+        }
+        if (say == limitShown) return;
+        limitShown = limit.text = say;
+        limitBack.Show(say != "");
+        if (say == "") return;
+        var size = Ui.Size(limit);
+        limitBack.Set(size.x + 0.08f, size.y + 0.05f, 0.03f, Vector3.zero, Ui.Glass);
+        limitBack.Border(new Color(1f, 0.58f, 0f, 0.8f), 0.003f);
     }
 
     void Pinch(int i, bool held)

@@ -169,19 +169,56 @@ public class PoseTests
     }
 
     [Test]
-    public void AudioBufferWaitsForTheTargetThenPlaysThenFades()
+    public void AudioBufferWaitsForALittleThenPlaysThenFades()
     {
         var a = new AudioJitterBuffer();
         var output = new float[320];
-        a.PushPcm16(Pcm(2000, 16384), 4000);   // 125 ms, below the 200 ms target
+        a.PushPcm16(Pcm(960, 16384), 1920);   // 60 ms, below the 90 ms it starts at
         a.Read(output, 0, 320);
         Assert.That(output[319], Is.EqualTo(0).Within(1e-6), "still filling");
-        a.PushPcm16(Pcm(2000, 16384), 4000);
+        a.PushPcm16(Pcm(960, 16384), 1920);
         a.Read(output, 0, 320);
         Assert.That(output[0], Is.EqualTo(0.5f).Within(1e-3), "playing");
+        double before = a.SafetyMs;
         for (int i = 0; i < 14; i++) a.Read(output, 0, 320);
         Assert.That(a.Underruns, Is.EqualTo(1));
         Assert.That(output[319], Is.LessThan(0.01f), "faded out");
+        Assert.That(a.SafetyMs, Is.GreaterThan(before + 30), "a gap: keeps more in hand from now on");
+    }
+
+    [Test]
+    public void AudioBufferHoldsLittleOnAnEvenNetwork()
+    {
+        var a = new AudioJitterBuffer();
+        var output = new float[341];   // what the mixer asks for: ~21 ms
+        a.PushPcm16(Pcm(4800, 1000), 9600);   // 300 ms had piled up
+        var rng = new Random(1);
+        int owed = 0, wait = 0;
+        for (int i = 0; i < 2800; i++)   // 60 s, packets of 40 ms arriving up to 15 ms late
+        {
+            owed += 341;
+            if (owed >= 640 + wait) { a.PushPcm16(Pcm(640, 1000), 1280); owed -= 640; wait = rng.Next(240); }
+            a.Read(output, 0, 341);
+        }
+        Assert.That(a.Underruns, Is.EqualTo(0));
+        Assert.That(a.BufferedMs, Is.LessThan(110), "the 300 ms are gone");
+    }
+
+    [Test]
+    public void AudioBufferKeepsMoreOnAnUnevenNetworkAndStopsHavingGaps()
+    {
+        var a = new AudioJitterBuffer();
+        var output = new float[320];   // 20 ms
+        int late = 0, gapsEarly = 0;
+        for (int i = 0; i < 6000; i++)   // 2 min: after 10 s, every 2 s the Wi-Fi hangs for 160 ms, then delivers it all at once
+        {
+            if (i > 500 && i % 100 < 8) late += 320;
+            else { a.PushPcm16(Pcm(320 + late, 1000), 2 * (320 + late)); late = 0; }
+            a.Read(output, 0, 320);
+            if (i == 1500) gapsEarly = a.Underruns;
+        }
+        Assert.That(gapsEarly, Is.GreaterThan(0).And.LessThan(6), "a few gaps while it learns");
+        Assert.That(a.Underruns - gapsEarly, Is.LessThanOrEqualTo(3), "then (almost) none: 45 hangs in that time");
     }
 
     [Test]
@@ -192,12 +229,12 @@ public class PoseTests
         a.PushPcm16(Pcm(16000, 1000), 32000);   // 1 s in one burst after a hang
         a.Read(output, 0, 640);
         Assert.That(a.BufferedMs, Is.GreaterThan(900), "nothing thrown away");
-        for (int i = 0; i < 250; i++)   // 10 s of steady sound, 40 ms at a time
+        for (int i = 0; i < 400; i++)   // 16 s of steady sound, 40 ms at a time
         {
             a.PushPcm16(Pcm(640, 1000), 1280);
             a.Read(output, 0, 640);
         }
-        Assert.That(a.BufferedMs, Is.LessThan(450), "played faster until the delay was gone");
+        Assert.That(a.BufferedMs, Is.LessThan(150), "played faster until the delay was gone");
         Assert.That(a.Underruns, Is.EqualTo(0));
     }
 
@@ -207,7 +244,7 @@ public class PoseTests
         var a = new AudioJitterBuffer();
         a.PushPcm16(Pcm(32000, 1000), 64000);   // 2 s burst
         a.Read(new float[160], 0, 160);
-        Assert.That(a.BufferedMs, Is.LessThan(205));
+        Assert.That(a.BufferedMs, Is.LessThan(100));
     }
 
     [Test]
@@ -320,23 +357,26 @@ public class PoseTests
     }
 
     [Test]
-    public void YawRangeKeepsTheFrontHalfAndIsContinuousAllTheWayRound()
+    public void YawRangeWaitsAtTheEdgeAndNeverComesBackByItself()
     {
-        Assert.That(YawRange.Fold(70), Is.EqualTo(70), "inside: unchanged");
-        Assert.That(YawRange.Fold(-100), Is.EqualTo(-100));
-        Assert.That(YawRange.Fold(130), Is.EqualTo(YawRange.MaxDeg), "past the edge: waits there");
-        Assert.That(YawRange.Fold(-140), Is.EqualTo(-YawRange.MaxDeg));
-        Assert.That(YawRange.Fold(160), Is.EqualTo(YawRange.MaxDeg / 2).Within(Tol), "back to the room: towards the middle");
-        Assert.That(YawRange.Fold(180), Is.EqualTo(0).Within(Tol));
-        Assert.That(YawRange.Fold(-180), Is.EqualTo(0).Within(Tol), "same at both ends of the wrap: no jump");
-        double prev = YawRange.Fold(-180);
-        for (double y = -179.5; y <= 180; y += 0.5)
+        Assert.That(YawRange.Fold(70, 0), Is.EqualTo(70), "inside: unchanged");
+        Assert.That(YawRange.Fold(-100, 0), Is.EqualTo(-100));
+        Assert.That(YawRange.Fold(130, 100), Is.EqualTo(YawRange.MaxDeg), "past the edge: waits there");
+        Assert.That(YawRange.Fold(-140, -100), Is.EqualTo(-YawRange.MaxDeg));
+        // turning right all the way round, the headset yaw wrapping at 180
+        double last = 0;
+        foreach (double user in new double[] { 50, 100, 130, 160, 180, -179, -160, -141 })
         {
-            double f = YawRange.Fold(y);
-            Assert.That(Math.Abs(f), Is.LessThanOrEqualTo(YawRange.MaxDeg));
-            Assert.That(Math.Abs(f - prev), Is.LessThan(1.5), $"no jump at {y}");
-            prev = f;
+            last = YawRange.Fold(user, last);
+            if (Math.Abs(user) > 100) Assert.That(last, Is.EqualTo(YawRange.MaxDeg), $"back to the room at {user}: still at the right edge");
         }
+        last = YawRange.Fold(-139, last);
+        Assert.That(last, Is.EqualTo(-YawRange.MaxDeg), "coming round to the front on the left: over to the left edge");
+        Assert.That(YawRange.Fold(-90, last), Is.EqualTo(-90), "and with the user again");
+        // looking back and forth around the wrap does not make it change sides
+        last = 100;
+        foreach (double user in new double[] { 178, -178, 176, -172, 179 })
+            Assert.That(last = YawRange.Fold(user, last), Is.EqualTo(YawRange.MaxDeg));
     }
 
     [Test]
@@ -346,10 +386,11 @@ public class PoseTests
         var m = new HeadMirror();
         const double dt = 1 / 72.0;
         HeadTarget prev = m.Step(new RobotAngles(), dt);
+        double folded = 0;
         for (double t = 0; t < 8; t += dt)
         {
             double user = (90 * t + 180) % 360 - 180;
-            var o = m.Step(YawRange.Fold(new RobotAngles(0, 0, user)), dt);
+            var o = m.Step(new RobotAngles(0, 0, folded = YawRange.Fold(user, folded)), dt);
             // the rate limiters brake in steps of dt, so they may overshoot the edge by up to ~0.5°
             Assert.That(Math.Abs(o.Yaw), Is.LessThanOrEqualTo(YawRange.MaxDeg + 1), $"head at t={t:0.00}");
             Assert.That(Math.Abs(o.BodyYaw), Is.LessThanOrEqualTo(YawRange.MaxDeg - 65 + 1), $"body at t={t:0.00}");

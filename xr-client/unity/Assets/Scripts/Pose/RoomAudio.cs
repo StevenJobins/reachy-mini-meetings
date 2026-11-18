@@ -6,26 +6,34 @@
 
 using System;
 
-/// <summary>Ring buffer: starts at a small target, refills after an underrun with a short fade, and drops single samples
-/// when too full, so clock drift and bursts do not add delay.
-/// After a stall on the Wi-Fi the sound that then comes in one burst is kept and played a little faster (4 % above
-/// Slack, 12 % above Fast) until the delay is gone. Until 2026-11-16 everything above 0.45 s was thrown away at once:
-/// words were missing in the headset after every hang. Only above Hard is old sound dropped. The target was 120 ms:
-/// every pause longer than that between two packets was a gap.</summary>
+/// <summary>Ring buffer that holds only as much sound as the network needs, so the room is not heard late.
+/// It keeps the least it ever holds (over the last few seconds) near Safety: what is above that is delay nobody needs
+/// and is played away 4 % faster. Safety starts small, grows with every gap (the Wi-Fi is that uneven) and shrinks
+/// slowly while there is none. After a gap it refills to Safety plus one packet, with a short fade.
+/// After a stall the sound that then comes in one burst is kept and played faster (12 % above Fast) until the delay
+/// is gone; only above Hard is old sound dropped.
+/// Until 2026-11-18 it held a fixed 200 to 300 ms (and Unity read it 256 ms at a time, RoomSound): one saw the lips
+/// move before one heard the voice.</summary>
 public class AudioJitterBuffer
 {
     public const int SampleRate = 16000;
-    const int Target = SampleRate / 5, Slack = SampleRate * 3 / 10, Fast = SampleRate / 2, Hard = SampleRate * 3 / 2;
+    const int Ms = SampleRate / 1000;
+    const int MinSafety = 30 * Ms, StartSafety = 50 * Ms, MaxSafety = 250 * Ms, Packet = 40 * Ms;
+    const int Fast = SampleRate / 2, Hard = SampleRate * 3 / 2;
+    const int Window = SampleRate * 4;       // the least held is watched over this much played sound
     const int SkipEvery = 25, SkipEveryFast = 8;
 
     readonly float[] buf = new float[SampleRate * 4];
     readonly object gate = new object();
     int read, write, count, skip;
+    int safety = StartSafety, low = int.MaxValue, played, shave;
     bool playing;
     float last;
 
     public int Underruns { get; private set; }
     public double BufferedMs { get { lock (gate) return count * 1000.0 / SampleRate; } }
+    /// <summary>What it keeps in hand against uneven delivery, ms.</summary>
+    public double SafetyMs { get { lock (gate) return safety * 1000.0 / SampleRate; } }
 
     /// <summary>One binary frame from the backend.</summary>
     public void PushPcm16(byte[] data, int length)
@@ -46,27 +54,42 @@ public class AudioJitterBuffer
     {
         lock (gate)
         {
-            if (count > Hard) { int drop = count - Target; read = (read + drop) % buf.Length; count -= drop; }
-            if (!playing && count >= Target) playing = true;
+            if (count > Hard) { int drop = count - safety - Packet; read = (read + drop) % buf.Length; count -= drop; }
+            if (!playing && count >= safety + Packet) { playing = true; low = int.MaxValue; played = 0; shave = 0; }
             for (int i = offset; i < offset + length; i++)
             {
                 if (!playing || count < 1)
                 {
-                    if (playing) { playing = false; Underruns++; }
+                    if (playing)
+                    {
+                        playing = false;
+                        Underruns++;
+                        safety = Math.Min(MaxSafety, safety * 3 / 2 + 20 * Ms);
+                    }
                     last *= 0.97f;   // fade out instead of a click
                     output[i] = last;
                     continue;
                 }
-                if (count > Slack && ++skip >= (count > Fast ? SkipEveryFast : SkipEvery))
+                if ((shave > 0 || count > Fast) && ++skip >= (count > Fast ? SkipEveryFast : SkipEvery))
                 {
                     skip = 0;
                     read = (read + 1) % buf.Length;
                     count--;
+                    if (shave > 0) shave--;
                 }
                 last = output[i] = buf[read];
                 read = (read + 1) % buf.Length;
                 count--;
             }
+            if (!playing) return;
+            low = Math.Min(low, count);
+            played += length;
+            if (played < Window) return;
+            // a window without a gap: what was never needed goes, and a little less is kept in hand
+            shave = Math.Max(0, low - safety - 10 * Ms);
+            safety = Math.Max(MinSafety, safety - 3 * Ms);
+            low = int.MaxValue;
+            played = 0;
         }
     }
 }

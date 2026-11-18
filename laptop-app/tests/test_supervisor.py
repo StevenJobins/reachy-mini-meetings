@@ -39,7 +39,7 @@ def made(tmp_path, monkeypatch):
     monkeypatch.setattr(sup, "port_open", lambda port: port != 8443)
     monkeypatch.setattr(sup, "wifi_address", lambda: "192.168.1.20")
     s = sup.Supervisor(logs=tmp_path / "logs", settings_path=tmp_path / "app.json", python="/venv/python", popen=popen,
-                       environ={"PATH": "/usr/bin:/bin", "HOME": str(tmp_path)}, shell_key=lambda: "key-from-shell")
+                       environ={"PATH": "/usr/bin:/bin", "HOME": str(tmp_path)}, shell_key=lambda: "key-from-shell", shell_notes_key=lambda: "notes-from-shell")
     g = s.gateway_module
     for name in ("HEADSETS", "PAIRING_CODE", "REMOTE_STATE"):
         monkeypatch.setattr(g, name, tmp_path / getattr(g, name).name)
@@ -91,7 +91,7 @@ def test_start_runs_gateway_and_backend_with_what_the_finder_does_not_give(made)
 def test_a_key_already_in_the_environment_is_not_asked_for_again(tmp_path):
     asked = []
     s = sup.Supervisor(logs=tmp_path, settings_path=tmp_path / "app.json", popen=Proc,
-                       environ={"DEEPL_AUTH_KEY": "from-terminal"}, shell_key=lambda: asked.append(1) or "other")
+                       environ={"DEEPL_AUTH_KEY": "from-terminal"}, shell_key=lambda: asked.append(1) or "other", shell_notes_key=lambda: "")
     s.start_backend()
     assert s.backend.kw["env"]["DEEPL_AUTH_KEY"] == "from-terminal" and asked == []
 
@@ -266,7 +266,7 @@ def standalone_supervisor(tmp_path, started, pip_code=0):
         return started[-1]
 
     s = sup.Supervisor(repo=repo, logs=tmp_path / "logs", settings_path=tmp_path / "app.json", python="/app/python",
-                       popen=popen, shell_key=lambda: "",
+                       popen=popen, shell_key=lambda: "", shell_notes_key=lambda: "",
                        environ={"PATH": "/usr/bin", "REACHY_STANDALONE": "1", "REACHY_BUNDLE_BIN": "/app/bin"})
     s.support = tmp_path / "support"
     return s
@@ -375,3 +375,13 @@ def test_without_screencap_the_whole_screen_is_shared(made):
     s.set_sharing(True, python, source="window:4711", label="Safari: Budget")
     assert "--source" not in started[-1].args
     assert s.status().share_label == "The whole screen"
+
+
+def test_the_notes_key_comes_from_the_login_shell_too(made, tmp_path):
+    s, started, tmp = made
+    s.start()
+    assert s.backend.kw["env"]["GEMINI_API_KEY"] == "notes-from-shell" and s.status().notes_key
+    none = sup.Supervisor(logs=tmp_path / "l", settings_path=tmp_path / "a.json", popen=Proc, environ={},
+                          shell_key=lambda: "", shell_notes_key=lambda: "")
+    none.start_backend()
+    assert "GEMINI_API_KEY" not in none.backend.kw["env"] and not none.has_notes_key

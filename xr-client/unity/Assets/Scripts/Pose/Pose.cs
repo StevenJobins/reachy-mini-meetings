@@ -117,24 +117,24 @@ public struct HeadTarget
 }
 
 /// <summary>
-/// How far Reachy turns with the user: the front half only. Past MaxDeg it waits at the edge, and with the user's back
-/// to the room it comes back through the middle, so a full turn never swings it across its back (cables) and the
-/// yaw never jumps where the headset angle wraps at ±180. Continuous all the way round: the smoothing and rate
-/// limits after it keep every move gentle.
+/// How far Reachy turns with the user: the front half only. Past MaxDeg it waits at the edge, also with the user's
+/// back to the room: it stays on the side it is on until the user has come round to within HoldDeg of the front on
+/// the other side, then it swings across its front to that edge. So a full turn never swings it across its back
+/// (cables), and it does not flap where the headset angle wraps at ±180. Until 2026-11-18 it came back to the middle
+/// between HoldDeg and 180: the picture then moved by itself while the user looked outside it.
 /// </summary>
 public static class YawRange
 {
     public const double MaxDeg = 100;   // head + body; the body turns at most MaxDeg − 65 = 35°
-    public const double HoldDeg = 140;  // user yaw up to which Reachy waits at MaxDeg, then back to 0 at 180
+    public const double HoldDeg = 140;  // behind this the side is kept
 
-    public static RobotAngles Fold(RobotAngles a) => new RobotAngles(a.Roll, a.Pitch, Fold(a.Yaw));
-
-    public static double Fold(double yaw)
+    /// <summary>`last`: what the previous call returned.</summary>
+    public static double Fold(double yaw, double last)
     {
-        double abs = Math.Abs(yaw), sign = Math.Sign(yaw);
+        double abs = Math.Abs(yaw);
         if (abs <= MaxDeg) return yaw;
-        if (abs <= HoldDeg) return sign * MaxDeg;
-        return sign * MaxDeg * (180 - Math.Min(abs, 180)) / (180 - HoldDeg);
+        if (abs > HoldDeg && Math.Abs(last) >= MaxDeg) return Math.Sign(last) * MaxDeg;
+        return Math.Sign(yaw) * MaxDeg;
     }
 }
 
@@ -146,7 +146,8 @@ public class HeadMirror
 {
     // Meeting limits (degrees), tighter than the hardware (pitch/roll ±40). PitchUp 35: someone standing or close to
     // the robot on the table is up to ~30° above it. PitchDown: table, papers, laptop. Yaw/body: free to look around.
-    const double LimRoll = 15, LimPitchUp = 35, LimPitchDown = 20, LimYaw = 180, LimBody = 160, LimHeadBody = 65;
+    public const double LimPitchUp = 35, LimPitchDown = 20;
+    const double LimRoll = 15, LimYaw = 180, LimBody = 160, LimHeadBody = 65;
     // deg/s and deg/s². The body is the heavy part: it turns slower and gentler than the head.
     const double HeadVel = 150, HeadAcc = 800, BodyVel = 90, BodyAcc = 300;
 

@@ -189,10 +189,10 @@ public class Curtain : MonoBehaviour
         card.gameObject.SetActive(!tour && !pad);
         if (tour || pad) { onWake[0] = onWake[1] = false; return; }
         string dots = new string('.', 1 + (int)(Time.unscaledTime * 1.5f) % 3).PadRight(3, ' ');
-        string say = control.GoingToSleep ? (Ui.German ? "Reachy legt sich schlafen" : "Reachy is going to sleep")
+        string say = control.GoingToSleep ? (Ui.German ? "Du verlässt das Meeting,\nReachy legt sich schlafen" : "You are leaving the meeting,\nReachy is going to sleep")
             : (Ui.German ? "Reachy macht sich bereit" : "Reachy is getting ready");
         bool button = asleep && problem == null;
-        Say(problem ?? (button ? (Ui.German ? "Reachy schläft" : "Reachy is asleep") : $"{say}\n<color=#38bdf8>{dots}</color>"),
+        Say(problem ?? (button ? (Ui.German ? "Du hast das Meeting verlassen.\nReachy schläft." : "You left the meeting.\nReachy is asleep.") : $"{say}\n<color=#38bdf8>{dots}</color>"),
             problem != null);
         mascot.gameObject.SetActive(problem == null);
         if (problem == null) Animate(asleep);
@@ -213,7 +213,7 @@ public class Curtain : MonoBehaviour
         {
             bool over = onWake[0] || onWake[1];
             wake.Set(WakeW, WakeH, WakeH / 2, WakeAt, new Color(0.22f, 0.74f, 0.97f, over ? 1f : 0.8f));
-            wakeText.text = $"<color=#0b1220>{(Ui.German ? "Aufwecken" : "Wake up")}</color>";
+            wakeText.text = $"<color=#0b1220>{(Ui.German ? "Beitreten" : "Join")}</color>";
         }
     }
 

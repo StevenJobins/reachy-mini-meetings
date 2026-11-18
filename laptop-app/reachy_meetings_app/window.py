@@ -511,6 +511,9 @@ class Controller(NSObject):
             notes.append(s.share_note)
         if not s.translation_key and s.backend:
             notes.append("No DeepL key: captions are not translated. Set it with the gear button.")
+        if not s.notes_key and s.backend:
+            notes.append("No meeting notes: GEMINI_API_KEY is not set on this Mac. Free key from "
+                         "aistudio.google.com/apikey, then add  export GEMINI_API_KEY=\"...\"  to ~/.zshrc and start again.")
         if not s.video_patch:
             notes.append("The sharper-video patch is missing (an update of Reachy Mini Control removes it):\n"
                          "python robot/scripts/patch_daemon_video.py, then restart Reachy Mini Control.")

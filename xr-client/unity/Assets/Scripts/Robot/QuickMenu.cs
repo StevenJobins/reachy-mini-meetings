@@ -5,13 +5,14 @@
 //   Mic           on / muted: on at every start; on, they hear you whenever you speak (MicSender's voice gate),
 //                 and the tile lights up while you do. Replaced push to talk on 2026-11-16
 //   Translate me  on / off: your voice goes to the backend, Reachy says it in the room's language (MicSender)
-//   Language      opens a short list next to it: the language the room is translated into (bubbles and notes);
+//   Language      "Language Deutsch": opens a short list next to it: the language the room is translated into (bubbles and notes);
 //                 starts as the headset's system language
 //   I want to talk  Reachy slowly waves its right antenna for 3 s, so the room sees you want the word
 //   Notes         the meeting notes right in front of you, above the row, and away again (NotesPanel)
-//   Reachy        awake / asleep: sends Reachy to sleep (lies down, motors off) and wakes it up again, so the
-//                 remote user needs nobody at the robot for it (RobotControl.Sleep / WakeUp)
 //   Help          the guided tour again (Tutorial)
+//   Leave         far right and red, as in a video meeting: Reachy lies down and its motors go off, so the remote
+//                 user needs nobody at the robot for it; the Curtain then offers to join again (RobotControl.Sleep /
+//                 WakeUp). Until 2026-11-18 the tile was called "Reachy awake / asleep"
 // Wherever a hand points and no panel shows its own cursor, a free cursor shows at the menu's distance, so the dot
 // never disappears between the panels (2026-11-18: it was gone over the subtitles).
 // Under the column, for a few seconds: what Reachy said for you (the backend's "me" message) or a short note
@@ -40,12 +41,13 @@ public class QuickMenu : MonoBehaviour
     const int MeChars = 30, MeLines = 4;
     static readonly Color Back = Ui.Glass;
     static readonly Color Tile = new Color(1, 1, 1, 0.06f);
-    static readonly string[] IconNames = { "mic-off", "translate", "globe", "hand", "notes", "moon", "help" };
+    static readonly string[] IconNames = { "mic-off", "translate", "globe", "hand", "notes", "help", "power" };
     readonly Renderer[] icons = new Renderer[Tiles];
     static readonly Color On = new Color(0.22f, 0.74f, 0.97f, 0.9f);       // #38bdf8
     // What you point at or look at only gets a little lighter, as in the headsets' own menus (a soft highlight, no
     // colour of its own). A yellow frame, and yellow rows with dark text, jumped around with the eyes and made the
     // languages hard to read (headset test 2026-11-13).
+    static readonly Color Leave = new Color(0.92f, 0.26f, 0.21f);
     static readonly Color HoverFill = new Color(1, 1, 1, 0.16f), HoverEdge = new Color(1, 1, 1, 0.45f);
 
     public RoomSound room;
@@ -56,7 +58,7 @@ public class QuickMenu : MonoBehaviour
     /// <summary>Not there at all (Curtain: while Reachy gets ready there is nothing to work yet).</summary>
     public bool Hidden;
 
-    enum Item { None = -1, Mic, Translate, Language, Talk, Notes, Robot, Help }
+    enum Item { None = -1, Mic, Translate, Language, Talk, Notes, Help, Robot }
     /// <summary>The laptop answers, but the robot behind it does not run (e.g. a motor fault).</summary>
     bool RobotFault => control.DaemonState != null && control.DaemonState != "running" && control.DaemonState != "unreachable";
     const int Tiles = 7;
@@ -310,7 +312,7 @@ public class QuickMenu : MonoBehaviour
                 if (RobotFault) control.RestartDaemon();
                 else if (control.Asleep) control.WakeUp();
                 else control.Sleep();
-                Debug.Log($"[menu] reachy {(RobotFault ? "restart" : control.Asleep ? "to sleep" : "wake up")}");
+                Debug.Log($"[menu] reachy {(RobotFault ? "restart" : control.Asleep ? "leave: to sleep" : "join: wake up")}");
                 break;
             case Item.Help:
                 if (tutorial != null && !tutorial.Open) tutorial.Show();
@@ -375,14 +377,14 @@ public class QuickMenu : MonoBehaviour
         labels[1].text = "Translate me" + (Translate   // the tutorial's name for it, in both languages
             ? $" <color={Ui.AccentHex}>{(de ? "an" : "on")}{(meetingLang != null ? " → " + meetingLang.ToUpper() : "")}</color>"
             : $" <color={soft}>{(de ? "aus" : "off")}</color>");
-        labels[2].text = (lang >= 0 ? LangNames[lang] : Target.ToUpper()) + $" <color={soft}>{(listOpen ? "‹" : "›")}</color>";
+        labels[2].text = $"<color={soft}>{(de ? "Sprache" : "Language")}</color> " + (lang >= 0 ? LangNames[lang] : Target.ToUpper());
         labels[3].text = control.Waving ? (de ? "Stopp" : "Stop") : de ? "Wortmeldung" : "Raise hand";
         labels[(int)Item.Notes].text = de ? "Notizen" : "Notes";
         labels[(int)Item.Robot].text = control.Restarting ? (de ? "startet neu …" : "restarting …")
             : RobotFault ? $"<color=#ff9500>{(de ? "Fehler: neu starten" : "error: restart")}</color>"
             : control.GoingToSleep || control.Waking ? "Reachy …"
-            : control.Asleep ? $"Reachy <color={soft}>{(de ? "schläft" : "asleep")}</color>"
-            : control.IsFollowing ? $"Reachy <color={Ui.AccentHex}>{(de ? "wach" : "awake")}</color>"
+            : control.Asleep ? (de ? "Beitreten" : "Join")
+            : control.IsFollowing ? (de ? "Verlassen" : "Leave")
             : $"Reachy <color={soft}>{(de ? "nicht da" : "not there")}</color>";
         labels[(int)Item.Help].text = de ? "Hilfe" : "Help";
         for (int i = 0; i < Tiles; i++)
@@ -396,6 +398,11 @@ public class QuickMenu : MonoBehaviour
                 on ? new Color(Ui.Accent.r, Ui.Accent.g, Ui.Accent.b, lit ? 0.32f : 0.2f) : look ? HoverFill : Tile);
             tiles[i].Border(on ? Ui.Accent : look ? HoverEdge : new Color(1, 1, 1, 0.12f), 0.003f);
             icons[i].sharedMaterial.color = on ? Ui.Accent : Color.white;
+            if (item == Item.Robot && control.IsFollowing && !RobotFault)   // leaving is red, as in a video meeting
+            {
+                tiles[i].Set(TileW, TileH, 0.04f, tileAt[i], new Color(Leave.r, Leave.g, Leave.b, look ? 0.75f : 0.5f));
+                tiles[i].Border(Leave, 0.003f);
+            }
         }
         if (!listOpen) return;
         for (int i = 0; i < rows.Length; i++)

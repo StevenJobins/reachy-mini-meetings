@@ -7,7 +7,22 @@ using UnityEngine;
 
 public static class Ui
 {
-    public static bool German => Application.systemLanguage == SystemLanguage.German;
+    static int german = -1;
+    /// <summary>The app's own texts: German or English. Chosen on the tutorial's first card; until then the headset's language.</summary>
+    public static bool German
+    {
+        get
+        {
+            if (german < 0) german = PlayerPrefs.GetInt("ui_german", Application.systemLanguage == SystemLanguage.German ? 1 : 0);
+            return german == 1;
+        }
+        set
+        {
+            german = value ? 1 : 0;
+            PlayerPrefs.SetInt("ui_german", german);
+            PlayerPrefs.Save();
+        }
+    }
 
     // One look for every panel: dark glass with a fine light edge, cyan for what is on or to be pressed
     public static readonly Color Glass = new Color(0.05f, 0.07f, 0.11f, 0.86f);

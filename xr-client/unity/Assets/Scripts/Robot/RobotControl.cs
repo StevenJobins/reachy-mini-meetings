@@ -188,7 +188,7 @@ public class RobotControl : MonoBehaviour
             var raw = Sweeping
                 ? new RobotAngles(0, 0, SweepYawDeg * Mathf.Sin(2 * Mathf.PI * (Time.unscaledTime - sweepAt) / SweepPeriodS))
                 : Override ?? (Paused ? new RobotAngles(0, 0, 0)
-                    : YawRange.Fold(PoseMath.HeadsetToRobot(recenter.ToRelative(HeadNow()))));
+                    : Folded(PoseMath.HeadsetToRobot(recenter.ToRelative(HeadNow()))));
             // the user's own head: a nod or a head shake goes to the antennas, the camera holds still meanwhile
             bool own = !Sweeping && Override == null && !Paused;
             double gestureT = Time.unscaledTimeAsDouble;
@@ -268,6 +268,18 @@ public class RobotControl : MonoBehaviour
         }
         recenterDown = down;
     }
+
+    double foldedYaw;
+
+    RobotAngles Folded(RobotAngles a)
+    {
+        foldedYaw = YawRange.Fold(a.Yaw, foldedYaw);
+        return new RobotAngles(a.Roll, a.Pitch, foldedYaw);
+    }
+
+    /// <summary>Where you look, in Reachy's angles, while it follows your head; null otherwise (ViewOverlay: past its limits).</summary>
+    public RobotAngles? Looking => mode == Mode.Following && !Paused && !Sweeping && Override == null
+        ? PoseMath.HeadsetToRobot(recenter.ToRelative(HeadNow())) : (RobotAngles?)null;
 
     /// <summary>Your current head direction becomes straight ahead.</summary>
     public void Recenter()

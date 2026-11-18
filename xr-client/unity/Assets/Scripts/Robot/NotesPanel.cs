@@ -111,6 +111,7 @@ public class NotesPanel : MonoBehaviour
         dragging = false;
         if (menu != null) menu.NotesOpen = on;
         if (!on) return;
+        Redraw();   // the app's language may have changed (Tutorial)
         yaw = 0;
         up = BottomDeg + Mathf.Atan2(h * zoom.Size / 2, zoom.Dist) * Mathf.Rad2Deg;
     }

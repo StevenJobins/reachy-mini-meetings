@@ -1,4 +1,7 @@
-// Plays the room sound from the backend. Unity pulls samples on the audio thread and resamples the 16 kHz clip itself.
+// Plays the room sound from the backend, straight into Unity's mixer (OnAudioFilterRead on an own object, ~21 ms at a
+// time, resampled here from 16 kHz to the output rate). Until 2026-11-18 it was a streamed AudioClip, which Unity reads
+// 4096 samples = 256 ms at a time and 0.8 s ahead when it starts (measured in the editor): the room was heard clearly
+// after the lips moved. If the mixer does not ask for sound within 2 s, it falls back to that clip.
 // Its own GameObject: MicSender silences everything played on its object. Owns the backend connection.
 
 using UnityEngine;
@@ -14,13 +17,49 @@ public class RoomSound : MonoBehaviour
     BackendClient backend;
     volatile AudioJitterBuffer buffer;
     AudioSource source;
-    bool muted;
+    volatile bool muted;
+    Out direct;
+    float startedAt;
+
+    /// <summary>The mixer's audio thread asks for the next ~21 ms.</summary>
+    class Out : MonoBehaviour
+    {
+        public RoomSound room;
+        public volatile int Calls;
+        int rate;
+        double phase;
+        float prev, cur;
+        float[] block = new float[2048];
+
+        void Awake() => rate = AudioSettings.outputSampleRate;
+
+        void OnAudioFilterRead(float[] data, int channels)
+        {
+            Calls++;
+            var b = room.buffer;
+            if (b == null || room.direct != this) return;
+            int frames = data.Length / channels;
+            double step = (double)AudioJitterBuffer.SampleRate / rate;
+            int need = (int)(phase + frames * step);
+            if (need > block.Length) block = new float[need];
+            b.Read(block, 0, need);
+            room.filter.Process(block, 0, need);
+            int k = 0;
+            for (int f = 0; f < frames; f++)
+            {
+                phase += step;
+                while (phase >= 1 && k < need) { prev = cur; cur = block[k++]; phase -= 1; }
+                float v = room.muted ? 0 : prev + (cur - prev) * (float)phase;
+                for (int c = 0; c < channels; c++) data[f * channels + c] = v;
+            }
+        }
+    }
 
     /// <summary>Silent while there is no picture (Curtain): sound from a room you do not see, with Reachy's motors
     /// in it while it looks around, only disturbs.</summary>
     public bool Muted
     {
-        set { muted = value; if (source != null) source.mute = value; }
+        set { muted = value; if (source != null && direct == null) source.mute = value; }
     }
 
     public BackendClient Backend => backend;
@@ -34,14 +73,26 @@ public class RoomSound : MonoBehaviour
             backend = new BackendClient(() => video.Laptop, MeMode);
             video.LaptopChanged += backend.Restart;
             buffer = backend.Audio;
-            source = gameObject.AddComponent<AudioSource>();
+            var go = new GameObject("Room Sound Out");
+            go.transform.SetParent(transform, false);
+            source = go.AddComponent<AudioSource>();   // before the filter: it feeds it
+            source.loop = true;
+            direct = go.AddComponent<Out>();
+            direct.room = this;
+            source.Play();
+            startedAt = Time.unscaledTime;
+            Debug.Log("[room sound] direct to the mixer");
+        }
+        if (direct != null && direct.Calls == 0 && Time.unscaledTime - startedAt > 2f)
+        {
+            direct = null;
             source.mute = muted;
             source.clip = AudioClip.Create("Room", AudioJitterBuffer.SampleRate, 1, AudioJitterBuffer.SampleRate, true, OnRead);
-            source.loop = true;
             source.Play();
+            Debug.LogWarning("[room sound] the mixer does not ask for sound: streamed clip instead (about 0.3 s later)");
         }
         Status = backend.Connected
-            ? $"room sound {backend.Audio.BufferedMs:0} ms, {backend.Audio.Underruns} gaps"
+            ? $"room sound {backend.Audio.BufferedMs:0} ms (keeps {backend.Audio.SafetyMs:0}), {backend.Audio.Underruns} gaps{(direct == null ? ", clip" : "")}"
             : $"backend not connected {backend.LastError}";
     }
 

@@ -106,6 +106,7 @@ the app's program stay as installed, and the backend's libraries follow when a n
   the speaking ring (standard library only; it never sends a setting).
 - The DeepL key: the one set in the app counts. Without one, the supervisor asks a login shell for `DEEPL_AUTH_KEY`
   once (an app opened from the Finder does not read `~/.zshrc`) and hands it to the backend without writing it down.
+- The key for the meeting notes: `GEMINI_API_KEY`, asked from the same login shell (so `export GEMINI_API_KEY="..."` in `~/.zshrc`; free key from aistudio.google.com/apikey). Without it there are no notes, and the side panel says so. Until 2026-11-18 the app did not look it up: a meeting started from the app never had notes.
 - Logs as before: `~/Library/Logs/reachy-meetings/gateway.log` and `backend.log`, and `screen.log` while sharing.
 
 To look at the window without starting anything: `python -m reachy_meetings_app --snapshot window.png` (add `--demo`

@@ -1,9 +1,9 @@
 // Interactive guided tour on the first start. Reachy stays still meanwhile (RobotControl: no wake-up, no following,
 // mic to nobody): you practise each gesture and the card tells you when it worked. The two dots on the card are your
 // real thumb and index finger (pinch strength from the hand tracking), so you see the pinch being recognised.
-// Cards: welcome, straight ahead (hold left), raise your hand, menu + language (look + pinch left), mic (switch it on), translation,
+// Cards: the app's language (Deutsch / English, two buttons; Ui.German), welcome, straight ahead (hold left), raise your hand, menu + language (look + pinch left), mic (switch it on), translation,
 // meeting notes, ready. The card stands on the menu row, right in front of you, and goes along with it (QuickMenu).
-// Opened again from Help in the menu. German if the headset is German, else English.
+// Opened again from Help in the menu. Until the language is chosen: German if the headset is German, else English.
 
 using UnityEngine;
 
@@ -21,7 +21,7 @@ public class Tutorial : MonoBehaviour
     static readonly Color Good = new Color(0.29f, 0.87f, 0.5f);            // #4ade80
     static readonly Color DotOff = new Color(1, 1, 1, 0.25f);
 
-    enum Task { Start, Recenter, RaiseHand, PickLanguage, Mic, Info, Finish }
+    enum Task { Language, Start, Recenter, RaiseHand, PickLanguage, Mic, Info, Finish }
     enum Hand { None, Left, Right }
 
     class Card
@@ -95,18 +95,21 @@ public class Tutorial : MonoBehaviour
     static Card[] Cards() => De
         ? new[]
         {
+            new Card { Task = Task.Language, Hand = Hand.Left, Title = "Sprache · Language",
+                Body = "In welcher Sprache soll die App mit dir sprechen? Zeig mit einer Hand auf eine der beiden Sprachen und führe Daumen und Zeigefinger zusammen.\n\nWhich language should the app use? Point at one of the two with one hand and bring thumb and index finger together.",
+                Footer = "Deutsch / English" },
             new Card { Task = Task.Start, Hand = Hand.Left, Title = "Willkommen bei Reachy Meetings",
                 Body = "Du sitzt gleich durch Reachy mit am Tisch. Bedient wird alles mit einer Geste: Daumen und Zeigefinger zusammen, ein «Pinch». Reachy macht sich währenddessen bereit.",
                 Footer = "Auf «Weiter» zeigen und pinchen" },
             new Card { Task = Task.Recenter, Hand = Hand.Left, Title = "Geradeaus festlegen",
-                Body = "Schau dorthin, wo für dich «geradeaus» sein soll, und halte den linken Pinch etwa eine Sekunde. Das geht später jederzeit wieder.",
-                Footer = "Links pinchen und halten" },
+                Body = "Schau dorthin, wo für dich «geradeaus» sein soll, und halte links Daumen und Zeigefinger 1 bis 2 Sekunden zusammen, bis die Karte grün wird. Das geht später jederzeit wieder.",
+                Footer = "Links pinchen und 1 bis 2 Sekunden halten" },
             new Card { Task = Task.RaiseHand, Hand = Hand.None, Title = "Wortmeldung und Reaktionen",
                 Body = "Heb eine Hand über den Kopf: Reachy winkt dann im Raum, damit alle sehen, dass du etwas sagen willst. Daumen hoch, Daumen runter, Nicken und Kopfschütteln zeigt Reachy mit seinen Antennen. Probier das Hand heben jetzt.",
                 Footer = "Eine Hand über den Kopf heben" },
-            new Card { Task = Task.PickLanguage, Hand = Hand.Left, DoneS = 2.5f, Title = "Menü und Sprache",
-                Body = "Unten am Bild ist das Menü. Zeig mit einer Hand auf «Sprache»: Ein Punkt zeigt, wohin du zeigst, und sein Ring schliesst sich beim Pinchen. Wird «Sprache» heller, pinche mit dieser Hand.",
-                Footer = "Auf «Sprache» zeigen, pinchen" },
+            new Card { Task = Task.PickLanguage, Hand = Hand.Left, DoneS = 2.5f, Title = "Menü: Sprache des Meetings",
+                Body = "Unten am Bild ist das Menü. Die dritte Kachel, mit der Weltkugel, heisst «Sprache» und zeigt daneben die gewählte Sprache: In diese wird übersetzt, was im Raum gesagt wird. Zeig mit einer Hand darauf: Ein Punkt zeigt, wohin du zeigst. Wird die Kachel heller, pinche mit dieser Hand und wähle dann eine Sprache aus der Liste.",
+                Footer = "Auf die Kachel mit der Weltkugel zeigen, pinchen, Sprache wählen" },
             new Card { Task = Task.Mic, Hand = Hand.Left, DoneS = 2.5f, Title = "Sprechen",
                 Body = "Ganz links im Menü ist dein Mikrofon. Es ist an: Man hört dich, sobald du sprichst. Zeig darauf und pinche, um es stumm zu schalten, und nochmals, um es wieder einzuschalten (die Übung bleibt still).",
                 Footer = "Auf «Mic» zeigen, pinchen" },
@@ -122,18 +125,21 @@ public class Tutorial : MonoBehaviour
         }
         : new[]
         {
+            new Card { Task = Task.Language, Hand = Hand.Left, Title = "Sprache · Language",
+                Body = "In welcher Sprache soll die App mit dir sprechen? Zeig mit einer Hand auf eine der beiden Sprachen und führe Daumen und Zeigefinger zusammen.\n\nWhich language should the app use? Point at one of the two with one hand and bring thumb and index finger together.",
+                Footer = "Deutsch / English" },
             new Card { Task = Task.Start, Hand = Hand.Left, Title = "Welcome to Reachy Meetings",
                 Body = "You are about to sit at the table through Reachy. Everything works with one gesture: thumb and index finger together, a \"pinch\". Reachy gets ready meanwhile.",
                 Footer = "Point at \"Next\" and pinch" },
             new Card { Task = Task.Recenter, Hand = Hand.Left, Title = "Set straight ahead",
-                Body = "Look where \"straight ahead\" should be for you and hold the left pinch for about a second. You can do this again any time.",
-                Footer = "Pinch left and hold" },
+                Body = "Look where \"straight ahead\" should be for you and keep your left thumb and index finger together for 1 to 2 seconds, until the card turns green. You can do this again any time.",
+                Footer = "Pinch left and hold for 1 to 2 seconds" },
             new Card { Task = Task.RaiseHand, Hand = Hand.None, Title = "Asking for the word, reactions",
                 Body = "Raise a hand above your head: Reachy then waves in the room, so everyone sees you want to say something. Thumbs up, thumbs down, a nod and a head shake are shown by Reachy's antennas. Try raising your hand now.",
                 Footer = "Raise a hand above your head" },
-            new Card { Task = Task.PickLanguage, Hand = Hand.Left, DoneS = 2.5f, Title = "Menu and language",
-                Body = "The menu is at the foot of the picture. Point at \"Language\" with one hand: a dot shows where you point, and its ring closes as you pinch. Once \"Language\" lights up, pinch with that hand.",
-                Footer = "Point at \"Language\", pinch" },
+            new Card { Task = Task.PickLanguage, Hand = Hand.Left, DoneS = 2.5f, Title = "Menu: the meeting's language",
+                Body = "The menu is at the foot of the picture. The third tile, with the globe, is called \"Language\" and shows the chosen language next to it: what is said in the room is translated into it. Point at it with one hand: a dot shows where you point. Once the tile lights up, pinch with that hand, then pick a language from the list.",
+                Footer = "Point at the tile with the globe, pinch, pick a language" },
             new Card { Task = Task.Mic, Hand = Hand.Left, DoneS = 2.5f, Title = "Talking",
                 Body = "On the far left of the menu is your mic. It is on: they hear you whenever you speak. Point at it and pinch to mute it, and again to switch it back on (the practice stays silent).",
                 Footer = "Point at \"Mic\", pinch" },
@@ -209,7 +215,15 @@ public class Tutorial : MonoBehaviour
     public void Press(bool right)
     {
         int hand = right ? 1 : 0;
-        if (onSkip[hand]) { Debug.Log("[tutorial] skipped"); Close(); }
+        if (cards[index].Task == Task.Language)
+        {
+            if (!onSkip[hand] && !onNext[hand]) return;
+            Ui.German = onSkip[hand];
+            cards = Cards();
+            Debug.Log($"[tutorial] language {(Ui.German ? "de" : "en")}");
+            Go(index + 1);
+        }
+        else if (onSkip[hand]) { Debug.Log("[tutorial] skipped"); Close(); }
         else if (onNext[hand]) Go(index + 1);
     }
 
@@ -266,7 +280,9 @@ public class Tutorial : MonoBehaviour
         skipBtn.Set(BtnW, BtnH, BtnH / 2, skipAt, new Color(1, 1, 1, onSkip[0] || onSkip[1] ? 0.22f : 0f));
         skipBtn.Border(new Color(1, 1, 1, 0.3f), 0.003f);
         var accent = new Color(Ui.Accent.r, Ui.Accent.g, Ui.Accent.b, onNext[0] || onNext[1] ? 1f : 0.85f);
-        nextBtn.Set(BtnW, BtnH, BtnH / 2, nextAt, accent);
+        bool pick = cards[index].Task == Task.Language;   // two equal buttons
+        nextBtn.Set(BtnW, BtnH, BtnH / 2, nextAt, pick ? new Color(1, 1, 1, onNext[0] || onNext[1] ? 0.22f : 0f) : accent);
+        nextBtn.Border(pick ? new Color(1, 1, 1, 0.3f) : Color.clear, 0.003f);
     }
 
     /// <summary>Watches the task of the current card.</summary>
@@ -323,8 +339,10 @@ public class Tutorial : MonoBehaviour
                  + (hintText == null ? 0 : 0.04f) + gap * 2 + BtnH + Pad;
         skipAt = new Vector3(-width / 2 + Pad + BtnW / 2, -height / 2 + Pad + BtnH / 2, -0.001f);
         nextAt = new Vector3(width / 2 - Pad - BtnW / 2, -height / 2 + Pad + BtnH / 2, -0.001f);
-        skipText.text = $"<color=#cbd5e1>{(De ? "Überspringen" : "Skip")}</color>";
-        nextText.text = $"<color={Ui.InkHex}>{(c.Task == Task.Finish ? (De ? "Fertig" : "Done") : (De ? "Weiter" : "Next"))}</color>";
+        bool pick = c.Task == Task.Language;
+        skipText.text = $"<color=#cbd5e1>{(pick ? "Deutsch" : De ? "Überspringen" : "Skip")}</color>";
+        nextText.text = pick ? "<color=#cbd5e1>English</color>"
+            : $"<color={Ui.InkHex}>{(c.Task == Task.Finish ? (De ? "Fertig" : "Done") : (De ? "Weiter" : "Next"))}</color>";
         skipText.transform.localPosition = skipAt + new Vector3(0, 0, -0.002f);
         nextText.transform.localPosition = nextAt + new Vector3(0, 0, -0.002f);
 
@@ -370,7 +388,8 @@ public class Tutorial : MonoBehaviour
         finger.Show(c.Hand != Hand.None);
     }
 
-    static string Wrap(string s) => string.Join("\n", CaptionView.Wrap(CaptionView.Escape(s), BodyChars, int.MaxValue));
+    static string Wrap(string s) => string.Join("\n", System.Linq.Enumerable.Select(s.Split('\n'),
+        line => string.Join("\n", CaptionView.Wrap(CaptionView.Escape(line), BodyChars, int.MaxValue))));
 
     /// <summary>Thumb and index finger, top right: their gap is your real pinch, they light up once it counts.</summary>
     void DrawFingers(Card c)

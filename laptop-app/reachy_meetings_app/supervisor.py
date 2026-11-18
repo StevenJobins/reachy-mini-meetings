@@ -88,11 +88,11 @@ def wifi_address() -> str:
         return ""
 
 
-def key_from_login_shell() -> str:
-    """DEEPL_AUTH_KEY as the user's terminal has it (set in ~/.zshrc for the backend): an app opened from the
+def key_from_login_shell(name: str = "DEEPL_AUTH_KEY") -> str:
+    """A key as the user's terminal has it (set in ~/.zshrc for the backend): an app opened from the
     Finder does not see that file. Read once, handed to the backend, never written anywhere."""
     try:
-        out = subprocess.run(["/bin/zsh", "-lic", 'print -r -- "KEY=$DEEPL_AUTH_KEY"'], capture_output=True, text=True,
+        out = subprocess.run(["/bin/zsh", "-lic", f'print -r -- "KEY=${name}"'], capture_output=True, text=True,
                              timeout=15, stdin=subprocess.DEVNULL).stdout
     except (OSError, subprocess.SubprocessError):
         return ""
@@ -130,6 +130,7 @@ class Status:
     known: list = field(default_factory=list)
     connected: list = field(default_factory=list)
     translation_key: bool = False
+    notes_key: bool = True       # GEMINI_API_KEY for the meeting notes
     video_patch: bool = True
     problem: str = ""            # a part that stopped, with its last log lines
     version: str = ""            # of the code that runs
@@ -145,10 +146,13 @@ class Status:
 
 class Supervisor:
     def __init__(self, repo: Path = REPO, logs: Path = LOGS, settings_path: Path = SETTINGS, python: str = sys.executable,
-                 popen=subprocess.Popen, environ=None, shell_key=key_from_login_shell) -> None:
+                 popen=subprocess.Popen, environ=None, shell_key=key_from_login_shell,
+                 shell_notes_key=lambda: key_from_login_shell("GEMINI_API_KEY")) -> None:
         self.repo, self.logs, self.settings_path, self.python, self.popen = repo, logs, settings_path, python, popen
         self.environ = dict(os.environ if environ is None else environ)
         self.shell_key = shell_key
+        self.shell_notes_key = shell_notes_key
+        self.has_notes_key = True
         self.gateway_module = load_gateway(repo)
         self.gateway = self.backend = self.screen = None
         self.share_note, self.share_label = "", ""
@@ -210,6 +214,11 @@ class Supervisor:
             if key:
                 env["DEEPL_AUTH_KEY"] = self.environ["DEEPL_AUTH_KEY"] = key   # kept for a restart, in memory only
         self.has_key = bool(env.get("DEEPL_AUTH_KEY"))
+        if not env.get("GEMINI_API_KEY"):   # the meeting notes; until 2026-11-18 only DeepL's key was looked up
+            key = self.shell_notes_key()
+            if key:
+                env["GEMINI_API_KEY"] = self.environ["GEMINI_API_KEY"] = key
+        self.has_notes_key = bool(env.get("GEMINI_API_KEY"))
         # Models already on this laptop: no questions to Hugging Face at the start (an expired login stops them loading)
         if (Path.home() / ".cache/huggingface/hub/models--microsoft--wavlm-base-plus-sv").is_dir():
             env["HF_HUB_OFFLINE"] = "1"
@@ -412,6 +421,7 @@ class Supervisor:
             code=g.shown_code(), known=sorted(g.load_headsets()), connected=connected_headsets(gateway_text),
             translation_key=getattr(self, "has_key", False) or bool(self.settings.get("deepl_key"))
             or bool(self.environ.get("DEEPL_AUTH_KEY")),
+            notes_key=self.has_notes_key,
             video_patch=self._patched(),
             setup=self.setup_text, setup_fraction=self.setup_fraction,
             version=self.version, update=self.update_ready,
