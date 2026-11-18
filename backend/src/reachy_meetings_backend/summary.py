@@ -33,8 +33,9 @@ SYSTEM = (
     '"when": "deadline or empty"}}, ...], "next_steps": ["short bullet", ...]}}. '
     "At most 5 summary bullets covering the whole meeting so far, newest topics last. Actions only "
     "for concrete tasks someone agreed to do. Next steps: at most 4 open questions, decisions still to "
-    "take or topics for the next meeting, not repeating the actions. The transcript may contain "
-    "recognition errors."
+    "take or topics for the next meeting, not repeating the actions. Lines start with who spoke, a name "
+    "or 'Speaker A' (the same label is the same person; it can be wrong now and then): use names for "
+    "'who', never 'Speaker A'. The transcript may contain recognition errors."
 )
 
 
@@ -103,7 +104,8 @@ class Summarizer:
         if self.lines and self.last_t is not None and caption["t_start"] - self.last_t > self.gap_s:
             self.reset(f"{(caption['t_start'] - self.last_t) / 60:.0f} min without speech")
         self.last_t = caption.get("t_end") or caption["t_start"]
-        line = f"[{time.strftime('%H:%M', time.localtime(caption['t_start']))}] {caption['text']}"
+        who = caption.get("name") or (f"Speaker {chr(64 + caption['speaker'])}" if caption.get("speaker") else "")
+        line = f"[{time.strftime('%H:%M', time.localtime(caption['t_start']))}] " + (f"{who}: " if who else "") + caption["text"]
         if caption.get("translation"):
             line += f"  ({caption['translation']})"
         self.lines.append(line)

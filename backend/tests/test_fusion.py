@@ -131,17 +131,17 @@ def test_a_doubtful_voice_goes_to_the_voice_of_the_person_seen_talking_and_is_le
         assert f.final(obs(near(a, 0.95)), 1 + 2 * i, 3 + 2 * i, None).voice == 1
     assert people.owner(1).pid == 1
     _watch(people, 5, 7, {0.3: _talking, 0.7: _still})
-    d = f.final(obs(near(a, 0.74)), 5, 7, None)            # far-field, a poor match ...
+    d = f.final(obs(near(a, 0.45)), 5, 7, None)            # a poor match (a short or noisy clip) ...
     assert d.voice == 1 and d.person.pid == 1 and clusters.counts == [3], "... but person 1 is seen saying it"
     _watch(people, 7, 9, {0.3: _still, 0.7: _still})
-    d = f.final(obs(near(a, 0.74)), 7, 9, None)            # the same poor match, nobody seen talking
-    assert d.voice == 2 and d.person is None, "a new voice (below the threshold), and no bubble"
+    d = f.final(obs(near(a, 0.45)), 7, 9, None)            # the same poor match, nobody seen talking
+    assert d.voice == 1 and d.person is None and clusters.counts == [3], "the closest voice, nothing learnt, no place"
 
 
 def test_doubtful_matches_do_not_drag_a_voice_over_everyone():
-    """2026-11-18: everyone ended up as speaker 1 at 0.82-0.98: its mean had learnt from everything above 0.80."""
+    """2026-11-18: everyone ended up as speaker 1: its mean had learnt from everything above the threshold."""
     a = rng.standard_normal(DIM)
-    b = near(a, 0.83)                                      # another person, a similar voice
+    b = near(a, 0.50)                                      # another person, a similar voice
     clusters = SpeakerClusters()
     f = Fusion(clusters)
     assert f.final(obs(a), 0, 3, None).voice == 1
@@ -164,7 +164,7 @@ def test_the_camera_splits_a_similar_voice_off_into_a_new_one():
     for i in range(2):                                     # voice 1 is person 1's
         _watch(people, 1 + 2 * i, 3 + 2 * i, {0.3: _talking, 0.7: _still})
         f.final(obs(near(a, 0.97)), 1 + 2 * i, 3 + 2 * i, None)
-    b = near(a, 0.83)                                      # person 2, a voice above the threshold to voice 1
+    b = near(a, 0.55)                                      # person 2, a voice above the threshold to voice 1
     _watch(people, 5, 7, {0.3: _still, 0.7: _talking})
     d = f.final(obs(b), 5, 7, None)
     assert d.voice == 2 and d.person.pid == 2
@@ -174,6 +174,70 @@ def test_the_camera_splits_a_similar_voice_off_into_a_new_one():
     _watch(people, 9, 11, {}, head_yaw=90)                 # both out of the picture: the voice says who
     assert f.final(obs(jitter(b)), 9, 11, None).person.pid == 2
     assert f.final(obs(near(a, 0.95)), 11, 13, None).person.pid == 1
+
+
+def test_a_similar_voice_is_found_by_its_second_utterance_and_the_first_is_relabelled():
+    a = rng.standard_normal(DIM)
+    b = unit(near(a, 0.42))                                # someone else: not unlike voice 1, not clearly it either
+    clusters = SpeakerClusters()
+    f = Fusion(clusters)
+    assert f.final(obs(a), 0, 3, None, key="first").voice == 1
+    d = f.final(obs(b), 4, 7, None, key="second")
+    assert d.voice == 1 and not d.relabel and clusters.counts == [1], "for now the closest voice, nothing learnt"
+    d = f.final(obs(near(b, 0.75)), 8, 11, None, key="third")
+    assert d.voice == 2 and d.relabel == [("second", 2)], "two alike, both unlike voice 1: a new voice, from both"
+    assert f.final(obs(near(b, 0.7)), 12, 15, None).voice == 2
+    assert f.final(obs(near(a, 0.7)), 16, 19, None).voice == 1
+
+
+def test_one_odd_sounding_sentence_founds_no_new_voice():
+    a = rng.standard_normal(DIM)
+    clusters = SpeakerClusters()
+    f = Fusion(clusters)
+    f.final(obs(a), 0, 3, None)
+    assert f.final(obs(near(a, 0.33)), 4, 7, None).voice is None, "not known: a cough in it, a laugh"
+    assert f.final(obs(near(a, 0.75)), 8, 11, None).voice == 1 and len(clusters.means) == 1
+    assert f.final(obs(near(a, 0.10)), 12, 15, None).voice == 2, "unlike every known voice: new at once"
+
+
+def test_where_the_mic_hears_a_voice_from_breaks_a_tie_between_similar_voices():
+    a = rng.standard_normal(DIM)
+    b = unit(near(a, 0.5))
+    f = Fusion(SpeakerClusters())
+    f.final(obs(a), 0, 3, (40, 5))
+    f.final(obs(b), 3, 6, None)                            # no direction, doubtful: kept
+    assert f.final(obs(near(a, 0.1)), 6, 9, (-40, 5)).voice == 2      # (a third voice, to have two with a direction)
+    for i in range(3):
+        assert f.final(obs(near(a, 0.8)), 10 + 6 * i, 13 + 6 * i, (40 + i, 5)).voice == 1
+        assert f.final(obs(near(unit(f.clusters.means[1]), 0.8)), 13 + 6 * i, 16 + 6 * i, (-40 - i, 5)).voice == 2
+    c1, c2 = unit(f.clusters.means[0]), unit(f.clusters.means[1])
+    between = unit(c1 + c2 + 0.0 * a)                     # as like the one as the other
+    s1, s2 = between @ c1, between @ c2
+    assert abs(s1 - s2) < 0.02
+    assert f._similarities(between, (40, 5))[0][0] > f._similarities(between, (40, 5))[0][1] + 0.05
+    assert f._similarities(between, (-40, 5))[0][1] > f._similarities(between, (-40, 5))[0][0] + 0.05
+    same = f._similarities(between, (0, 50))[0]
+    assert abs(same[0] - s1) < 1e-6, "the mic wandered during the utterance: it says nothing"
+    assert f._elsewhere(1, (-40, 5)) and not f._elsewhere(1, (45, 5)) and not f._elsewhere(1, None)
+
+
+def test_a_listener_whose_mouth_moves_now_and_then_does_not_get_the_voice_of_someone_out_of_the_picture():
+    a, b = rng.standard_normal(DIM), rng.standard_normal(DIM)
+    people = People(_flat)
+    _watch(people, 0, 1, {0.3: _still})
+    f = Fusion(SpeakerClusters(), people)
+    t = 1
+    for i in range(3):                                     # person 1 talks: voice 1 is theirs
+        _watch(people, t, t + 3, {0.3: _talking})
+        f.final(obs(near(a, 0.8) if i else a), t, t + 3, None)
+        t += 3
+    assert people.owner(1).pid == 1
+    for i in range(12):                                    # someone not in the picture talks; person 1 laughs at every fourth
+        _watch(people, t, t + 3, {0.3: _talking if i % 4 == 3 else _still})
+        d = f.final(obs(near(b, 0.8) if i else b), t, t + 3, None)
+        assert d.voice == 2 and d.person is None, i
+        t += 3
+    assert people.owner(2) is None and people.voices_of(people.people[0]) == [1]
 
 
 def test_a_short_first_clip_starts_no_voice_and_partials_learn_nothing():
@@ -227,7 +291,7 @@ def test_two_tracks_on_one_face_report_it_once():
         return [dict(face)] if x <= face["cx"] <= x + w and y <= face["cy"] <= y + h else []
 
     finder._detect = detect
-    finder.tracks = [{"face": dict(face), "missed": 0}, {"face": {**face, "cx": 0.43}, "missed": 0}]
+    finder.tracks = [finder._new_track(dict(face)), finder._new_track({**face, "cx": 0.43})]
     frame = np.zeros((1080, 1920, 3), np.uint8)
     for _ in range(3):
         assert len(finder.step(frame)) == 1

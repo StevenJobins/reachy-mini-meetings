@@ -1,12 +1,15 @@
 // Subtitles: the backend's live captions and your own words, on a panel low in front of you. Protocol at the top of
 // backend/.../captions.py; what is shown when: Subtitles.cs.
 //
-// Each line starts with who said it: "Speaker A", "B", ... in its own colour, from the voice (backend speakers.py),
-// or "You" (while you speak into the open mic, the backend transcribes it). Italic text is still changing; with translation
-// the translation is the main text and the original stands small underneath.
+// Everything said stands here and only here. Each line starts with who said it: "Speaker A", "B", ... or their name,
+// in their own colour, the same as on the tag above their head (SpeakerBubbles; the backend decides who it was from
+// the voice, the mouths and the mic direction), or "You" (while you speak into the open mic, the backend transcribes
+// it). Italic text is still changing; with translation the translation is the main text and the original stands
+// small underneath.
 // The panel stays where it is while you look around and glides after you once you look clearly elsewhere, like the
 // video window when it stands in front of you: text fixed to the head is uncomfortable.
-// Bubbles above the speaker's head (faces + mic direction) were tried first: git 130ee11.
+// Text in bubbles above the speaker's head was tried twice (git 130ee11, 33ff389): it showed only when the backend
+// was sure where the speaker was, so some sentences stood up there and others down here.
 
 using System;
 using System.Collections.Generic;
@@ -23,7 +26,7 @@ public class CaptionView : MonoBehaviour
     {
         public int id;
         public bool final;
-        public string text, lang, translation;
+        public string text, lang, translation, name;
         public int speaker;
         public double t_end;
         public SpeakerBubbles.At at;
@@ -38,7 +41,6 @@ public class CaptionView : MonoBehaviour
     const int RowChars = 56, MaxRows = 2;          // per line, keeping the end: that is what is being said now
     const float Pad = 0.04f, TextScale = 0.85f, MinWidth = 0.6f;
     const float FadeS = 0.3f;
-    static readonly string[] Colors = { "#ff9500", "#38bdf8", "#4ade80", "#f472b6", "#a78bfa", "#facc15" };
     const string YouColor = "#ffffff";
 
     public RoomSound room;
@@ -134,18 +136,20 @@ public class CaptionView : MonoBehaviour
             case "hello":
                 clockOffsetS = WallS() - JsonUtility.FromJson<HelloMsg>(json).t;
                 break;
-            case "faces":   // only counted: no face in view = no speech bubble next to anyone
+            case "faces":   // only counted, for the status line
                 faces = JsonUtility.FromJson<FacesMsg>(json).people?.Length ?? 0;
+                break;
+            case "people":   // who is where: the tags above the heads, and names for the lines on show
+                var people = JsonUtility.FromJson<SpeakerBubbles.PeopleMsg>(json);
+                foreach (var p in people.people ?? Array.Empty<SpeakerBubbles.PersonMsg>())
+                    if (!string.IsNullOrEmpty(p.name)) subs.Named(p.id, p.name);
+                if (bubbles != null) bubbles.People(people, now);
                 break;
             case "caption":
                 var c = JsonUtility.FromJson<CaptionMsg>(json);
                 if (c.final && c.t_end < WallS() - clockOffsetS - Subtitles.FinalS) return;   // replayed history
                 int? speaker = json.Contains("\"speaker\": ") && !json.Contains("\"speaker\": null") ? c.speaker : (int?)null;
-                // next to the speaker when the backend knows where they are (SpeakerBubbles), else on the panel
-                var who = Who(new SubtitleLine { Speaker = speaker }, out var color);
-                bool there = bubbles != null && bubbles.Show(c.id, c.final, c.text, c.translation, c.lang, who, color,
-                    json.Contains("\"at\": {") ? c.at : null, now, c.translating);
-                subs.Caption(c.id, c.final, there ? "" : c.text, c.translation, c.lang, speaker, now, c.translating);
+                subs.Caption(c.id, c.final, c.text, c.translation, c.lang, speaker, now, c.translating, c.name);
                 Debug.Log($"[captions] {(c.final ? "final" : "partial")} #{c.id} speaker {speaker?.ToString() ?? "?"} {c.lang}: {c.text}");
                 break;
             case "me":
@@ -180,8 +184,8 @@ public class CaptionView : MonoBehaviour
 
     static string Who(SubtitleLine l, out string color)
     {
-        color = l.You ? YouColor : l.Speaker != null ? Colors[(l.Speaker.Value - 1) % Colors.Length] : "#9ca3af";
-        return l.You ? "You" : l.Speaker != null ? $"Speaker {(char)('A' + (l.Speaker.Value - 1) % 26)}" : "";
+        color = l.You ? YouColor : SpeakerLabel.Color(l.Speaker);
+        return l.You ? "You" : Escape(SpeakerLabel.Name(l.Speaker, l.Name));
     }
 
     static string Compose(List<SubtitleLine> lines)

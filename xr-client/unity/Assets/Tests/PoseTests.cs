@@ -353,6 +353,41 @@ public class PoseTests
     }
 
     [Test]
+    public void ALineKeepsWhoSaidItAndTakesANameOrAnotherSpeakerOnlyFromTheBackend()
+    {
+        var s = new Subtitles();
+        s.Caption(1, false, "Guten Mor", null, "de", 2, 0, translating: true);
+        Assert.That(s.Shown(0).Single().Waiting, Is.True, "being translated: dots, not the original");
+        Assert.That(s.Shown(0).Single().Speaker, Is.EqualTo(2), "who it is from stands there from the first word");
+        s.Caption(1, false, "Guten Morgen", "Good mor", "de", null, 0.5);
+        s.Caption(1, true, "Guten Morgen zusammen", null, "de", 2, 1, translating: true);
+        var l = s.Shown(1).Single();
+        Assert.That((l.Text, l.Speaker, l.Waiting), Is.EqualTo(("Good mor", (int?)2, false)), "the translation so far stays");
+        s.Caption(1, true, "Guten Morgen zusammen", "Good morning everyone", "de", 2, 1.5, name: "Anna");
+        l = s.Shown(1.5).Single();
+        Assert.That((l.Text, l.Speaker, l.Name), Is.EqualTo(("Good morning everyone", (int?)2, "Anna")));
+        s.Caption(2, true, "I agree", null, "en", 2, 2);
+        s.Named(2, "Anna");
+        Assert.That(s.Shown(2).Select(x => x.Name), Is.All.EqualTo("Anna"), "a name learnt later goes on every line of theirs");
+        s.Caption(2, true, "I agree", null, "en", 3, 3);   // the backend found out it was someone else
+        l = s.Shown(3).Last();
+        Assert.That((l.Speaker, l.Name), Is.EqualTo(((int?)3, (string)null)), "not under the old name");
+    }
+
+    [Test]
+    public void OnePersonOneLabelAndColourEverywhere()
+    {
+        Assert.That(SpeakerLabel.Name(1, null), Is.EqualTo("Speaker A"));
+        Assert.That(SpeakerLabel.Name(4, ""), Is.EqualTo("Speaker D"));
+        Assert.That(SpeakerLabel.Name(4, "Dominic"), Is.EqualTo("Dominic"));
+        Assert.That(SpeakerLabel.Name(null, null), Is.EqualTo(""));
+        Assert.That(SpeakerLabel.Color(null), Is.EqualTo(SpeakerLabel.Unknown));
+        var first = Enumerable.Range(1, SpeakerLabel.Colors.Length).Select(i => SpeakerLabel.Color(i)).ToList();
+        Assert.That(first.Distinct().Count(), Is.EqualTo(first.Count), "the first eight people have eight colours");
+        Assert.That(SpeakerLabel.Color(SpeakerLabel.Colors.Length + 1), Is.EqualTo(first[0]));
+    }
+
+    [Test]
     public void YouLineIsLiveWhileTalkingAndUntilTheTextComes()
     {
         var s = new Subtitles();

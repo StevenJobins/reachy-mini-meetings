@@ -1,12 +1,16 @@
-// Speech bubbles next to the speaker: when the backend knows where the speaker's face is (caption "at", backend
-// people.py: the voice tied to a person in the room), the text stands above that person's head and a frame in the
-// speaker's colour marks the face. Everything else stays in the subtitle panel (CaptionView), which asks here first.
+// Who is who, above their heads: every person the backend's camera has found gets a frame around the face and a
+// name tag above the head, "Speaker A", "Speaker B", ... in their own colour, or the name they gave of themselves
+// ("I'm Anna", backend names.py). Always there, also while nobody talks; while that person talks the frame is thicker
+// and a dot stands before the name. What is said stands only in the subtitles (CaptionView), under the same name and
+// colour. (Until 2026-11-18 the text itself stood here in a bubble, only while someone talked: git 33ff389. The class
+// kept its name, the scene refers to it.)
 //
-// The bubble hangs on the video window, at the place where that direction is in the picture shown now (robot head
+// The backend sends everyone it has seen 5 times a second (message "people", backend captions.py): the participant's
+// number, the name, and where the face is as a direction in the robot base frame.
+// The tag hangs on the video window, at the place where that direction is in the picture shown now (robot head
 // pose from the video delay ago). While the window is world-locked that is a fixed place in the room, also outside
 // the live picture (the room panorama shows the person there); while it stands in front of the user, only people
-// inside the picture get a bubble.
-// One bubble per person: a new utterance replaces the old one.
+// inside the picture get a tag.
 
 using System;
 using System.Collections.Generic;
@@ -22,24 +26,34 @@ public class SpeakerBubbles : MonoBehaviour
         public float yaw_deg, pitch_deg, top_deg, h_deg, seen_s;
     }
 
-    class Bubble
+    [Serializable]
+    public class PersonMsg
     {
-        public int CaptionId;
-        public At At;
-        public double Until;
+        public int id;
+        public string name;
+        public float yaw_deg, pitch_deg, top_deg, h_deg, seen_s;
+        public bool speaking;
+    }
+    [Serializable] public class PeopleMsg { public PersonMsg[] people; }
+
+    class Tag
+    {
+        public PersonMsg Now;             // as the backend last said
+        public float Yaw, Pitch, Top, H;  // eased towards it: the backend's numbers come 5 times a second
         public string Body;
-        public string Waiting;    // name line while the translation is on its way: dots under it
-        public bool Translated;
+        public bool Thick;
+        public float DrawnH, DrawnTop;    // the face size and head top the frame was last drawn for
         public Transform Root;
-        public Ui.Rect Panel;
-        public Ui.Rect[] Frame;
+        public Ui.Rect Panel, Frame;
         public TextMesh Text;
         public Color Color;
     }
 
     const float Distance = 2.9f;                   // just inside the video sphere (3 m)
-    const int RowChars = 34, MaxRows = 3;
-    const float Pad = 0.05f, TextScale = 1.2f, Gap = 0.1f, Line = 0.01f, MinFace = 0.2f;
+    const float Pad = 0.03f, TextScale = 1.0f, Gap = 0.05f, Line = 0.008f, ThickLine = 0.02f, MinFace = 0.2f;
+    const float EaseS = 0.25f;
+    const double StaleS = 2.0;                     // no word from the backend this long: no tags
+    const float SeenS = 3f;                        // in the live picture, a face not seen this long is not marked
 
     public VideoWindow view;
     public RobotVideo video;
@@ -47,99 +61,77 @@ public class SpeakerBubbles : MonoBehaviour
     /// <summary>Not shown (Curtain).</summary>
     public bool Hidden;
 
-    readonly Dictionary<int, Bubble> bubbles = new Dictionary<int, Bubble>();   // by person
+    readonly Dictionary<int, Tag> tags = new Dictionary<int, Tag>();   // by participant
     readonly CameraModel cam = CameraModel.Calibrated();
     Material text;
+    double heardAt = double.NegativeInfinity;
 
-    public string Status => bubbles.Count > 0 ? $"bubbles {bubbles.Count}" : "";
+    public string Status => tags.Count > 0 ? $"people {tags.Count}" : "";
 
-    /// <summary>A caption with the speaker's place. True = shown here; false = not possible now (the panel shows it).</summary>
-    public bool Show(int id, bool final, string textNow, string translation, string lang, string who, string color,
-        At at, double now, bool translating = false)
+    /// <summary>Everyone the backend's camera has seen, and where (CaptionView hands the message over).</summary>
+    public void People(PeopleMsg msg, double now)
     {
-        if (at == null || string.IsNullOrEmpty(textNow) || !TryPlace(at, out _)) { Remove(id); return false; }
-        foreach (var other in bubbles.Where(kv => kv.Value.CaptionId == id && kv.Key != at.person).ToList())
-            Drop(other.Key);   // the same words, now known to be someone else's
-        if (!bubbles.TryGetValue(at.person, out var b)) b = bubbles[at.person] = Create();
-        if (b.CaptionId != id) b.Translated = false;   // a new sentence: nothing of it is translated yet
-        b.CaptionId = id;
-        b.At = at;
-        b.Until = now + (final ? Subtitles.FinalS : Subtitles.PartialS);
-        ColorUtility.TryParseHtmlString(color, out b.Color);
-
-        bool translated = !string.IsNullOrEmpty(translation);
-        var name = who.Length > 0 ? $"<color={color}>● <b>{who}</b></color>\n" : "";
-        if (translating && !translated)
+        heardAt = now;
+        var people = msg.people ?? Array.Empty<PersonMsg>();
+        foreach (var gone in tags.Keys.Where(id => people.All(p => p.id != id)).ToList()) Drop(gone);
+        foreach (var p in people)
         {
-            // not the original first and then the translation: an earlier translation stays, else dots
-            b.Waiting = b.Translated ? null : name;
-            return true;
+            if (!tags.TryGetValue(p.id, out var t))
+            {
+                t = tags[p.id] = Create();
+                t.Yaw = p.yaw_deg; t.Pitch = p.pitch_deg; t.Top = p.top_deg; t.H = p.h_deg;
+            }
+            t.Now = p;
+            ColorUtility.TryParseHtmlString(SpeakerLabel.Color(p.id), out t.Color);
         }
-        b.Waiting = null;
-        b.Translated = translated;
-        var rows = CaptionView.Wrap(CaptionView.Escape(translated ? translation : textNow), RowChars, MaxRows);
-        var body = name
-                   + string.Join("\n", rows.Select(r => final ? r : $"<color=#d1d5db><i>{r}</i></color>"));
-        if (translated)
-            foreach (var r in CaptionView.Wrap(CaptionView.Escape($"{lang}: {textNow}"), RowChars * 3 / 2, 1))
-                body += $"\n<size=40><color=#9ca3af>{r}</color></size>";
-        if (body != b.Body) Redraw(b, body);
-        return true;
     }
 
-    void Remove(int captionId)
+    void Drop(int id)
     {
-        foreach (var kv in bubbles.Where(kv => kv.Value.CaptionId == captionId).ToList()) Drop(kv.Key);
+        var t = tags[id];
+        Destroy(t.Panel.M);
+        Destroy(t.Frame.M);
+        Destroy(t.Root.gameObject);
+        tags.Remove(id);
     }
 
-    void Drop(int person)
-    {
-        var b = bubbles[person];
-        Destroy(b.Panel.M);
-        foreach (var f in b.Frame) Destroy(f.M);
-        Destroy(b.Root.gameObject);
-        bubbles.Remove(person);
-    }
-
-    Bubble Create()
+    Tag Create()
     {
         if (text == null) text = Ui.TextMaterial(textMaterial, 3013);
-        var root = new GameObject("Speaker Bubble").transform;
+        var root = new GameObject("Speaker Tag").transform;
         root.SetParent(view.transform, false);
-        // Frame[0]: a rounded outline around the face; Frame[1]: the bubble's tip towards the head
-        var b = new Bubble { Root = root, Panel = Ui.Quad(root, "Panel", panelMaterial, 3011), Frame = new Ui.Rect[2] };
-        b.Frame[0] = Ui.Quad(root, "Face", panelMaterial, 3010);
-        b.Frame[1] = Ui.Quad(root, "Tip", panelMaterial, 3010);
-        b.Frame[1].T.localRotation = Quaternion.Euler(0, 0, 45);
-        b.Text = Ui.Text(root, "Text", text, 64, TextScale, TextAnchor.LowerCenter);
-        b.Text.alignment = TextAlignment.Left;
-        return b;
+        var t = new Tag { Root = root, Panel = Ui.Quad(root, "Panel", panelMaterial, 3011), Frame = Ui.Quad(root, "Face", panelMaterial, 3010) };
+        t.Text = Ui.Text(root, "Text", text, 64, TextScale, TextAnchor.LowerCenter);
+        t.Text.alignment = TextAlignment.Center;
+        return t;
     }
 
-    /// <summary>Layout around the face centre (the root): frame around the face, text above the head.</summary>
-    void Redraw(Bubble b, string body)
+    /// <summary>Layout around the face centre (the root): frame around the face, the name above the head.</summary>
+    void Redraw(Tag t, string body, bool thick)
     {
-        b.Body = body;
-        b.Text.text = body;
+        t.Body = body;
+        t.Thick = thick;
+        t.DrawnH = t.H;
+        t.DrawnTop = t.Top - t.Pitch;
+        t.Text.text = body;
         float metres = Distance * Mathf.Deg2Rad;                                   // per degree, near the centre
-        float faceH = Mathf.Max(MinFace, b.At.h_deg * metres), faceW = 0.8f * faceH;
-        float top = Mathf.Max(faceH / 2, (b.At.top_deg - b.At.pitch_deg) * metres);
-        b.Frame[0].Set(faceW, faceH, 0.25f * faceW, Vector3.zero, Color.clear);
-        b.Frame[0].Border(new Color(b.Color.r, b.Color.g, b.Color.b, 0.95f), Line);
-        var size = Ui.Size(b.Text);
+        float faceH = Mathf.Max(MinFace, t.H * metres), faceW = 0.8f * faceH;
+        float top = Mathf.Max(faceH / 2, (t.Top - t.Pitch) * metres);
+        t.Frame.Set(faceW, faceH, 0.25f * faceW, Vector3.zero, Color.clear);
+        t.Frame.Border(new Color(t.Color.r, t.Color.g, t.Color.b, thick ? 1f : 0.8f), thick ? ThickLine : Line);
+        var size = Ui.Size(t.Text);
         float w = size.x + 2 * Pad, h = size.y + 2 * Pad, bottom = top + Gap;
-        b.Frame[1].Set(0.07f, 0.07f, 0.012f, new Vector3(0, bottom, 0.0005f), Ui.Glass);
-        b.Panel.Set(w, h, 0.07f, new Vector3(0, bottom + h / 2, 0), Ui.Glass);
-        b.Panel.Border(Ui.Edge);
-        b.Text.transform.localPosition = new Vector3(0, bottom + Pad, -0.002f);
+        t.Panel.Set(w, h, h / 2, new Vector3(0, bottom + h / 2, 0), Ui.Glass);
+        t.Panel.Border(new Color(t.Color.r, t.Color.g, t.Color.b, thick ? 0.9f : 0.45f));
+        t.Text.transform.localPosition = new Vector3(0, bottom + Pad, -0.002f);
     }
 
-    /// <summary>Where the face is on the video window now (its local frame); false = cannot be shown.</summary>
-    bool TryPlace(At at, out Vector3 dir)
+    /// <summary>Where that direction is on the video window now (its local frame); false = cannot be shown.</summary>
+    bool TryPlace(float yaw, float pitch, out Vector3 dir)
     {
         dir = Vector3.forward;
         if (!view.Measured.TryAt(DaemonClient.NowS() - video.VideoDelayS, out var head)) return false;
-        SpeakerPlace.InCamera(at.yaw_deg, at.pitch_deg, head, out var x, out var y, out var z);
+        SpeakerPlace.InCamera(yaw, pitch, head, out var x, out var y, out var z);
         dir = new Vector3((float)x, (float)y, (float)z);
         return view.Locked ? z > -0.2 : SpeakerPlace.InPicture(cam, x, y, z);
     }
@@ -147,19 +139,29 @@ public class SpeakerBubbles : MonoBehaviour
     void LateUpdate()
     {
         double now = Time.unscaledTimeAsDouble;
-        foreach (var person in bubbles.Where(kv => now > kv.Value.Until).Select(kv => kv.Key).ToList()) Drop(person);
-        foreach (var b in bubbles.Values)
+        if (now - heardAt > StaleS)
+            foreach (var id in tags.Keys.ToList()) Drop(id);
+        float k = 1 - Mathf.Exp(-Time.unscaledDeltaTime / EaseS);
+        foreach (var t in tags.Values)
         {
-            bool on = TryPlace(b.At, out var dir) && !Hidden;
-            if (b.Waiting != null)
-            {
-                var dots = b.Waiting + Ui.Dots();
-                if (dots != b.Body) Redraw(b, dots);
-            }
-            if (b.Root.gameObject.activeSelf != on) b.Root.gameObject.SetActive(on);
+            var p = t.Now;
+            t.Yaw += Mathf.DeltaAngle(t.Yaw, p.yaw_deg) * k;
+            t.Pitch += (p.pitch_deg - t.Pitch) * k;
+            t.Top += (p.top_deg - t.Top) * k;
+            t.H += (p.h_deg - t.H) * k;
+            // In the live picture a face that is not found any more is not marked (the person turned away or left);
+            // on the world-locked window the tag stays at their place, as the panorama shows them there.
+            var dir = Vector3.forward;
+            bool on = !Hidden && (view.Locked || p.seen_s < SeenS) && TryPlace(t.Yaw, t.Pitch, out dir);
+            var name = CaptionView.Escape(SpeakerLabel.Name(p.id, p.name));
+            var col = SpeakerLabel.Color(p.id);
+            var body = p.speaking ? $"<color={col}>● <b>{name}</b></color>" : $"<color={col}><b>{name}</b></color>";
+            if (body != t.Body || p.speaking != t.Thick || Mathf.Abs(t.H - t.DrawnH) > 0.3f
+                || Mathf.Abs(t.Top - t.Pitch - t.DrawnTop) > 0.3f) Redraw(t, body, p.speaking);
+            if (t.Root.gameObject.activeSelf != on) t.Root.gameObject.SetActive(on);
             if (!on) continue;
-            b.Root.localPosition = dir * Distance;
-            b.Root.localRotation = Quaternion.LookRotation(dir, Vector3.up);
+            t.Root.localPosition = dir * Distance;
+            t.Root.localRotation = Quaternion.LookRotation(dir, Vector3.up);
         }
     }
 }

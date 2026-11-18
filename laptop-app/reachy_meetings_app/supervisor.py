@@ -220,7 +220,7 @@ class Supervisor:
                 env["GEMINI_API_KEY"] = self.environ["GEMINI_API_KEY"] = key
         self.has_notes_key = bool(env.get("GEMINI_API_KEY"))
         # Models already on this laptop: no questions to Hugging Face at the start (an expired login stops them loading)
-        if (Path.home() / ".cache/huggingface/hub/models--microsoft--wavlm-base-plus-sv").is_dir():
+        if (Path.home() / ".cache/huggingface/hub/models--mlx-community--whisper-large-v3-turbo").is_dir():
             env["HF_HUB_OFFLINE"] = "1"
         args = [self.python, "-m", "reachy_meetings_backend.captions"]
         if self.meeting_lang != "auto":

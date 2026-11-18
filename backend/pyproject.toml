@@ -26,7 +26,7 @@ dependencies = [
 [project.optional-dependencies]
 claude = ["anthropic>=1.0"]  # paid alternative to DeepL
 depth = ["torch", "transformers>=4.45", "pillow"]  # room-scan depth (Depth Anything V2 metric), depth.py
-speakers = ["torch", "transformers>=4.45"]  # subtitle colours: who talks, from the voice (WavLM), speakers.py
+speakers = []  # nothing extra since 2026-11-18: the voice model (CAM++) runs on onnxruntime, a core dependency
 dev = ["pytest", "ruff"]
 
 [project.scripts]

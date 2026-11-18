@@ -1,11 +1,15 @@
-"""Where the people in the room are, and which voice belongs to whom. Pure logic, no camera, no model.
+"""Who the people in the room are, where they are, and which voice belongs to whom. Pure logic, no camera, no model.
 
 Bubbles next to the speaker need "who talks" as a place. Per utterance that failed on the robot (2026-11-06: mouth
 movement too weak to pick a face, mic direction the same for everyone). The voice works (speakers.py), so here the
 voice is tied to a person over several utterances:
 
-  people   faces from vision.py become people by their direction in the room (head yaw + angle in the image):
-           in a meeting people sit still, so a face that shows up again where someone was is that person
+  people   faces from vision.py become people. A face is a known person if (1) it is the face vision.py has
+           followed without a break ("track"), else (2) it looks like them (the face embedding "emb", FaceId in
+           vision.py), else (3) it shows up where they were (head yaw + angle in the image) and does not look
+           clearly different. Until 2026-11-18 only (3) was used, and while Reachy's head turned one face became
+           up to five people (the head angle is read 5-20 times a second and lags the picture), which split the
+           votes below. Two people found to have the same face are merged, unless they were seen side by side.
   votes    every final utterance of voice k is one vote for the person whose mouth moved most meanwhile, if one
            clearly did (fusion.py casts them); a voice belongs to the person with enough votes and a clear lead
   where    fusion.py weighs this together with the mouths and the mic direction: the caption of voice k can go to its
@@ -29,6 +33,13 @@ DIST = np.array([-0.05038947568459324, 0.08391509940058939, 0.001866967475836473
 WIDTH, HEIGHT = 1920, 1080
 
 REID_DEG = 12.0       # a face within this of a known person's direction is that person
+# Face embeddings (cosine), from scripts/eval_faces.py on 1000 LFW pairs at 18-60 px between the eyes, 2026-11-18:
+# two people 0.10 in the middle, 0.34 at the 99th percentile, 0.45 at most; the same person 0.70 in the middle,
+# 0.46-0.49 at the 5th percentile (0.33 in dim light). Those are single photos years apart; here means of several
+# looks in one meeting are compared, which lie further apart.
+FACE_SAME = 0.42      # at least this alike: the same person, wherever they are now
+FACE_OTHER = 0.15     # at most this alike: someone else, even at the same place
+FACE_MEAN_OF = 30     # a person's face is the mean of about this many looks
 CONFIRM = 8           # sightings before a new direction counts as a person (a turning head smears directions)
 MERGE_DEG = 20.0      # a new direction this close to a known person who is not in the picture is that person: the
                       # head yaw lags while Reachy turns (2026-11-11: one person became two, 8 degrees apart)
@@ -41,6 +52,8 @@ TALK_STD = 0.02       # mouth movement (standard deviation) above this may be ta
 LEAD = 1.5            # ... if it is this many times the next person's
 MIN_VOTES = 1.5       # votes a person needs to own a voice (two in a row = 1.7 with the fading)
 VOTE_LEAD = 2.0       # ... and this many times the next person's votes
+SECOND_VOTES = 2.5    # ... and this many for a second voice of the same person (four in a row)
+AGAINST, AGAINST_MAX = 0.5, 3.0   # seen still while the voice talks: this much off, down to this
 MIN_S = 1.0           # shorter utterances do not vote
 FADE = 0.7            # older votes of a voice count this much less with every new one: people change seats, and a
                       # face on a phone held up once must not own the voice for good (2026-11-11: 3 old votes
@@ -76,11 +89,27 @@ def angle_diff(a: float, b: float) -> float:
     return (a - b + 180) % 360 - 180
 
 
+def alike(a: np.ndarray | None, b: np.ndarray | None) -> float | None:
+    """How alike two faces are (cosine of their embeddings); None if one is not known."""
+    return None if a is None or b is None else float(a @ b)
+
+
 class Person:
     def __init__(self, pid: int, yaw: float, t: float) -> None:
         self.pid, self.yaw, self.pitch, self.top, self.h = pid, yaw, 0.0, 0.0, 0.0
         self.first, self.seen, self.sightings = t, t, 0
         self.mouth: deque[tuple[float, float]] = deque()
+        self.face: np.ndarray | None = None   # what they look like (unit vector), None = not seen well enough yet
+        self.looks = 0
+        self.last_emb = None                  # the track embedding learnt from last (it changes ~2.5 times a second)
+
+    def learn_face(self, emb: np.ndarray | None) -> None:
+        if emb is None or emb is self.last_emb:
+            return
+        self.last_emb = emb
+        n = min(self.looks, FACE_MEAN_OF - 1)
+        m = emb if self.face is None else (self.face * n + emb) / (n + 1)
+        self.face, self.looks = m / np.linalg.norm(m), self.looks + 1
 
     def activity(self, t0: float, t1: float) -> float | None:
         """Mouth movement over [t0, t1]: standard deviation of the opening; None = not seen enough to say."""
@@ -94,11 +123,31 @@ class People:
         self.people: list[Person] = []
         self.candidates: list[Person] = []
         self.votes: dict[int, dict[int, float]] = {}   # voice -> person -> votes
+        self.owners: dict[int, int] = {}               # voice -> person it belongs to (see vote)
+        self.tracks: dict[int, Person] = {}            # vision.py's track -> who it was last
+        self.apart: set[frozenset[int]] = set()        # pairs of people seen in one frame: never the same person
+        self.merged: list[tuple[int, int]] = []        # (person that turned out to be, this person), for roster.py
         self.next_pid = 1
 
+    def _who(self, f: dict, yaw: float, taken: set[int]) -> Person | None:
+        """The known person (or candidate) this face is, None = nobody known."""
+        free = [p for p in self.people + self.candidates if id(p) not in taken]
+        emb = f.get("emb")
+        p = self.tracks.get(f.get("track"))
+        if p is not None and any(p is q for q in free) and (alike(emb, p.face) or 1.0) > FACE_OTHER:
+            return p                                       # followed without a break
+        looks = [(a, q) for q in free if (a := alike(emb, q.face)) is not None]
+        a, p = max(looks, key=lambda x: x[0], default=(0.0, None))
+        if p is not None and a >= FACE_SAME:
+            return p                                       # looks like them, wherever they are now
+        near = [q for q in free if abs(angle_diff(q.yaw, yaw)) < REID_DEG and (alike(emb, q.face) or 1.0) > FACE_OTHER]
+        return min(near, key=lambda q: abs(angle_diff(q.yaw, yaw)), default=None)
+
     def update(self, faces: list[dict], t: float, head_yaw_deg: float, head_pitch_deg: float = 0.0,
-               head_roll_deg: float = 0.0, key: str = "mouth") -> None:
-        """Faces of one camera frame (vision.py), taken at wall clock t with the head at these angles."""
+               head_roll_deg: float = 0.0, key: str = "mouth", steady: bool = True) -> None:
+        """Faces of one camera frame (vision.py), taken at wall clock t with the head at these angles.
+        steady=False: the head is turning, the angles lag the picture; known people keep their place, their mouths
+        are still read, and nobody new is taken in."""
         head = (head_roll_deg, head_pitch_deg, head_yaw_deg)
         self.people = [p for p in self.people if t - p.seen < MEMORY_S]
         self.candidates = [p for p in self.candidates if t - p.first < CANDIDATE_S]
@@ -107,37 +156,97 @@ class People:
             yaw, pitch = to_base(*self.angles(f["cx"], f["cy"]), head)
             _, top = to_base(*self.angles(f["cx"], f["top"]), head)
             _, bottom = to_base(*self.angles(f["cx"], f["top"] + f["h"]), head)
-            near = [p for p in self.people + self.candidates
-                    if id(p) not in taken and abs(angle_diff(p.yaw, yaw)) < REID_DEG]
-            p = min(near, key=lambda q: abs(angle_diff(q.yaw, yaw)), default=None)
+            p = self._who(f, yaw, taken)
             if p is None:
+                if not steady:
+                    continue
                 p = Person(0, yaw, t)
                 p.pitch, p.top, p.h = pitch, top, top - bottom
                 self.candidates.append(p)
             taken.add(id(p))
-            p.yaw += 0.2 * angle_diff(yaw, p.yaw)
-            p.pitch += 0.2 * (pitch - p.pitch)
-            p.top += 0.2 * (top - p.top)
-            p.h += 0.2 * (top - bottom - p.h)
+            if f.get("track") is not None:
+                self.tracks[f["track"]] = p
+            if steady:
+                p.yaw += 0.2 * angle_diff(yaw, p.yaw)
+                p.pitch += 0.2 * (pitch - p.pitch)
+                p.top += 0.2 * (top - p.top)
+                p.h += 0.2 * (top - bottom - p.h)
+            p.learn_face(f.get("emb"))
             p.seen = t
             p.sightings += 1
             if f.get(key) is not None:
                 p.mouth.append((t, f[key]))
                 while p.mouth[0][0] < t - HISTORY_S:
                     p.mouth.popleft()
+        here = [p.pid for p in self.people if p.seen == t]
+        self.apart.update(frozenset((a, b)) for i, a in enumerate(here) for b in here[i + 1:])
         # After all faces of the frame have found their person: a known person seen in this very frame cannot be
         # the new one (decided inside the loop before, a second face under 20 degrees away could be folded into
         # the first, depending on the order of the faces).
         for p in [c for c in self.candidates if c.seen == t and c.sightings >= CONFIRM]:
             self.candidates.remove(p)
-            known = min((q for q in self.people if q.seen < t and abs(angle_diff(q.yaw, p.yaw)) < MERGE_DEG),
-                        key=lambda q: abs(angle_diff(q.yaw, p.yaw)), default=None)
-            if known:   # the same person, seen at a slightly different direction
-                known.yaw, known.pitch, known.top, known.h, known.seen = p.yaw, p.pitch, p.top, p.h, t
-                known.mouth.extend(p.mouth)
+            known = self._known(p, [q for q in self.people if q.seen < t])
+            if known:   # the same person, seen at another direction (they moved, or the head yaw lagged)
+                self._fold(known, p)
                 continue
             p.pid, self.next_pid = self.next_pid, self.next_pid + 1
             self.people.append(p)
+            self.apart.update(frozenset((p.pid, q)) for q in here)
+        self._merge_same_faces(t)
+        if len(self.tracks) > 200:
+            alive = {id(p) for p in self.people + self.candidates}
+            self.tracks = {k: p for k, p in self.tracks.items() if id(p) in alive}
+
+    @staticmethod
+    def _known(p: Person, others: list[Person]) -> Person | None:
+        """The one of `others` (people not in this frame) that the new face `p` is."""
+        looks = [(a, q) for q in others if (a := alike(p.face, q.face)) is not None]
+        a, q = max(looks, key=lambda x: x[0], default=(0.0, None))
+        if q is not None and a >= FACE_SAME:
+            return q
+        near = [q for q in others if abs(angle_diff(q.yaw, p.yaw)) < MERGE_DEG and (alike(p.face, q.face) or 1.0) > FACE_OTHER]
+        return min(near, key=lambda q: abs(angle_diff(q.yaw, p.yaw)), default=None)
+
+    def _fold(self, keep: Person, p: Person) -> None:
+        """`p` is `keep`, seen later: place and mouth readings go over."""
+        if p.seen >= keep.seen:
+            keep.yaw, keep.pitch, keep.top, keep.h, keep.seen = p.yaw, p.pitch, p.top, p.h, p.seen
+        keep.mouth = deque(sorted([*keep.mouth, *p.mouth]))
+        keep.sightings += p.sightings
+        keep.learn_face(p.face)
+        for track, q in list(self.tracks.items()):
+            if q is p:
+                self.tracks[track] = keep
+
+    def _merge(self, a: Person, b: Person) -> Person:
+        """`a` and `b` are one person: the one known longer stays, with everything known of the other."""
+        keep, gone = (a, b) if a.pid < b.pid else (b, a)
+        self._fold(keep, gone)
+        self.people.remove(gone)
+        for votes in self.votes.values():
+            if gone.pid in votes:
+                votes[keep.pid] = votes.get(keep.pid, 0) + votes.pop(gone.pid)
+        self.owners = {v: keep.pid if pid == gone.pid else pid for v, pid in self.owners.items()}
+        self.apart = {frozenset(keep.pid if x == gone.pid else x for x in pair) for pair in self.apart}
+        self.apart = {pair for pair in self.apart if len(pair) == 2}
+        self.merged.append((gone.pid, keep.pid))
+        return keep
+
+    def _merge_same_faces(self, t: float) -> None:
+        """One person taken in twice becomes one again: two people with the same face, or a person whose face is
+        known, seen now where someone sat whose face never was (taken in before the first good look at them).
+        Never two people who were seen side by side."""
+        for i, a in enumerate(self.people):
+            for b in self.people[i + 1:]:
+                if frozenset((a.pid, b.pid)) in self.apart:
+                    continue
+                same = (alike(a.face, b.face) or 0.0) >= FACE_SAME
+                for here, ghost in ((a, b), (b, a)):   # `here` is seen now, by their face, at the ghost's place
+                    same = same or (here.seen == t and here.face is not None and ghost.face is None and ghost.seen < t
+                                    and abs(angle_diff(here.yaw, ghost.yaw)) < REID_DEG)
+                if same:
+                    self._merge(a, b)
+                    return self._merge_same_faces(t)
 
     def talker(self, t0: float, t1: float) -> Person | None:
         """The person whose mouth clearly moved most during [t0, t1], None if nobody stands out."""
@@ -160,21 +269,47 @@ class People:
         for pid in v:
             v[pid] *= FADE
         v[person.pid] = v.get(person.pid, 0) + 1
+        self._settle(voice)
 
-    def voice_of(self, person: Person) -> int | None:
-        """The voice this person owns, if any."""
-        return next((v for v in self.votes if (o := self.owner(v)) is not None and o.pid == person.pid), None)
+    def vote_against(self, voice: int, person: Person) -> None:
+        """`person` was in the picture with a still mouth while `voice` talked: it is not theirs. Without this, a
+        listener who laughs or nods now and then while someone outside the picture talks collected that voice
+        (tests/sim.py, "one in view, one never in the picture": 34 % of the labels wrong)."""
+        v = self.votes.setdefault(voice, {})
+        v[person.pid] = max(-AGAINST_MAX, v.get(person.pid, 0) - AGAINST)
+        self._settle(voice)
 
-    def owner(self, voice: int | None) -> Person | None:
-        """The person this voice belongs to, once that is clear."""
+    def _settle(self, voice: int) -> None:
+        lead = self._leader(voice)
+        if lead is not None:   # else it stays with whoever it was: a name that comes and goes is worse than a late one
+            self.owners[voice] = lead
+        elif self.votes[voice].get(self.owners.get(voice), 0) <= 0:
+            self.owners.pop(voice, None)   # ... unless nothing speaks for them any more
+
+    def _leader(self, voice: int) -> int | None:
+        """The person with enough votes for this voice and a clear lead, if any."""
         v = sorted(self.votes.get(voice, {}).items(), key=lambda kv: -kv[1])
         if not v or v[0][1] < MIN_VOTES or (len(v) > 1 and v[0][1] < VOTE_LEAD * v[1][1]):
             return None
         pid, n = v[0]
-        # One voice per person: if another voice has more votes for this person, this one has no place yet
-        # (rather the subtitle panel than a bubble at the wrong face).
-        if any(other != voice and w.get(pid, 0) > n for other, w in self.votes.items()):
+        # A second voice for someone who has one needs more: two sentences of someone else's voice can land on a
+        # person by mistake, but a person can also sound like two voices (near and far, laughing).
+        if n < SECOND_VOTES and any(other != voice and self.owners.get(other) == pid and w.get(pid, 0) > n
+                                    for other, w in self.votes.items()):
             return None
+        return pid
+
+    def voices_of(self, person: Person) -> list[int]:
+        """The voices this person owns."""
+        return [v for v, pid in self.owners.items() if pid == person.pid]
+
+    def voice_of(self, person: Person) -> int | None:
+        """The voice this person owns (the one with the most votes), if any."""
+        return max(self.voices_of(person), key=lambda v: self.votes[v].get(person.pid, 0), default=None)
+
+    def owner(self, voice: int | None) -> Person | None:
+        """The person this voice belongs to, once that is clear."""
+        pid = self.owners.get(voice)
         return next((p for p in self.people if p.pid == pid), None)
 
     @staticmethod

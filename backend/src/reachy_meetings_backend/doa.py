@@ -22,6 +22,8 @@ from collections import deque
 
 log = logging.getLogger(__name__)
 
+TURNING = 20.0   # degrees a second: above this the head is turning
+
 
 def doa_to_head_deg(doa_rad: float) -> float:
     return 90.0 - math.degrees(doa_rad)
@@ -43,6 +45,7 @@ class DoaTracker:
         self.samples: deque[tuple[float, float, float]] = deque()
         self.head_yaw_deg = 0.0
         self.head_pitch_deg = self.head_roll_deg = 0.0
+        self.poses: deque[tuple[float, float, float, float]] = deque(maxlen=200)   # (time, yaw, pitch, roll)
 
     def add(self, doa: dict, head_yaw_deg: float, now: float | None = None) -> None:
         # The chip's own speech flag is false most of the time even while someone talks (measured on the page:
@@ -73,17 +76,33 @@ class DoaTracker:
         r = min(1.0, math.hypot(s, c))
         return math.degrees(math.atan2(s, c)), math.degrees(math.sqrt(-2 * math.log(max(r, 1e-9))))
 
+    def set_pose(self, yaw: float, pitch: float, roll: float, now: float | None = None) -> None:
+        self.head_yaw_deg, self.head_pitch_deg, self.head_roll_deg = yaw, pitch, roll
+        self.poses.append((time.time() if now is None else now, yaw, pitch, roll))
+
+    def pose_at(self, t: float) -> tuple[float, float, float, bool]:
+        """(yaw, pitch, roll, steady) of the head at wall clock t: between the two readings around t; steady =
+        the head turns slower than TURNING there, so directions worked out with these angles can be trusted (the
+        angles are read 10 times a second and the camera picture is a little older than its time says)."""
+        if not self.poses:
+            return self.head_yaw_deg, self.head_pitch_deg, self.head_roll_deg, True
+        poses = list(self.poses)
+        after = next((i for i, p in enumerate(poses) if p[0] >= t), len(poses) - 1)
+        a, b = poses[max(0, after - 1)], poses[after]
+        k = 0.0 if b[0] <= a[0] else min(1.0, max(0.0, (t - a[0]) / (b[0] - a[0])))
+        yaw, pitch, roll = (a[i] + k * (b[i] - a[i]) for i in (1, 2, 3))
+        rate = 0.0 if b[0] <= a[0] else max(abs(b[1] - a[1]), abs(b[2] - a[2])) / (b[0] - a[0])
+        return yaw, pitch, roll, rate < TURNING and t - b[0] < 1.0
+
     def _get(self, path: str) -> dict:
         with urllib.request.urlopen(self.url + path, timeout=1) as r:
             return json.loads(r.read())
 
     def _poll(self, n: int) -> None:
-        if n % 2 == 0:  # 5 Hz: people.py turns face directions into room directions with it
-            pose = self._get("/api/state/full").get("head_pose") or {}
-            if pose.get("yaw") is not None:
-                self.head_yaw_deg = math.degrees(pose["yaw"])
-                self.head_pitch_deg = math.degrees(pose.get("pitch") or 0.0)
-                self.head_roll_deg = math.degrees(pose.get("roll") or 0.0)
+        pose = self._get("/api/state/full").get("head_pose") or {}   # people.py turns face directions into room
+        if pose.get("yaw") is not None:                              # directions with it
+            self.set_pose(math.degrees(pose["yaw"]), math.degrees(pose.get("pitch") or 0.0),
+                          math.degrees(pose.get("roll") or 0.0))
         self.add(self._get("/api/state/doa"), self.head_yaw_deg)
 
     async def run(self) -> None:

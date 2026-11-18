@@ -95,13 +95,63 @@ With 🌐 *Translate* on, the headset sends your voice to this server (binary fr
 
 **Transcribe only** (the Unity app with *Translate me* off; with it on the app sends `"speak": true`): `{"type": "me_mode", "speak": false}` keeps the same path but stops after Whisper: no translation, no synthesis, just the `me` message for the "You" subtitles. The app plays your real voice on Reachy over WebRTC itself, so while you speak (+0.6 s after your last word, `ECHO_S`) the room mic is ignored for captions; the room sound to the headset goes on, as when Reachy speaks. Only speech counts (the VAD on your voice), not every frame the headset sends: until 2026-11-18 it was 0.8 s after the last frame, and since the headset's gate stays open 0.6 s after the last word, the room was deaf for 1.4 s after everything you said, also after a noise that opened the gate.
 
-**Who is talking** (`speakers.py`): every utterance gets a voice embedding (WavLM x-vector, `microsoft/wavlm-base-plus-sv`, ~0.1 s on the CPU, ~380 MB downloaded once) and is matched against the voices heard so far (cosine similarity ≥ `--speaker-threshold`, default 0.80; else a new speaker, up to 6). Captions carry `"speaker": 1, 2, …`, null under ~1 s of speech; partials only name a voice heard before. Needs `pip install -e ".[speakers]"` (torch, transformers; the same as `[depth]`); `--speakers none` turns it off. Since 2026-11-18 the voice is only one of three cues; which voice and which person an utterance is is decided in `fusion.py` (below). Utterances of 6 s or more are embedded in ~3 s windows, so a second voice inside one utterance is noticed. On synthesized voices with added reverb, two different women's voices came to 0.77.
+#### Who is who, and who said it (2026-11-18, second pass)
+
+The headset shows a name tag above every face all the time ("Speaker A", "Speaker B", ... or the name the person gave), and everything said stands in the subtitles under the same name and colour. For that the backend keeps **participants** (`roster.py`): everyone the camera has seen, plus voices nobody has been seen speaking with yet.
+
+**What was wrong** (backend log of the headset test on 2026-11-18, 14:52–15:06, two people): (1) *one face became five people* (at −45°, −29°, 0°, 27°, 33°): a person was only a direction in the room, and while Reachy's head moves the head angle lags the picture, so votes and labels split over the copies; (2) *two voices nearly as alike as one voice to itself* (WavLM: `similarity 0.83 0.84`, `0.86 0.85`; the same person 0.84–0.98, two people up to 0.85); (3) nothing but the voice when nobody was in the picture (the robot was asleep with its head down from 14:59 on).
+
+**What is used now, per utterance** (`fusion.py`):
+
+| Measurement | From | Used for |
+|---|---|---|
+| The face itself | SFace embedding of each followed face (`vision.py` `FaceId`, OpenCV, 37 MB) | a person stays that person when the head turns, they change seats, or the track is lost (`people.py`) |
+| Face track | `vision.py` follows a face from frame to frame | the same person without a break, also while the head turns |
+| Direction of the face | head angle at the time of the camera frame (`doa.py` `pose_at`, read 10×/s) + place in the picture | where the tag goes; who it is only when the face is not known yet. While the head turns faster than 20°/s nobody new is taken in and places are not moved |
+| Mouth | jaw opening, 20×/s | who talks among the people in the picture; and, new, *not them* when seen with a still mouth: votes against a voice being theirs |
+| Voice | CAM++ embedding (`speakers.py`, ONNX, 28 MB, 35 ms per 3 s) | who talks when not in the picture; tied to a person by the mouth votes |
+| Mic direction | XVF3800, head-relative | calibrated against the faces as before; new: each voice remembers where the mic hears it from, which breaks ties between similar voices (±0.05 on the similarity) and marks an utterance "heard from elsewhere" (not learnt) |
+| What is said | `names.py` | "My name is Anna", "Hallo zusammen, ich bin Kevin": the participant's name |
+
+**A new voice is founded** when an utterance is unlike every known voice (< 0.25) or when *two* doubtful utterances sound like each other and less like any known voice (the earlier one is relabelled). One odd-sounding sentence therefore founds no "Speaker C", and a voice similar to a known one is still found by its second sentence. A voice learns only from clear matches (≥ 0.60).
+
+**Measured, not guessed.** Three tools, all in `scripts/`:
+
+- `eval_voices.py bench`: voice models on LibriSpeech test-clean (40 speakers) as a far microphone hears them (simulated reverb RT60 0.5 s + noise; the robot's own mic chain is *not* in it). CAM++, room, 3 s clips: equal error rate 2.7 %; the same speaker 0.52–0.68 (5th percentile–median) to their mean voice, the most similar other speaker 0.40–0.51 (median–95th); 1.5 s clips are much worse (9.3 %), 6 s better (1.2 %). ResNet34 (3.3 %) and WeSpeaker's CAM++ (2.5 %) are no better and 1.2–3× slower.
+- `eval_faces.py`: 1000 LFW photo pairs through the same steps as the camera, shrunk to robot sizes: about 3 % wrong from 60 down to 18 px between the eyes (5.8 % at 18 px in dim light); two people at most 0.45 alike, the same person 0.46–0.49 at the 5th percentile, which is where `FACE_SAME` 0.42 / `FACE_OTHER` 0.15 come from.
+- `eval_scenarios.py` (`tests/sim.py`): whole meetings through `people.py` + `fusion.py` + `roster.py` with **real voice embeddings** and a simulated camera and mic (numbers from the robot's logs). Label right / wrong / none, 10 meetings of 60 utterances each, 2026-11-18:
+
+  | Situation | right | wrong | none |
+  |---|---|---|---|
+  | two at the table, in view | 99 % | 0 % | 1 % |
+  | two with similar voices (the most similar pair of the 40), in view | 99 % | 0 % | 0 % |
+  | two 8° apart, in view | 99 % | 0 % | 0 % |
+  | similar voices and 8° apart | 98 % | 1 % | 0 % |
+  | one in view, one never in the picture | 95 % | 3 % | 2 % |
+  | nobody in the picture | 94 % | 2 % | 4 % |
+  | nobody in the picture, similar voices | 91 % | 7 % | 2 % |
+  | ... and the mic points the same way for everyone | 92 % | 6 % | 2 % |
+  | three, Reachy's head follows the talker | 99 % | 0 % | 1 % |
+  | three, head follows, similar voices | 98 % | 1 % | 0 % |
+  | far faces, found in 15 % of the frames | 98 % | 0 % | 2 % |
+  | four, two of them never in the picture | 92 % | 5 % | 3 % |
+
+  The same meetings run in `tests/test_scenarios.py` with floors a little under these numbers. In every scenario with faces the tag above a head was that person's speech label ≥ 99 % of the time (90 % with four people, two unseen), and one person never became two.
+- Also run once: the real backend on a recording of two LibriSpeech speakers taking turns (`--file`): 10 of 10 utterances labelled right, similarities 0.76–0.88 to the own voice and 0.09–0.18 to the other. And `vision.py` + `people.py` on LFW photos pasted into 1080p frames: two people stay two through a head turn and are the right ones after swapping seats with other photos of them.
+
+**Not measured yet, needs the robot and people** (`python scripts/record_meeting.py --people 3`, then read the `who:` lines): the voice model through the robot's mic chain (beam forming and noise suppression change a voice); faces turned far to the side (the test photos are mostly frontal; such faces are not embedded, `EMB_FRONTAL`); how often a listener's mouth moves in a real meeting (simulated: 15 % of the utterances); whether the mic direction separates people in your room (in the log of 2026-11-18 one voice came from −14° ± 6.5°, the other from about −2°).
+
+**Protocol:** `caption.speaker` is now the participant (not the voice), with `"name"`; a final comes again when its speaker or name turns out later. New message `people` (5×/s): everyone seen, with participant number, name, place and `speaking`. `faces` gained `track`. Face embeddings never leave the backend.
+
+**Names** (`names.py`): only what people say of themselves, in de/en/fr/it/es; "I'm X" / "ich bin X" count only in an introduction (a greeting in the sentence, or nothing but the name) and never for words like *Student*, *Schweizer*, *sorry* (54 test sentences). A name said about someone else ("thanks, Anna") is not used: a wrong name above a head is worse than "Speaker A". The meeting notes get the same labels (`Anna: ...` in the transcript), so action items can say who.
+
+**Who is talking** (`speakers.py`): every utterance gets a voice embedding (CAM++ from 3D-Speaker, ONNX with `onnxruntime`, no torch; the mel filterbank is computed in numpy and checked against Kaldi's) and is matched against the voices heard so far (cosine similarity to each voice's mean, up to 8 voices). `--speakers none` turns it off. Utterances of 6 s or more are embedded in ~3 s windows, so a second voice inside one utterance is noticed. Until 2026-11-18 it was WavLM (`microsoft/wavlm-base-plus-sv`, 380 MB, torch).
 
 **Finding the faces** (`vision.py`, `FaceFinder`, 2026-11-11): the detector inside MediaPipe's landmarker looks at the whole picture shrunk to its small input, so a face that is small in the wide-angle image (someone 2 m away, a face on a phone) was not found, whatever the resolution; in a dim room the same test with a face in view gave 0.0 faces per frame. Now one piece of the picture is searched per frame (the whole, then six overlapping parts), and a face once found is followed in a close crop around it: the same face in the same seconds, 168 of 170 frames, 25 ms per frame. Dark crops (mean under 90/255) are brightened first (gamma 0.5).
 
 **Where the speaker is** (`people.py`, first version 2026-11-10, thresholds not yet set from recordings): the faces from `vision.py` become people by their direction in the room (head yaw + angle in the image, re-identified within 12°). Every final utterance of a voice is a vote for the person whose mouth clearly moved most meanwhile; a voice belongs to a person after 2 votes with a clear lead. Captions then carry `"at"` (direction of that person's face in the robot base frame), also when the mouth was not seen this time or the person is out of the picture; `null` when not known, and the headset falls back to the subtitle panel.
 
-#### Who said it: voice + mouths + mic direction (`fusion.py`, 2026-11-18)
+#### Who said it: voice + mouths + mic direction (`fusion.py`, 2026-11-18, first pass; numbers and thresholds above replace the ones here)
 
 **Why it failed before** (log of the headset test on 2026-11-18, two or more people in the room): (1) *the voice merged people*: every final updated the matched speaker's mean voice, including 12–15 s utterances that may hold two people (turn-taking without a 0.8 s pause stays one utterance), so speaker 1's mean drifted towards everyone and nearly every utterance matched it at 0.82–0.98, while the clearly different ones came at 0.69–0.79; (2) *one face became several people*: two of `FaceFinder`'s tracks could follow the same face, so one face came three times per frame (3.8 faces per frame; three "people" with identical mouth readings), no mouth could stand out, and the votes for the voice split between the copies; (3) *the voice and the mouth were used one after the other*, never weighed against each other, and (4) *the mic direction was not used at all* for who it was (in an earlier test it pointed at 40–53° for everyone).
 
@@ -247,12 +297,15 @@ src/reachy_meetings_backend/
 ├── stt.py        Whisper: mlx (Apple GPU) or faster-whisper (CUDA/CPU)
 ├── translate.py  DeepL (default) or Claude translation, with context
 ├── doa.py        speaker direction from the robot daemon (DoA + head pose)
-├── speakers.py   voice embeddings (WavLM), known voices
-├── people.py     faces -> people in the room, mouth movement, voice <-> person votes
-└── fusion.py     who said it: voice + mouths + mic direction (pure logic, tested)
+├── speakers.py   voice embeddings (CAM++), known voices
+├── people.py     faces -> people in the room (by face, track, direction), mouth movement, voice <-> person votes
+├── fusion.py     who said it: voice + mouths + mic direction (pure logic, tested)
+├── roster.py     participants: Speaker A, B, ... and their names (pure logic, tested)
+└── names.py      "I'm Anna": names people give of themselves
 scripts/print_captions.py
-tests/test_logic.py
-tests/test_fusion.py
+scripts/eval_voices.py, eval_faces.py, eval_scenarios.py   the measurements behind the thresholds
+tests/test_logic.py, test_fusion.py, test_identity.py
+tests/test_scenarios.py + sim.py + data/voices.npz   simulated meetings with real voices
 ```
 
 ### Open TODOs

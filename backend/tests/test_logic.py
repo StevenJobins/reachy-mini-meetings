@@ -569,7 +569,7 @@ def test_who_is_seen_talking_now_beats_an_old_tie_and_empty_places_get_no_bubble
     _watch(people, 10, 12, {0.3: _still, 0.7: _talking})   # ... but now person 2 is seen saying it
     assert _heard(people, 1, 10, 12).pid == 2
     _watch(people, 12, 14, {0.3: _still, 0.7: _talking})
-    assert _heard(people, 1, 12, 14).pid == 2 and people.owner(1) is None, "in between nobody owns it"
+    assert _heard(people, 1, 12, 14).pid == 2 and people.owner(1).pid == 1, "in between it stays whose it was"
     _watch(people, 14, 16, {0.3: _still, 0.7: _talking})
     assert _heard(people, 1, 14, 16).pid == 2 and people.owner(1).pid == 2, "the old votes fade"
     p1 = next(p for p in people.people if p.pid == 1)

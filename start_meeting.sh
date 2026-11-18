@@ -34,7 +34,7 @@ if (( ${@[(I)--share]} )); then share=1; set -- ${@:#--share}; fi
 python3 -u robot/scripts/gateway.py $remote > $logs/gateway.log 2>&1 &
 gateway=$!
 # Models already on this laptop: no questions to Hugging Face at the start (an expired login there stops them loading)
-[[ -d ~/.cache/huggingface/hub/models--microsoft--wavlm-base-plus-sv ]] && export HF_HUB_OFFLINE=1
+[[ -d ~/.cache/huggingface/hub/models--mlx-community--whisper-large-v3-turbo ]] && export HF_HUB_OFFLINE=1
 # The backend stays on 127.0.0.1 (its default): the headset reaches it through the gateway
 (cd backend && PYTHONPATH=src PYTHONUNBUFFERED=1 exec $py -m reachy_meetings_backend.captions "$@") > $logs/backend.log 2>&1 &
 backend=$!

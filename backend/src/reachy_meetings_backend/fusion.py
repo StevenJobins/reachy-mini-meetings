@@ -17,14 +17,21 @@ cue decides alone, and each counts only as far as it has proved itself in this m
 The caption goes to the best person if their score is at least ACCEPT and MARGIN ahead of the next; else no
 place (subtitle panel): a bubble at the wrong face is worse than none.
 
-The voice id itself: a clear match (>= HIGH) is that voice; a doubtful one (LOW..HIGH) is the voice of the person
-the mouth and the mic point at, if there is one and it is close enough; if that person has no voice yet and the
-closest voice belongs to someone else, a new voice; else the closest above the threshold (not learnt from) or a
-new voice. Only clear or confirmed utterances teach the voices, so one voice cannot drift
-over everyone. Votes come only from the mouth (people.talker), never from the fused answer, so the voice cannot
-confirm itself.
+The voice id itself (similarities are to each voice's mean; the mic direction the voice usually comes from moves
+them a little, see _similarities):
+  - the person the mouth and the mic point at owns a voice and it might be this one (>= LOW): theirs, learnt
+  - that person has no voice yet and the closest voice is someone else's: a new voice
+  - a clear match (>= HIGH, and not heard from clearly elsewhere than that voice comes from): that voice, learnt
+  - unlike every voice (< NEW_BELOW) and long enough: a new voice
+  - else doubtful: the closest voice above the threshold, not learnt (so one voice cannot drift over everyone),
+    or no voice. Doubtful utterances are kept: when a second one sounds like an earlier one, and both less like
+    any known voice, the two are a new voice (`relabel` names the earlier one). So a new voice needs either to
+    be clearly new or to be heard twice: one odd-sounding sentence of a known speaker founds no "Speaker C", and
+    a speaker who sounds like someone else is still found by their second sentence.
+Votes come only from the mouth (people.talker), never from the fused answer, so the voice cannot confirm itself.
 
-Pure logic, no models. Thresholds are first guesses from the 2026-11-18 log, to be set from real meetings.
+Pure logic, no models. The voice thresholds are read from scripts/eval_voices.py and checked in
+tests/test_scenarios.py (simulated meetings with real voices); the mouth and mic numbers are from the robot's logs.
 """
 
 from __future__ import annotations
@@ -42,10 +49,28 @@ TALK_W, MOVE_W, QUIET_W, UNJUDGED_W = 2.0, 1.0, -1.0, 1.0
 QUIET_STD = 0.008     # mouth movement under this while someone talks: not them (2026-11-18: listeners 0.0002-0.005,
                       # talkers 0.04-0.19)
 OWNER_W, OTHER_OWNER_W = 1.5, -1.0
+NOT_THEIRS_W = -2.0   # the voice is clearly a known one and the person owns another: a moving mouth is not talking
 DOA_W = 1.5
 ACCEPT, MARGIN = 1.0, 1.5
-HIGH, LOW = 0.88, 0.70   # voice similarity: clearly that voice / might be it (2026-11-18: the same voice 0.84-0.98,
-                         # others 0.69-0.79)
+# Voice similarity (cosine to a voice's mean; CAM++, speakers.py). From scripts/eval_voices.py, 40 speakers as a far
+# microphone hears them, 3 s clips: the same speaker 0.68 in the middle, 0.52 at the 5th percentile; other speakers
+# 0.34 at the 95th; the most similar other speaker 0.40 in the middle, 0.51 at the 95th. At 1.5 s everything is
+# 0.15 lower and the ranges overlap; at 6 s the same speaker is 0.65 at the 5th percentile.
+HIGH = 0.60           # clearly that voice: it learns from the utterance
+SURE = 0.70           # ... and so clearly that where the mic heard it from does not matter
+LOW = 0.30            # might be that voice, if the camera or the mic says so too
+NEW_BELOW = 0.25      # unlike every known voice: a new one at once
+# A new voice that is not that unlike the known ones (a similar voice: the most similar pair of the 40 speakers is
+# 0.48 in the middle to the other's mean, 0.60 at the 95th percentile) is found by its second utterance: two
+# doubtful utterances that are alike (two clips of one speaker: 0.60 in the middle, 0.45 at the 5th percentile; of
+# the most similar pair: 0.40, 0.52 at the 95th) and both not much like any known voice.
+PAIR, PAIR_LEAD, PAIR_BELOW = 0.45, 0.05, 0.45
+PEND_S = 2.0          # ... each at least this long
+PENDING, PENDING_S = 8, 300.0   # doubtful utterances kept for that, and how long
+DIR_MIN = 3           # a voice's usual mic direction counts from this many sure utterances on
+DIR_W = 0.10          # ... and moves the similarity by up to this much (the voices' directions compared)
+DIR_SIGMA = 10.0      # the least spread assumed for a voice's direction (2026-11-18: 6.5 degrees for one speaker)
+DIR_ELSEWHERE = 3.0   # this many spreads away (at least 30 degrees): heard from elsewhere than the voice comes from
 DOA_SAMPLES = 30         # calibration samples kept (the latest)
 DOA_MIN = 4              # samples needed ...
 DOA_APART = 25.0         # ... from at least two people this far apart (degrees)
@@ -60,6 +85,7 @@ class Decision:
     person: Person | None
     how: str = ""                                   # how the voice was decided, for the log
     scores: dict[int, tuple[float, str]] = field(default_factory=dict)   # pid -> (score, terms), for the log
+    relabel: list[tuple[object, int]] = field(default_factory=list)      # (key of an earlier utterance, its voice now)
 
     def why(self) -> str:
         people = " | ".join(f"p{pid} {s:+.1f} ({t})" for pid, (s, t) in sorted(self.scores.items()))
@@ -79,6 +105,8 @@ class Fusion:
     def __init__(self, clusters: SpeakerClusters | None = None, people: People | None = None) -> None:
         self.clusters, self.people = clusters, people
         self.doa_samples: deque[tuple[float, int, float]] = deque(maxlen=DOA_SAMPLES)   # (error, pid, face yaw)
+        self.voice_dirs: dict[int, deque[float]] = {}     # voice -> mic directions of its sure utterances
+        self.pending: deque[tuple[object, np.ndarray, float, float]] = deque(maxlen=PENDING)   # (key, emb, t, best)
 
     # ------------------------------------------------------------------ mic direction
     def doa_model(self) -> tuple[float, float] | None:
@@ -100,9 +128,10 @@ class Fusion:
         return DOA_W * (2 * math.exp(-0.5 * (d / sigma) ** 2) - 1)
 
     # ------------------------------------------------------------------ people
-    def scores(self, t0: float, t1: float, voice: int | None,
-               doa: tuple[float, float] | None) -> dict[int, tuple[float, str]]:
-        """pid -> (score, terms). doa = (azimuth in the robot base frame, spread) of the utterance, or None."""
+    def scores(self, t0: float, t1: float, voice: int | None, doa: tuple[float, float] | None,
+               sure: bool = False) -> dict[int, tuple[float, str]]:
+        """pid -> (score, terms). doa = (azimuth in the robot base frame, spread) of the utterance, or None;
+        sure = the voice was a clear match."""
         if not self.people:
             return {}
         people = self.people.people
@@ -123,8 +152,12 @@ class Fusion:
                 terms.append(("unjudged", UNJUDGED_W))
             if owner is not None and owner.pid == p.pid:
                 terms.append(("voice", OWNER_W))
-            elif voice is not None and self.people.voice_of(p) not in (None, voice):
-                terms.append(("other voice", OTHER_OWNER_W))
+            elif voice is not None and (mine := self.people.voices_of(p)):
+                # they have a voice and this is another one. Clearly this one, and unlike theirs: a mouth that
+                # moves is not talking (they laugh, nod, chew). Like theirs: it may be them all the same.
+                means = self.clusters.means if self.clusters else []
+                unlike = sure and all(max(voice, m) <= len(means) and float(means[voice - 1] @ means[m - 1]) < LOW for m in mine)
+                terms.append(("not their voice", NOT_THEIRS_W) if unlike else ("other voice", OTHER_OWNER_W))
             if (d := self._doa_term(p, doa)) is not None:
                 terms.append(("mic", d))
             out[p.pid] = (sum(w for _, w in terms), " ".join(f"{n} {w:+.1f}" for n, w in terms))
@@ -137,56 +170,124 @@ class Fusion:
         return next(p for p in self.people.people if p.pid == ranked[0][1])
 
     # ------------------------------------------------------------------ voice
-    def _voice(self, obs: VoiceObs | None, hint: Person | None) -> tuple[int | None, str]:
+    def _similarities(self, emb: np.ndarray, doa: tuple[float, float] | None) -> tuple[list[float], str]:
+        """Similarity to every known voice, moved a little by where the mic heard the utterance: a voice that
+        usually comes from there gains, one that comes from elsewhere loses. Voices that all come from the same
+        direction (or a mic that points the same way for everyone) change nothing."""
+        sims = self.clusters.similarities(emb)
+        if doa is None or doa[1] > DOA_STEADY:
+            return sims, ""
+        fits = {}
+        for voice, dirs in self.voice_dirs.items():
+            if len(dirs) >= DIR_MIN and voice <= len(sims):
+                mean, sigma = circular_stats(list(dirs))
+                fits[voice] = math.exp(-0.5 * (angle_diff(doa[0], mean) / max(sigma, DIR_SIGMA)) ** 2)
+        if len(fits) < 2:
+            return sims, ""
+        middle = sum(fits.values()) / len(fits)
+        for voice, fit in fits.items():
+            sims[voice - 1] += DIR_W * (fit - middle)
+        return sims, ", mic " + " ".join(f"{v}:{DIR_W * (f - middle):+.2f}" for v, f in sorted(fits.items()))
+
+    def _elsewhere(self, voice: int, doa: tuple[float, float] | None) -> bool:
+        """The mic heard the utterance from clearly elsewhere than this voice usually comes from."""
+        dirs = self.voice_dirs.get(voice, ())
+        if doa is None or doa[1] > DOA_STEADY or len(dirs) < DIR_MIN:
+            return False
+        mean, sigma = circular_stats(list(dirs))
+        return abs(angle_diff(doa[0], mean)) > DIR_ELSEWHERE * max(sigma, DIR_SIGMA)
+
+    def _partner(self, emb: np.ndarray, best: float, now: float):
+        """An earlier doubtful utterance that sounds like this one, more than either sounds like a known voice."""
+        fits = [(float(e @ emb), i) for i, (_, e, t, b) in enumerate(self.pending)
+                if now - t < PENDING_S and float(e @ emb) >= max(PAIR, best + PAIR_LEAD, b + PAIR_LEAD)]
+        return max(fits, default=(0.0, None))[1]
+
+    def _voice(self, obs: VoiceObs | None, hint: Person | None, doa: tuple[float, float] | None = None,
+               key: object = None, now: float = 0.0) -> tuple[int | None, str, bool, list[tuple[object, int]]]:
+        """(voice, how it was decided, sure, earlier utterances that are this voice too)."""
         c = self.clusters
         if obs is None or c is None:
-            return None, "no voice"
-        sims = c.similarities(obs.emb)
+            return None, "no voice", False, []
+        emb = obs.emb / np.linalg.norm(obs.emb)
         can_new = obs.dur >= NEW_S
-        if not sims:
-            return (c.create(obs.emb), "first voice") if can_new else (None, "too short for a first voice")
+        if not c.means:
+            return (c.create(emb), "first voice", True, []) if can_new else (None, "too short for a first voice", False, [])
+        sims, mic = self._similarities(emb, doa)
         best = int(np.argmax(sims))
         sid, s = best + 1, sims[best]
-        sim_txt = f"{obs.dur:.1f} s, similarity " + " ".join(f"{x:.2f}" for x in sims) + (
+        txt = f"{obs.dur:.1f} s, similarity " + " ".join(f"{x:.2f}" for x in sims) + mic + (
             f", windows {obs.windows}" + (" mixed" if obs.mixed else "") if obs.windows else "")
-        if s >= HIGH:
-            c.learn(sid, obs.emb)
-            return sid, f"clear, {sim_txt}"
-        hinted = self.people.voice_of(hint) if hint and self.people else None
-        if hinted is not None and sims[hinted - 1] >= LOW:
-            c.learn(hinted, obs.emb)
-            return hinted, f"doubtful, the person seen/heard there owns it, {sim_txt}"
-        if hint is not None and hinted is None and can_new and (o := self.people.owner(sid)) and o.pid != hint.pid:
-            # the closest voice is someone else's, and the person seen/heard has none yet: theirs is new
-            return c.create(obs.emb), f"new, voice {sid} is person {o.pid}'s, person {hint.pid} talks, {sim_txt}"
-        if s >= c.threshold:
-            return sid, f"doubtful, not learnt, {sim_txt}"
-        if can_new:
-            return c.create(obs.emb), f"new, {sim_txt}"
-        return None, f"too short for a new voice, {sim_txt}"
+        mine = self.people.voices_of(hint) if hint and self.people else []
+        owner = self.people.owner(sid) if self.people else None
+        if mine:   # the person the mouth and the mic point at has a voice: is this it?
+            h = max(mine, key=lambda v: sims[v - 1])
+            if sims[h - 1] >= LOW:
+                c.learn(h, emb)
+                return h, f"the person seen/heard there owns it, {txt}", True, []
+        if hint is not None and not mine and owner is not None and owner.pid != hint.pid and can_new:
+            # someone seen talking who has no voice yet, and the closest voice is another person's: theirs is new
+            return c.create(emb), f"new, voice {sid} is person {owner.pid}'s, person {hint.pid} talks, {txt}", True, []
+        elsewhere = s < SURE and self._elsewhere(sid, doa)
+        if s >= HIGH and not elsewhere:
+            c.learn(sid, emb)
+            return sid, f"clear, {txt}", True, []
+        if s < NEW_BELOW and can_new:
+            return c.create(emb), f"new, {txt}", True, []
+        if elsewhere:
+            txt += f", heard from elsewhere than voice {sid}"
+        if obs.dur >= PEND_S and not obs.mixed and (s < PAIR_BELOW or elsewhere):
+            i = self._partner(emb, 0.0 if elsewhere else s, now)
+            if i is not None:   # the second utterance of a voice not known yet
+                other_key, other, _, _ = self.pending[i]
+                del self.pending[i]
+                new = c.create(emb)
+                if new > len(sims):   # (not when the voices are full and it went to the closest)
+                    c.learn(new, other)
+                    return new, f"new, like an earlier doubtful utterance, {txt}", True, [(other_key, new)]
+                return new, f"doubtful, voices full, {txt}", False, []
+            self.pending.append((key, emb, now, 0.0 if elsewhere else s))
+        if s >= c.threshold and not elsewhere:
+            return sid, f"doubtful, not learnt, {txt}", False, []
+        return None, f"not known, {txt}", False, []
 
     # ------------------------------------------------------------------ utterances
-    def final(self, obs: VoiceObs | None, t0: float, t1: float, doa: tuple[float, float] | None) -> Decision:
-        """A final utterance over [t0, t1] (wall clock): decides voice and person, and learns from it."""
+    def final(self, obs: VoiceObs | None, t0: float, t1: float, doa: tuple[float, float] | None,
+              key: object = None) -> Decision:
+        """A final utterance over [t0, t1] (wall clock): decides voice and person, and learns from it. `key` names
+        the utterance (the caption id): if it later turns out to be a new voice, a Decision's `relabel` says so."""
         hint = self.pick(self.scores(t0, t1, None, doa))   # from the mouths and the mic, before the voice
-        voice, how = self._voice(obs, hint)
-        return self.attribute(voice, t0, t1, doa, how, mixed=bool(obs and obs.mixed))
-
-    def attribute(self, voice: int | None, t0: float, t1: float, doa: tuple[float, float] | None = None,
-                  how: str = "", mixed: bool = False) -> Decision:
-        """The person who said a final utterance of `voice`; casts the mouth's vote and calibrates the mic."""
-        scores = self.scores(t0, t1, voice, doa)
-        d = Decision(voice, self.pick(scores), how, scores)
-        if self.people and t1 - t0 >= MIN_S and (talker := self.people.talker(t0, t1)):
-            if voice is not None and not mixed:   # mixed: the mouth window holds two people
-                self.people.vote(voice, talker)
-            if doa is not None and doa[1] <= DOA_STEADY:
-                self.doa_samples.append((angle_diff(doa[0], talker.yaw), talker.pid, talker.yaw))
+        voice, how, sure, relabel = self._voice(obs, hint, doa, key, t1)
+        if voice is not None and sure and doa is not None and doa[1] <= DOA_STEADY:
+            self.voice_dirs.setdefault(voice, deque(maxlen=20)).append(doa[0])
+        d = self.attribute(voice, t0, t1, doa, how, mixed=bool(obs and obs.mixed), sure=sure)
+        d.relabel = relabel
         return d
 
-    def partial(self, obs: VoiceObs | None) -> Decision:
-        """Live text: only a voice heard before, nothing learnt; its owner, if known."""
-        if obs is None or self.clusters is None:
-            return Decision(None, None)
-        voice = self.clusters.match(obs.emb)[0]
-        return Decision(voice, self.people.owner(voice) if self.people and voice else None)
+    def attribute(self, voice: int | None, t0: float, t1: float, doa: tuple[float, float] | None = None,
+                  how: str = "", mixed: bool = False, sure: bool = False) -> Decision:
+        """The person who said a final utterance of `voice`; casts the mouth's votes and calibrates the mic."""
+        scores = self.scores(t0, t1, voice, doa, sure)
+        d = Decision(voice, self.pick(scores), how, scores)
+        if not self.people or t1 - t0 < MIN_S:
+            return d
+        talker = self.people.talker(t0, t1)
+        if voice is not None and not mixed:   # mixed: the mouth window holds two people
+            if talker:
+                self.people.vote(voice, talker)
+            for p in self.people.people:
+                if p is not talker and (a := p.activity(t0, t1)) is not None and a < QUIET_STD:
+                    self.people.vote_against(voice, p)
+        if talker and doa is not None and doa[1] <= DOA_STEADY:
+            self.doa_samples.append((angle_diff(doa[0], talker.yaw), talker.pid, talker.yaw))
+        return d
+
+    def partial(self, obs: VoiceObs | None, t0: float | None = None, t1: float | None = None) -> Decision:
+        """Live text: a voice heard before and whoever is seen talking; nothing is learnt."""
+        voice = self.clusters.match(obs.emb)[0] if obs is not None and self.clusters is not None else None
+        person = None
+        if self.people:
+            if t0 is not None and t1 is not None and t1 - t0 >= MIN_S:
+                person = self.people.talker(t0, t1)
+            person = person or (self.people.owner(voice) if voice else None)
+        return Decision(voice, person)

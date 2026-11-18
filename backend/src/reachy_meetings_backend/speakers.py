@@ -5,37 +5,49 @@ thread); which voice an utterance is decided in fusion.py, together with the mou
 
 Long utterances (the segmenter cuts at 15 s, turn-taking without a pause stays one utterance) are embedded in
 windows of WIN_S: if the windows sound like different people, the utterance is "mixed" and only its main voice
-counts (2026-11-18 test: 12-15 s clips that may hold two people pulled speaker 1's mean voice towards everyone,
-until every utterance matched it at 0.82-0.98).
+counts.
 
-Embedding: WavLM x-vector (microsoft/wavlm-base-plus-sv, ~380 MB, downloaded once), on the CPU in its own
-thread: torch on the GPU next to MLX's Whisper made macOS abort MLX's command buffers (see captions.py, depth).
-Grouping: cosine similarity to each known speaker's mean voice; above the threshold = that speaker, else a new one.
-Short clips (< MIN_S) say little about the voice: no answer, the subtitle stays grey.
+Embedding: CAM++ (3D-Speaker, trained on VoxCeleb; ONNX, 28 MB, downloaded once), on the CPU with onnxruntime,
+35 ms for 3 s. Until 2026-11-18 it was WavLM (microsoft/wavlm-base-plus-sv, 380 MB, needs torch): in the room two
+different people were 0.69-0.85 alike and the same person 0.84-0.98, too close to tell similar voices apart.
+scripts/eval_voices.py compares the models on 40 speakers as a far microphone hears them.
+Grouping: cosine similarity to each known speaker's mean voice (fusion.py has the numbers).
+Short clips (< MIN_S) say little about the voice: no answer, the subtitle has no name.
 """
 
 from __future__ import annotations
 
 import asyncio
 import logging
+import urllib.request
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
+from pathlib import Path
 
 import numpy as np
 
 log = logging.getLogger(__name__)
 
-MODEL = "microsoft/wavlm-base-plus-sv"
+# ONNX speaker models (80 mel bands in, one embedding out), from the sherpa-onnx model collection:
+# key -> (file, samples as int16 values, window). Compared in scripts/eval_voices.py.
+ONNX_MODELS = {
+    "campplus": ("3dspeaker_speech_campplus_sv_en_voxceleb_16k.onnx", False, "povey"),
+    "eres2netv2": ("3dspeaker_speech_eres2netv2_sv_zh-cn_16k-common.onnx", False, "povey"),
+    "wespeaker-campplus": ("wespeaker_en_voxceleb_CAM++.onnx", True, "hamming"),
+    "resnet34": ("wespeaker_en_voxceleb_resnet34_LM.onnx", True, "hamming"),
+}
+ONNX_URL = "https://github.com/k2-fsa/sherpa-onnx/releases/download/speaker-recongition-models/"
+MODEL_DIR = Path.home() / ".cache" / "reachy-meetings"
+MODEL = "campplus"
 MIN_S = 1.0           # seconds of speech needed for an answer
 NEW_S = 2.5           # ... and for a new speaker: a short clip is a poor picture of a voice (2026-11-11: a 1.1 s
                       # clip became speaker 1, the same person's next sentences matched it at 0.50 and became 2)
 MAX_S = 8.0           # partials: the last this many seconds (enough for the voice, bounded time)
-THRESHOLD = 0.80      # same speaker above this (model card: 0.86 on clean speech; the room mic is far-field)
+THRESHOLD = 0.40      # may be that speaker above this (fusion.py has the ranges this is read from)
 WIN_S = 3.0           # finals of 2 * WIN_S or more are embedded in windows of about this length
-WIN_SAME = 0.70       # windows at least this similar are the same voice (below: someone else took over). A guess:
-                      # 2026-11-18 different voices met at 0.69-0.79, the same voice at 0.84-0.98; tune from the
-                      # "windows" in the Speakers log lines
-MAX_SPEAKERS = 6
+WIN_SAME = 0.35       # windows at least this similar are the same voice (below: someone else took over): two 3 s
+                      # clips of one speaker are 0.45 at the 5th percentile, of two speakers 0.34 at the 95th
+MAX_SPEAKERS = 8
 MEAN_OF = 20          # a speaker's mean voice follows the last ~this many utterances
 
 
@@ -121,44 +133,91 @@ def main_voice(embs: list[np.ndarray], win_s: float) -> VoiceObs:
     return VoiceObs(m, win_s * int(same.sum()), mixed=not same.all(), windows=[round(float(x), 2) for x in e @ m])
 
 
+def fbank(audio: np.ndarray, window: str = "povey", bins: int = 80) -> np.ndarray:
+    """Log mel filterbank energies as Kaldi computes them (25 ms frames every 10 ms, 16 kHz, no dither, 20 Hz to
+    8 kHz), [frames, bins]. In numpy, so the voice model needs neither torch nor a feature library; checked against
+    kaldi-native-fbank in tests/test_voice_model.py."""
+    n, shift, nfft = 400, 160, 512
+    if len(audio) < n:
+        audio = np.pad(audio, (0, n - len(audio)))
+    idx = np.arange(n)[None, :] + shift * np.arange(1 + (len(audio) - n) // shift)[:, None]
+    frames = audio[idx].astype(np.float64)
+    frames -= frames.mean(1, keepdims=True)
+    frames = np.concatenate([frames[:, :1] * (1 - 0.97), frames[:, 1:] - 0.97 * frames[:, :-1]], 1)
+    a = 2 * np.pi * np.arange(n) / (n - 1)
+    frames *= (0.5 - 0.5 * np.cos(a)) ** 0.85 if window == "povey" else 0.54 - 0.46 * np.cos(a)
+    power = np.abs(np.fft.rfft(frames, nfft)[:, : nfft // 2]) ** 2
+    return np.log(np.maximum(power @ _mel_bank(bins, nfft).T, np.finfo(np.float32).eps)).astype(np.float32)
+
+
+def _mel_bank(bins: int, nfft: int, low: float = 20.0, high: float = 8000.0) -> np.ndarray:
+    def mel(f):
+        return 1127.0 * np.log(1 + f / 700.0)
+
+    edges = mel(low) + (mel(high) - mel(low)) / (bins + 1) * np.arange(bins + 2)
+    m = mel(16000 / nfft * np.arange(nfft // 2))[None, :]
+    left, centre, right = edges[:-2, None], edges[1:-1, None], edges[2:, None]
+    return np.clip(np.minimum((m - left) / (centre - left), (right - m) / (right - centre)), 0, None)
+
+
+def model_path(key: str) -> Path:
+    """The ONNX file of a voice model, downloaded once (~30 MB)."""
+    name = ONNX_MODELS[key][0]
+    path = MODEL_DIR / name
+    for known in (path, MODEL_DIR / "eval" / "models" / name):
+        if known.exists():
+            return known
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(".part")
+    urllib.request.urlretrieve(ONNX_URL + urllib.request.quote(name), tmp)
+    tmp.rename(path)
+    return path
+
+
+class OnnxVoice:
+    """audio (16 kHz mono float, -1..1) -> voice embedding. Not thread-safe by contract: use it from one thread."""
+
+    def __init__(self, key: str = MODEL) -> None:
+        import onnxruntime as ort
+
+        _, self.int16, self.window = ONNX_MODELS[key]
+        opts = ort.SessionOptions()
+        opts.intra_op_num_threads = 2   # Whisper and the face finder need the other cores
+        self.session = ort.InferenceSession(str(model_path(key)), opts, providers=["CPUExecutionProvider"])
+        self.input = self.session.get_inputs()[0].name
+
+    def __call__(self, audio: np.ndarray) -> np.ndarray:
+        feats = fbank(audio * 32768.0 if self.int16 else audio, self.window)
+        feats -= feats.mean(0, keepdims=True)
+        return self.session.run(None, {self.input: feats[None]})[0][0]
+
+
 class VoiceIds:
     """Voice embeddings of utterances (16 kHz mono float). Loads the model in the background; until then, None.
     `clusters` (the known voices) is used by fusion.py, on the event loop; this class only embeds."""
 
-    def __init__(self, threshold: float = THRESHOLD) -> None:
+    def __init__(self, threshold: float = THRESHOLD, model: str = MODEL) -> None:
         self.clusters = SpeakerClusters(threshold)
         self.pool = ThreadPoolExecutor(1, thread_name_prefix="speakers")   # the model is used from one thread
-        self.model = self.extractor = None
+        self.name, self.model = model, None
         self.pool.submit(self._load)
 
     def _load(self) -> None:
         try:
-            import torch
-            from transformers import AutoFeatureExtractor, WavLMForXVector
-
-            torch.set_num_threads(4)
-            self.extractor = AutoFeatureExtractor.from_pretrained(MODEL)
-            self.model = WavLMForXVector.from_pretrained(MODEL).eval()
-            log.info("Speakers: voice model %s ready", MODEL)
-        except Exception as e:   # not installed, offline: subtitles without colours
-            log.warning("Speakers: no voice model (%s), subtitles without speaker colours", e)
+            self.model = OnnxVoice(self.name)
+            log.info("Speakers: voice model %s ready", ONNX_MODELS[self.name][0])
+        except Exception as e:   # no download, no onnxruntime: subtitles without speaker names
+            log.warning("Speakers: no voice model (%s), subtitles without speaker names", e)
 
     def _embed(self, audio: np.ndarray, windows: bool) -> VoiceObs | None:
         if self.model is None or len(audio) < MIN_S * 16000:
             return None
-        import torch
-
         n = int(len(audio) / 16000 // WIN_S) if windows else 1
         if n < 2:
             audio = audio[-int(MAX_S * 16000):]
-            batch, win_s = [audio], len(audio) / 16000
-        else:   # equal windows, one batch (no padding needed)
-            k = len(audio) // n
-            batch, win_s = [audio[i * k:(i + 1) * k] for i in range(n)], k / 16000
-        inputs = self.extractor(batch, sampling_rate=16000, return_tensors="pt")
-        with torch.no_grad():
-            embs = self.model(**inputs).embeddings.numpy()
-        return main_voice(list(embs), win_s)
+            return main_voice([self.model(audio)], len(audio) / 16000)
+        k = len(audio) // n   # equal windows
+        return main_voice([self.model(audio[i * k:(i + 1) * k]) for i in range(n)], k / 16000)
 
     async def embed(self, audio: np.ndarray, windows: bool = False) -> VoiceObs | None:
         """windows=True (a final): long audio in windows, to notice a second voice in it."""

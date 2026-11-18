@@ -11,16 +11,22 @@ Protocol (server -> headset, one JSON per message; keep in sync with xr-client):
            (caption ids restart then); t = server clock, for mapping backend times onto the page's clock
   caption  {"id": int, "final": bool, "text": str, "lang": str, "translation": str | null,
             "target": str, "translating": bool, "doa_deg": float | null, "azimuth_deg": float | null, "speaker": int | null,
-            "t_start": s, "t_end": s}   speaker = 1, 2, ... the voice (speakers.py), decided together with the
-            mouths and the mic direction (fusion.py); null = not known (short utterance, no model); on a partial
-            only a voice heard before
+            "name": str | null, "t_start": s, "t_end": s}   speaker = 1, 2, ... the participant who said it
+            (roster.py: the same number as in "people"; shown as Speaker A, B, ... or by "name", the name they
+            gave of themselves, names.py), decided from the voice, the mouths and the mic direction (fusion.py);
+            null = not known (short utterance, no model). A final comes again with another speaker or a name when
+            that turns out later (a voice found its face, someone said their name).
             "at": {"person": int, "yaw_deg", "pitch_deg", "top_deg", "h_deg", "seen_s"} | null   where the
             speaker's face is, in the robot base frame (people.py: yaw + = left, pitch + = up, top_deg = top of
             the face, h_deg = its height, seen_s = how long ago the camera saw it); null = not known who
   summary  {"summary": [str], "actions": [{"who": str, "what": str, "when": str}], "next_steps": [str], "t": s}
            all lists empty and "new_meeting": true when a new meeting began (clear the notes)
-  faces    {"people": [{"cx", "cy", "top", "w", "h", "mouth"}], "t": s}   faces in the robot camera found here
-           (vision.py, ~20/s): the page uses them instead of its own, much slower detector
+  faces    {"people": [{"cx", "cy", "top", "w", "h", "mouth", "track"}], "t": s}   faces in the robot camera
+           found here (vision.py, ~20/s): the page uses them instead of its own, much slower detector
+  people   {"people": [{"id": int, "name": str, "yaw_deg", "pitch_deg", "top_deg", "h_deg", "seen_s",
+            "speaking": bool}], "t": s}   everyone the camera has seen, 5 times a second, for the label above each
+           head, also while nobody talks: id = the participant ("speaker" of their captions), name = "" until
+           they said it, the place of the face as in "at", speaking = seen or heard talking right now
   me       {"text": str, "lang": str, "translation": str | null, "target": str, "t": s}   what the remote
            user said (their headset mic, see below) and what Reachy said for them in the meeting language
            (translation null in transcribe-only mode)
@@ -346,6 +352,10 @@ class CaptionServer:
         if self.clients:
             websockets.broadcast(self.clients, json.dumps({"type": "faces", "people": people, "t": round(t, 3)}))
 
+    def send_people(self, people: list, t: float) -> None:
+        if self.clients:
+            websockets.broadcast(self.clients, json.dumps({"type": "people", "people": people, "t": round(t, 3)}))
+
     def send_me(self, me: dict) -> None:
         websockets.broadcast(self.clients, json.dumps({"type": "me", **me}))
 
@@ -369,11 +379,16 @@ class Pipeline:
         if args.speakers == "voice":
             from .speakers import VoiceIds
 
-            self.speakers = VoiceIds(args.speaker_threshold)
+            self.speakers = VoiceIds(*([args.speaker_threshold] if args.speaker_threshold else []))
         from .fusion import Fusion
+        from .roster import Roster
 
         # who said it: voice + mouths + mic direction (fusion.py); gets the people once the camera runs
         self.fusion = Fusion(self.speakers.clusters if self.speakers else None)
+        self.roster = Roster()                  # who is shown as Speaker A, B, ... or by name (roster.py)
+        self.finals: dict[int, dict] = {}       # the latest finals as sent, to send again under another label
+        self.live_speaker: int | None = None    # who the live text is from, for "speaking" in the people message
+        self.people_sent = 0.0
         self.worker = Worker()  # Whisper runs one job at a time
         self.pending = 0
         self.finalized: set[int] = set()
@@ -466,11 +481,26 @@ class Pipeline:
         t_start = wall_end - (seg.t_end - seg.t_start)
         doa_deg, azimuth_deg = self.doa.direction(t_start, wall_end) if self.doa else (None, None)
         if seg.final and text:
-            who = self.fusion.final(voice, t_start, wall_end, self.doa.spread(t_start, wall_end) if self.doa else None)
+            who = self.fusion.final(voice, t_start, wall_end, self.doa.spread(t_start, wall_end) if self.doa else None,
+                                    key=seg.id)
             log.info("[%d] who: %s; mic %s", seg.id, who.why(), doa_deg)
         else:
-            who = self.fusion.partial(voice)
-        speaker = who.voice
+            who = self.fusion.partial(voice, t_start, wall_end)
+        self.roster.sync()
+        speaker = self.roster.speaker(who.voice, who.person)
+        if seg.final and text:
+            from .names import said_name
+
+            name = said_name(text)
+            if name and self.roster.name(speaker, name):
+                log.info("[%d] %s is %s", seg.id, self.roster.label(speaker), name)
+                self.roster.changes.append((speaker, speaker))   # their lines on show come again, with the name
+            for key, v in who.relabel:   # an earlier utterance was the first of this new voice
+                if key in self.finals:
+                    self._resend(key, self.roster.speaker(v, None))
+            self._relabel()
+        elif text:
+            self.live_speaker = speaker
         at = None
         if self.people and text:
             at = self.people.place(who.person, time.time(), self.doa.head_yaw_deg if self.doa else None)
@@ -479,9 +509,48 @@ class Pipeline:
             "translation": translation, "target": self.target,
             # a translation is on its way: the headset shows dots, not the original and then the translation
             "translating": bool(text and self.translator and lang != self.target and translation is None),
-            "doa_deg": doa_deg, "azimuth_deg": azimuth_deg, "speaker": speaker, "at": at,
-            "t_start": round(t_start, 3), "t_end": round(wall_end, 3),
+            "doa_deg": doa_deg, "azimuth_deg": azimuth_deg, "speaker": speaker, "name": self.roster.name_of(speaker),
+            "at": at, "t_start": round(t_start, 3), "t_end": round(wall_end, 3),
         }
+
+    def _send(self, cap: dict) -> None:
+        if cap["final"]:
+            self.finals[cap["id"]] = cap
+            while len(self.finals) > 30:
+                del self.finals[next(iter(self.finals))]
+        self.server.send(cap)
+
+    def _resend(self, cap_id: int, speaker: int | None) -> None:
+        """A final already sent, again with who it is from now."""
+        cap = {**self.finals[cap_id], "speaker": speaker, "name": self.roster.name_of(speaker)}
+        cap["translating"] = False if cap["translation"] else cap["translating"]
+        for c in self.shown:
+            if c["id"] == cap_id:
+                c.update(speaker=speaker, name=cap["name"])
+        self._send(cap)
+
+    def _relabel(self) -> None:
+        """Participants that turned out to be someone else, or got a name: the lines still on show come again."""
+        changes, self.roster.changes = self.roster.changes, []
+        now = time.time()
+        for was, now_is in changes:
+            log.info("Roster: %s is %s", self.roster.label(was), self.roster.label(now_is, self.roster.name_of(now_is)))
+            for cap_id, cap in list(self.finals.items()):
+                if cap["speaker"] == was and cap["text"] and now - cap["t_end"] < 2 * RESHOW_S:
+                    self._resend(cap_id, now_is)
+
+    def _people_message(self, now: float) -> list[dict]:
+        """Everyone the camera has seen and where, for the labels above the heads."""
+        talker = self.people.talker(now - 1.0, now) if self.segmenter.active else None
+        speaking = self.roster.for_person(talker) if talker else self.live_speaker if self.segmenter.active else None
+        out = []
+        for p in self.people.people:
+            at = self.people.place(p, now, self.doa.head_yaw_deg if self.doa else None)
+            if at:
+                pid = self.roster.for_person(p)
+                out.append({"id": pid, "name": self.roster.name_of(pid) or "", **{k: v for k, v in at.items() if k != "person"},
+                            "speaking": pid == speaking})
+        return out
 
     def _speaker(self, seg: Segment) -> asyncio.Task | None:
         """Who is talking, next to Whisper (CPU, its own thread)."""
@@ -498,7 +567,7 @@ class Pipeline:
         if len(seg.audio) >= LANG_MIN_S * 16000:
             self.seg_lang[seg.id] = lang
         cap = self._caption(seg, wall_end, text, lang, voice=speaker)
-        self.server.send(cap)
+        self._send(cap)
         # Translate live text too, so the bubble is readable while the person still talks. Throttled
         # (DeepL quota): only when enough new text came in since the last partial translation.
         last_t, last_len = self.partial_tr.get(seg.id, (0.0, 0))
@@ -510,7 +579,7 @@ class Pipeline:
             translation = await self.translator(text, remember=False)
             if translation and seg.id not in self.finalized and target == self.target:
                 self.translated[seg.id] = (text, translation)
-                self.server.send({**cap, "translation": translation, "translating": False})
+                self._send({**cap, "translation": translation, "translating": False})
 
     def _final_stt(self, audio: np.ndarray, language: str | None = None) -> tuple[str, str]:
         """The final model; a language the live text did not give comes from the fast model (0.1 s, the large
@@ -529,13 +598,13 @@ class Pipeline:
         target, translator = self.target, self.translator
         if text and self.early.get(seg.id, (0, None))[1] is me:   # not if speech went on or the final took over
             cap = self._caption(seg, wall_end, text, lang, voice=speaker)
-            self.server.send(cap)
+            self._send(cap)
         if text and lang != target and translator:
             translation = await translator(text, remember=False)
             if translation and target == self.target:
                 self.translated[seg.id] = (text, translation)
                 if self.early.get(seg.id, (0, None))[1] is me:
-                    self.server.send({**cap, "translation": translation, "translating": False})
+                    self._send({**cap, "translation": translation, "translating": False})
         return text, lang
 
     async def _final(self, seg: Segment, wall_end: float) -> None:
@@ -556,7 +625,7 @@ class Pipeline:
         if known_text != text:
             translation = None
         cap = self._caption(seg, wall_end, text, lang, translation, speaker)
-        self.server.send(cap)
+        self._send(cap)
         log.info("[%d %s speaker %s] %s  (%.2f s after the last word%s)", seg.id, lang, cap["speaker"] or "?", text,
                  time.time() - wall_end, ", started early" if reused else "")
         if self.people and text:
@@ -579,8 +648,9 @@ class Pipeline:
             if target == self.target:   # not if the bubble language changed meanwhile
                 if translation:
                     log.info("[%d %s] %s", seg.id, target, translation)
-                cap = {**cap, "translation": translation, "translating": False}   # none came: the original after all
-                self.server.send(cap)
+                # (who said it may have been found out meanwhile: the label as it is now)
+                cap = {**self.finals.get(seg.id, cap), "translation": translation, "translating": False}   # none came: the original after all
+                self._send(cap)
         if text:
             self.shown.append(cap)
         if self.summarizer:
@@ -631,7 +701,7 @@ class Pipeline:
             translation = await translator(cap["text"], remember=False) if translator and cap["lang"] != target else None
             if target != self.target:
                 return
-            self.server.send({**cap, "translation": translation, "target": target, "translating": False})
+            self._send({**cap, "translation": translation, "target": target, "translating": False})
 
     def meeting_lang(self) -> str:
         """The page's choice, else --meeting-lang, else the language most spoken in the room in the last 10 min."""
@@ -800,12 +870,18 @@ class Pipeline:
             from .vision import FaceStream
 
             self.people = People()
-            self.fusion.people = self.people
+            self.fusion.people = self.roster.people = self.people
 
             def faces(people: list, t: float) -> None:
-                d = self.doa
-                self.people.update(people, t, *((d.head_yaw_deg, d.head_pitch_deg, d.head_roll_deg) if d else (0.0,)))
-                self.server.send_faces(people, t)
+                yaw, pitch, roll, steady = self.doa.pose_at(t) if self.doa else (0.0, 0.0, 0.0, True)
+                self.people.update(people, t, yaw, pitch, roll, steady=steady)
+                self.roster.sync()
+                self._relabel()
+                # what a face looks like ("emb") stays on this computer
+                self.server.send_faces([{k: v for k, v in f.items() if k != "emb"} for f in people], t)
+                if t - self.people_sent >= 0.2:
+                    self.people_sent = t
+                    self.server.send_people(self._people_message(time.time()), t)
 
             loop = asyncio.get_running_loop()
             FaceStream(self.args.vision_camera, self.args.vision_hz).start(
@@ -850,6 +926,8 @@ class Pipeline:
             else:
                 self.server.send_audio(self.gate(chunk, speaking, time.time()) if self.gate else chunk)
             now = time.time()
+            if not self.segmenter.active:
+                self.live_speaker = None
             if self.segmenter.active != vad_on or (vad_on and now - vad_sent > 0.25):
                 vad_on, vad_sent = self.segmenter.active, now
                 self.server.send_vad(vad_on, *(self.doa.direction(now - 1.0, now) if self.doa else (None, None)))
@@ -893,10 +971,9 @@ def cli() -> None:
     ap.add_argument("--langs", default="de,en",
                     help="auto-detection picks only among these (comma-separated ISO codes); 'any' = all")
     ap.add_argument("--speakers", choices=["voice", "none"], default="voice",
-                    help="speaker ids from the voice (speakers.py, needs torch + transformers: the [speakers] "
-                         "extra); none = off")
-    ap.add_argument("--speaker-threshold", type=float, default=0.80,
-                    help="voice similarity above which an utterance counts as a known speaker")
+                    help="who says what, from the voice (speakers.py), the mouths and the mic direction; none = off")
+    ap.add_argument("--speaker-threshold", type=float,
+                    help="voice similarity above which an utterance may be a known speaker (default: speakers.py)")
     ap.add_argument("--target", default="en", help="bubble language (ISO code)")
     ap.add_argument("--translator", choices=["deepl", "claude", "none"], default="deepl",
                     help="deepl needs DEEPL_AUTH_KEY, claude needs ANTHROPIC_API_KEY (paid)")
