@@ -38,8 +38,9 @@ Client -> server: {"type": "auth", "hf_token": str} first (checked through the t
 {"type": "voice", "gender": "male" | "female"} picks Reachy's voice (voice.py GENDER_VOICES, per language);
 {"type": "mail_notes"} opens the current notes as a mail draft on this computer;
 {"type": "me_mode", "speak": false} = the remote user's voice is only transcribed (subtitles), not spoken by
-Reachy: the Unity app sends its own voice to Reachy over WebRTC and this copy only for "You" lines. The room
-sound is then muted for captions while it comes in (+ ECHO_S), or Reachy's speaker would caption it again;
+Reachy: the Unity app sends its own voice to Reachy over WebRTC and this copy only for "You" lines. Room
+captions then pause while the user speaks (+ ECHO_S), or Reachy's speaker would caption it again; the room sound
+to the headset goes on (see --half-duplex);
 default true (the web page's "Translate me"), applies to everyone connected;
 {"type": "lang", "meeting": "auto" | "de" | "en" | ..., "target": "en" | ...} (both optional, ISO 639-1):
 the language Reachy speaks for the remote user ("auto" = --meeting-lang, else the one most spoken in the
@@ -69,6 +70,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import base64
+import difflib
 import hmac
 import itertools
 import json
@@ -108,7 +110,11 @@ EARLY_S = 0.3
 LANG_MIN_S = 2.0
 SENTENCE_END = re.compile(r"[.!?][\"'»”)]*$")
 SPLIT_WORDS = 4   # Translate me: a sentence this long is said at once; "Also ich glaube." was a hesitation
-ECHO_S = 0.8   # the remote user's voice from Reachy's speaker: room captions muted this long after its last frame
+ECHO_S = 0.6   # the remote user's voice from Reachy's speaker: room captions pause this long after their last
+               # spoken frame. Until 2026-11-18: 0.8 s after the last frame of any kind, and the headset keeps
+               # sending 0.6 s after the last word, so the room was deaf for 1.4 s and lost the start of every answer.
+SAID_TAIL_S = 2.0   # Reachy's own sentence may come back through the headset mic until this long after it ended
+SAID_MATCH = 0.7    # share of the words heard that are, in this order, in what Reachy just said
 HEADSET_LOG = Path.home() / "Library/Logs/reachy-headset.log"   # the page's log lines ({"type": "log"})
 
 
@@ -132,6 +138,32 @@ class NoiseGate:
         ramp = np.linspace(self.gain, target, len(chunk), dtype=np.float32)
         self.gain = target
         return chunk * ramp
+
+
+def _words(text: str) -> list[str]:
+    return re.findall(r"\w+", text.lower())
+
+
+def echo_of(text: str, t_start: float, t_end: float, said) -> str | None:
+    """The sentence of Reachy's that `text` (heard from t_start to t_end) repeats, or None. said: (start, end, text)
+    of what Reachy spoke lately. Since the room sound goes on while Reachy speaks, the headset's speakers can carry
+    Reachy's voice into the headset mic, and Translate me would say it again, in a loop. One word only counts if it is
+    all Reachy said ("Danke."): a "ja" inside a sentence of Reachy's is no echo."""
+    heard = _words(text)
+    if not heard:
+        return None
+    for start, end, spoken in said:
+        if t_end < start or t_start > end + SAID_TAIL_S:
+            continue
+        ref = _words(spoken)
+        if len(heard) == 1:
+            if heard == ref:
+                return spoken
+            continue
+        common = sum(b.size for b in difflib.SequenceMatcher(None, heard, ref, autojunk=False).get_matching_blocks())
+        if common / len(heard) >= SAID_MATCH:
+            return spoken
+    return None
 
 
 def hf_username(token: str) -> str | None:
@@ -383,6 +415,7 @@ class Pipeline:
         self.speaking_until = 0.0   # Reachy talks: its own voice must not become captions or turn the head
         self.me_speak = True        # Reachy speaks the remote user's words ({"type": "me_mode"})
         self.me_until = 0.0         # the remote user talks through Reachy's speaker (transcribe-only mode)
+        self.said: deque[tuple[float, float, str]] = deque(maxlen=8)   # (start, end, text) Reachy spoke (echo_of)
         if args.voice_out != "none":
             from .voice import VoiceOut
 
@@ -649,6 +682,11 @@ class Pipeline:
         if not (self.me_speak and self.voice):   # subtitles only: Reachy already played the voice itself
             return {"text": text, "lang": lang, "translation": None, "target": lang, "audio": None,
                     "times": (t0, t_stt), "audio_s": len(seg.audio) / 16000}
+        echo = echo_of(text, t0 - len(seg.audio) / 16000 - 1.0, t0, self.said)
+        if echo:
+            log.info("[me] not said again, it is Reachy's own sentence back through the headset mic: %s (was: %s)",
+                     text, echo)
+            return None
         target = self.meeting_lang()
         tr = self._translator_to(target) if lang != target else None
         translation = await tr(text, remember=False) if tr else None
@@ -672,6 +710,7 @@ class Pipeline:
         def started(dur: float) -> None:
             now = time.time()
             self.speaking_until = now + dur + 0.4   # + room echo
+            self.said.append((now, now + dur, r["say"]))
             log.info("me timing (s): start %.2f  stt %.2f (wait %.2f)  translate %.2f  synth %.2f  "
                      "-> playback %.2f after speech end (%.1f s audio, %s, %.1f s)", t0 - t_end, t_stt - t0, wait,
                      t_tr - t_stt, t_syn - t_tr, now - t_end, r["audio_s"], r["voice"] or "system voice", dur)
@@ -711,6 +750,10 @@ class Pipeline:
                 segs, silence = ([seg] if seg else []), (1.0 if timeout else 0.0)
             else:
                 segs, silence = self.me_segmenter.push(chunk), cfg.silence_s
+                # Own voice through Reachy's speaker: room captions pause while the user speaks. Only speech counts,
+                # not every frame: the headset's gate also opens on a noise and stays open 0.6 s after the last word.
+                if not self.me_speak and (self.me_segmenter.active or self.me_segmenter.prob > 0.4):
+                    self.me_until = now + ECHO_S
             if self.me_segmenter.active != speaking:
                 speaking = self.me_segmenter.active
                 self.server.send_me_vad(speaking)
@@ -739,8 +782,6 @@ class Pipeline:
                     self.me_out.put_nowait((task, t_end))
 
     def _me_voice(self, frame: bytes | None) -> None:
-        if frame is not None and not self.me_speak:
-            self.me_until = time.time() + ECHO_S
         self.me_queue.put_nowait(None if frame is None else np.frombuffer(frame, "<i2").astype(np.float32) / 32768)
 
     async def run(self) -> None:
@@ -798,10 +839,14 @@ class Pipeline:
             else:
                 segs = self.segmenter.push(chunk)
             speaking = self.segmenter.active or self.segmenter.prob > 0.4
-            if reachy_talks:
-                # keep Reachy's voice out of the stream to the headset too: the remote user would hear
-                # themselves late, and the headset mic (Translate me) could translate it again in a loop
+            if reachy_talks and self.args.half_duplex:
                 self.server.send_audio(np.zeros_like(chunk))
+            elif reachy_talks:
+                # The room stays audible while the remote user or Reachy speaks (until 2026-11-18 it was silent:
+                # whoever talked at the same time in the room was not heard, headset test). Reachy's own voice is
+                # taken out of the mic signal by the mic chip (echo cancelling); what is left is not captioned
+                # (above) and not said again (echo_of). The gate stays open: the VAD hears nothing meanwhile.
+                self.server.send_audio(self.gate(chunk, True, time.time()) if self.gate else chunk)
             else:
                 self.server.send_audio(self.gate(chunk, speaking, time.time()) if self.gate else chunk)
             now = time.time()
@@ -867,6 +912,9 @@ def cli() -> None:
                     help="minutes without speech after which the next utterance starts new meeting notes")
     ap.add_argument("--pause-db", type=float, default=-14,
                     help="room sound level between utterances (noise gate, needs the neural VAD); 0 = off")
+    ap.add_argument("--half-duplex", action="store_true",
+                    help="silence the room sound to the headset while the remote user or Reachy speaks (as until "
+                         "2026-11-18); for the case that the user hears their own voice back from the room")
     ap.add_argument("--no-focus-mic", dest="focus_mic", action="store_false",
                     help="leave the robot's mic array as it is (default: stronger noise suppression, "
                          "restored on exit)")

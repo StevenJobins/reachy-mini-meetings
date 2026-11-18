@@ -6,7 +6,7 @@ from itertools import pairwise
 
 import numpy as np
 
-from reachy_meetings_backend.captions import CaptionServer, NoiseGate, whole_sentence
+from reachy_meetings_backend.captions import CaptionServer, NoiseGate, echo_of, whole_sentence
 from reachy_meetings_backend.doa import DoaTracker, circular_mean_deg, doa_to_head_deg
 from reachy_meetings_backend.fusion import Fusion
 from reachy_meetings_backend.people import People, image_to_angles, to_base
@@ -647,3 +647,21 @@ def test_notes_as_a_mail_draft():
     assert q["body"][0] == ("Zusammenfassung\n- Budget geklärt & Termin offen\n\nAufgaben\n- Anna: Offerte schicken (Freitag)"
                             "\n\nNächste Schritte\n- Folien bis Donnerstag")
 
+
+# ---------------------------------------------------------------- Reachy's own sentence back through the headset mic
+def test_echo_of_reachys_own_sentence_is_recognised():
+    said = [(100.0, 103.0, "Could you move the camera a bit to the left?")]
+    # heard while Reachy spoke or shortly after, the same words (Whisper drops or changes one): an echo
+    assert echo_of("could you move the camera a bit to the left", 100.5, 103.5, said)
+    assert echo_of("Move the camera a bit to the left.", 101.0, 103.2, said)        # only the end of it
+    assert echo_of("Could you move the camera a little to the left?", 100.5, 104.0, said)
+
+
+def test_echo_of_leaves_the_users_own_sentences_alone():
+    said = [(100.0, 103.0, "Could you move the camera a bit to the left?")]
+    assert echo_of("Thanks, now I can read everything.", 100.5, 103.5, said) is None   # other words, same time
+    assert echo_of("Could you move the camera a bit to the left?", 110.0, 113.0, said) is None   # said again later
+    assert echo_of("Could you move the camera a bit to the left?", 95.0, 99.0, said) is None     # before Reachy spoke
+    assert echo_of("", 100.5, 103.5, said) is None
+    assert echo_of("Left.", 101.0, 102.0, said) is None           # one word inside a sentence of Reachy's
+    assert echo_of("Danke!", 101.0, 102.0, [(100.0, 101.0, "Danke.")])   # one word that is all Reachy said
