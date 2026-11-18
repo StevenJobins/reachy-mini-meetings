@@ -4,6 +4,8 @@
 #
 #   laptop-app/notarize.sh            # builds the standalone app (build_app.sh --standalone) and does the rest
 #   laptop-app/notarize.sh --keep     # takes dist/standalone/Reachy Meetings.app as it is
+#   laptop-app/notarize.sh --dmg      # the app is signed and Apple has accepted it (the wait broke off, e.g. the
+#                                     # Mac went offline; `xcrun notarytool history` says Accepted): only the rest
 #
 # Needs on this Mac, once:
 #   - the certificate "Developer ID Application: …" with its private key in the login keychain
@@ -22,7 +24,7 @@ profile=${REACHY_NOTARY_PROFILE:-reachy-notary}
 identity=${REACHY_SIGN_ID:-$(security find-identity -v -p codesigning | sed -n 's/.*"\(Developer ID Application: .*\)"/\1/p' | head -1)}
 [[ -n $identity ]] || { echo "No Developer ID Application certificate in the keychain"; exit 1 }
 
-[[ $1 == --keep ]] || $here/build_app.sh --standalone
+[[ $1 == --keep || $1 == --dmg ]] || $here/build_app.sh --standalone
 [[ -d $app ]] || { echo "No app at $app"; exit 1 }
 version=$(<$here/VERSION)
 work=$(mktemp -d)
@@ -46,6 +48,7 @@ PLIST
 
 sign() { codesign --force --options runtime --timestamp --sign "$identity" "$@" }
 
+if [[ $1 != --dmg ]]; then
 echo "signing as $identity"
 # inside first: libraries plain, programs with the entitlements; the app itself last
 n=0
@@ -63,6 +66,8 @@ done
 sign --entitlements $work/entitlements.plist "$app"
 codesign --verify --deep --strict "$app"
 
+fi
+
 notarize() {   # a file Apple can take (zip or dmg)
   xcrun notarytool submit "$1" --keychain-profile $profile --wait --output-format json > $work/result.json || true
   cat $work/result.json; echo
@@ -72,9 +77,11 @@ notarize() {   # a file Apple can take (zip or dmg)
   return 1
 }
 
-echo "notarizing the app (a few minutes)"
-ditto -c -k --keepParent "$app" $work/app.zip
-notarize $work/app.zip
+if [[ $1 != --dmg ]]; then
+  echo "notarizing the app (a few minutes; the first one of a new team can take an hour)"
+  ditto -c -k --keepParent "$app" $work/app.zip
+  notarize $work/app.zip
+fi
 xcrun stapler staple "$app"
 
 dmg="$here/dist/Reachy Meetings $version.dmg"
