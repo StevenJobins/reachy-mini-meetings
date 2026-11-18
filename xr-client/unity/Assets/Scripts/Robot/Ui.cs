@@ -145,6 +145,7 @@ public static class Ui
     {
         static readonly Color Ring = new Color(1, 1, 1, 0.28f), Dot = new Color(1, 1, 1, 0.95f), Pinched = new Color(0.98f, 0.8f, 0.08f);
         const float DotD = 0.016f, OpenD = 0.06f;
+        static readonly System.Collections.Generic.List<Cursor> all = new System.Collections.Generic.List<Cursor>();
         readonly Rect ring, dot;
 
         public Cursor(Transform parent, Material panel)
@@ -152,6 +153,17 @@ public static class Ui
             ring = Quad(parent, "CursorRing", panel, 3050);
             dot = Quad(parent, "CursorDot", panel, 3051);
             Hide();
+            all.Add(this);
+        }
+
+        /// <summary>Does another cursor already show within `deg` of that ray (a panel's own, for QuickMenu's free one)?</summary>
+        public bool OtherNear(Ray ray, float deg)
+        {
+            all.RemoveAll(c => c.dot.T == null);
+            foreach (var c in all)
+                if (c != this && c.dot.T.gameObject.activeInHierarchy && c.dot.T.lossyScale.x > 0
+                    && Vector3.Angle(ray.direction, c.dot.T.position - ray.origin) < deg) return true;
+            return false;
         }
 
         /// <summary>At a point in the panel's local plane, pinch 0..1.</summary>
@@ -169,6 +181,81 @@ public static class Ui
             ring.Show(false);
             dot.Show(false);
         }
+    }
+
+    /// <summary>
+    /// A window's size and distance (NotesPanel, SharePanel), kept on the headset: − and + left and right of the
+    /// handle make it smaller and larger, and while it is dragged by the handle, pulling the hand towards you brings
+    /// it closer, pushing it away moves it back (20 cm of hand = 1 m of window).
+    /// </summary>
+    public class Zoom
+    {
+        const float D = 0.055f, Off = 0.24f, Hit = 0.09f, Bar = 0.026f, Thick = 0.006f;
+        const float Step = 1.15f, MinSize = 0.5f, MaxSize = 2.5f, MinDist = 0.7f, MaxDist = 3.5f, ReachGain = 5f;
+        readonly string key;
+        readonly Rect[] back = new Rect[2], bars = new Rect[3];
+        readonly bool[] onLess = new bool[2], onMore = new bool[2];   // per hand
+        Vector3 less, more;
+        float startDist, startReach = -1;
+        public float Size { get; private set; }
+        public float Dist { get; private set; }
+
+        public Zoom(Transform parent, Material panel, int queue, string key, float dist)
+        {
+            this.key = key;
+            Size = PlayerPrefs.GetFloat(key + "_size", 1f);
+            Dist = PlayerPrefs.GetFloat(key + "_dist", dist);
+            for (int i = 0; i < 2; i++) back[i] = Quad(parent, "Zoom" + i, panel, queue);
+            for (int i = 0; i < 3; i++) bars[i] = Quad(parent, "ZoomBar" + i, panel, queue + 1);
+        }
+
+        public bool On(Vector3? p) => Inside(p, less, Hit, Hit) || Inside(p, more, Hit, Hit);
+        public bool Hovered(int hand) => onLess[hand] || onMore[hand];
+
+        /// <summary>Where that hand points (null: nowhere on the window), with the handle at `handleAt`.</summary>
+        public void Point(int hand, Vector3? p, Vector3 handleAt)
+        {
+            less = handleAt + new Vector3(-Off, 0, 0);
+            more = handleAt + new Vector3(Off, 0, 0);
+            onLess[hand] = Inside(p, less, Hit, Hit);
+            onMore[hand] = Inside(p, more, Hit, Hit);
+        }
+
+        public void Draw()
+        {
+            back[0].Set(D, D, D / 2, less, new Color(1, 1, 1, onLess[0] || onLess[1] ? 0.3f : 0.1f));
+            back[1].Set(D, D, D / 2, more, new Color(1, 1, 1, onMore[0] || onMore[1] ? 0.3f : 0.1f));
+            var up = new Vector3(0, 0, -0.001f);
+            bars[0].Set(Bar, Thick, Thick / 2, less + up, Color.white);
+            bars[1].Set(Bar, Thick, Thick / 2, more + up, Color.white);
+            bars[2].Set(Thick, Bar, Thick / 2, more + up, Color.white);
+        }
+
+        /// <summary>A pinch of that hand on − or +.</summary>
+        public void Press(int hand)
+        {
+            Size = Mathf.Clamp(Size * (onMore[hand] ? Step : 1 / Step), MinSize, MaxSize);
+            PlayerPrefs.SetFloat(key + "_size", Size);
+            PlayerPrefs.Save();
+        }
+
+        /// <summary>While the window is dragged: `reach` is how far that hand is from the eye, null if not tracked.</summary>
+        public void Drag(float? reach)
+        {
+            if (!(reach is float r)) return;
+            if (startReach < 0) { startReach = r; startDist = Dist; }
+            Dist = Mathf.Clamp(startDist + ReachGain * (r - startReach), MinDist, MaxDist);
+        }
+
+        public void EndDrag()
+        {
+            startReach = -1;
+            PlayerPrefs.SetFloat(key + "_dist", Dist);
+            PlayerPrefs.Save();
+        }
+
+        public static float? Reach(bool right, Transform head) =>
+            XrInput.PinchPoint(!right, head) is Vector3 p ? (p - head.position).magnitude : (float?)null;
     }
 
     public static bool Inside(Vector3? p, Vector3 centre, float w, float h) =>

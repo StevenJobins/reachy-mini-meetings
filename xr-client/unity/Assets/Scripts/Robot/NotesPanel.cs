@@ -1,12 +1,15 @@
 // Live meeting notes from the backend (message "summary": summary bullets, action items, next steps; Gemini, in the
-// bubble language, see backend/README.md "Meeting notes"). A card in the room, by default 45° right of straight ahead,
-// like xr-client/pages/notes.js: look there to read it. It moves like a window in the headset: point at the handle
-// under it with either hand (a dot and a closing ring show where, as in the headset's menus), pinch, hold, and move
-// that hand: the card goes along, a hand movement of 10° moves it
-// 25° around you. Only the hand moves it, not the head (it needs hand tracking). The place is kept relative to
-// straight ahead, also after a restart. When new notes arrive, QuickMenu says so for a moment.
-// New meeting: the button top right (look + pinch left, then once more to confirm) asks the backend to drop the
-// transcript; it also does that by itself after 20 min without speech. Either way empty notes arrive, the card clears.
+// bubble language, see backend/README.md "Meeting notes"). A card that the Notes tile of the QuickMenu opens right in
+// front of you, standing on the menu row and going along with it; the tile again puts it away (it starts away: it
+// covers the picture). It moves like a window in the headset: point at the handle under it with either hand (a dot
+// and a closing ring show where, as in the headset's menus), pinch, hold, and move that hand: the card goes along, a
+// hand movement of 10° moves it 25° around you. Only the hand moves it, not the head (it needs hand tracking).
+// − and + beside the handle make it smaller and larger; pulling the hand towards you while dragging brings it closer
+// (Ui.Zoom). Opening it again puts it back in front. When new notes arrive, QuickMenu says so for a moment.
+// New meeting: the button top right (point + pinch, then once more within 6 s to confirm) clears the card at once,
+// says so on the button for 3 s, and asks the backend to drop the transcript; the backend also does that by itself
+// after 20 min without speech, then empty notes arrive and the card clears. Until 2026-11-18 the card waited for the
+// backend's answer and the second pinch had to come within 3 s: often nothing seemed to happen.
 
 using System;
 using System.Collections.Generic;
@@ -27,15 +30,15 @@ public class NotesPanel : MonoBehaviour
         public bool new_meeting;
     }
 
-    const string YawKey = "notes_yaw", UpKey = "notes_up", FoldKey = "notes_folded";
-    const float DefaultYaw = 45f, DefaultUp = -3.5f;   // degrees right of / above straight ahead
+    const string FoldKey = "notes_folded";
+    const float BottomDeg = -11f;   // the card's lower edge, degrees above the horizon: just above the menu's language list
     const float Distance = 1.7f;                        // m from the eye
     const float Width = 0.95f, Pad = 0.06f, StripW = 0.012f;
     const float TextScale = 0.7f;
     const int Chars = 46, ItemLines = 3, MaxItems = 5;
     const float HandleW = 0.2f, HandleH = 0.022f, HandleGap = 0.04f;
     const float DragGain = 2.5f, MaxUp = 40f;
-    const float ConfirmS = 3f;
+    const float ConfirmS = 6f, ClearedS = 3f;
     static readonly Color Panel = new Color(0.07f, 0.08f, 0.11f, 0.93f);
     static readonly Color Accent = new Color(1f, 0.58f, 0f);   // #ff9500
     static readonly Color Drag = new Color(0.22f, 0.74f, 0.97f);
@@ -52,14 +55,17 @@ public class NotesPanel : MonoBehaviour
     Ui.Rect panel, strip, handle, button, fold, mail;
     TextMesh body, buttonText, foldText, mailText;
     readonly bool[] onMail = new bool[2];
+    bool open;
     bool folded;   // only the title: the notes take a lot of room
     readonly bool[] onFold = new bool[2];
     float armedAt = -10f;   // first pinch on New meeting; the second within ConfirmS clears
+    float clearedAt = -10f;
     float w;
     SummaryMsg notes;
-    float yaw, up, h;
+    float yaw, up, h;   // yaw: degrees right of the menu row
     readonly bool[] onHandle = new bool[2], onButton = new bool[2];   // per hand: left, right
     readonly Ui.Cursor[] cursors = new Ui.Cursor[2];
+    Ui.Zoom zoom;
     bool dragging;
     float startYaw, startUp;
     Vector2? handStart;   // hand direction (yaw, up) when the drag began; null until the hand is tracked
@@ -72,21 +78,18 @@ public class NotesPanel : MonoBehaviour
     bool askedNew;
     float seenAt = -100f;
 
-    /// <summary>The card, for the tutorial ("look to your right").</summary>
-    public Transform Card => card;
     /// <summary>That hand points at the handle or the button: its pinch goes here (RobotControl).</summary>
-    public bool Hovered(bool right) => onHandle[right ? 1 : 0] || onButton[right ? 1 : 0] || onFold[right ? 1 : 0] || onMail[right ? 1 : 0];
+    public bool Hovered(bool right) => onHandle[right ? 1 : 0] || onButton[right ? 1 : 0] || onFold[right ? 1 : 0] || onMail[right ? 1 : 0] || zoom.Hovered(right ? 1 : 0);
 
     void Awake()
     {
-        yaw = PlayerPrefs.GetFloat(YawKey, DefaultYaw);
-        up = PlayerPrefs.GetFloat(UpKey, DefaultUp);
         var text = Ui.TextMaterial(textMaterial, 3017);
         card = new GameObject("Card").transform;
         card.SetParent(transform, false);
         panel = Ui.Quad(card, "Panel", panelMaterial, 3015);
         strip = Ui.Quad(card, "Strip", panelMaterial, 3016);
         handle = Ui.Quad(card, "Handle", panelMaterial, 3016);
+        zoom = new Ui.Zoom(card, panelMaterial, 3016, "notes", Distance);
         button = Ui.Quad(card, "NewMeeting", panelMaterial, 3016);
         buttonText = Ui.Text(card, "NewMeetingText", text, 36, TextScale);
         mail = Ui.Quad(card, "Mail", panelMaterial, 3016);
@@ -98,11 +101,19 @@ public class NotesPanel : MonoBehaviour
         for (int i = 0; i < 2; i++) cursors[i] = new Ui.Cursor(card, panelMaterial);
         body = Ui.Text(card, "Text", text, 48, TextScale, TextAnchor.UpperLeft);
         Redraw();
+        if (menu != null) menu.NotesPressed += () => Open(!open);
     }
 
-    static Quaternion ToUnity(Quat q) => new Quaternion(-(float)q.X, -(float)q.Y, (float)q.Z, (float)q.W);
-
-    float FrameYaw => ToUnity(control.Frame.ToWorld(Quat.Identity)).eulerAngles.y;
+    /// <summary>In front of you, standing on the menu row, or away (the Notes tile, Tutorial).</summary>
+    public void Open(bool on)
+    {
+        open = on;
+        dragging = false;
+        if (menu != null) menu.NotesOpen = on;
+        if (!on) return;
+        yaw = 0;
+        up = BottomDeg + Mathf.Atan2(h * zoom.Size / 2, zoom.Dist) * Mathf.Rad2Deg;
+    }
 
     void Update()
     {
@@ -124,10 +135,11 @@ public class NotesPanel : MonoBehaviour
             PlayerPrefs.SetString(SeenKey, unix.ToString());
             PlayerPrefs.Save();
         }
-        card.localScale = Hidden ? Vector3.zero : Vector3.one;
-        if (Hidden)
+        bool away = Hidden || !open;
+        card.localScale = away ? Vector3.zero : Vector3.one * zoom.Size;
+        if (away)
         {
-            for (int i = 0; i < 2; i++) { onHandle[i] = onButton[i] = onFold[i] = onMail[i] = false; cursors[i].Hide(); }
+            for (int i = 0; i < 2; i++) { onHandle[i] = onButton[i] = onFold[i] = onMail[i] = false; zoom.Point(i, null, Vector3.zero); cursors[i].Hide(); }
             return;
         }
         if (dragging)
@@ -135,6 +147,7 @@ public class NotesPanel : MonoBehaviour
             if (dragRight ? control.RightHeld : control.LeftHeld)
             {
                 var hand = HandAngles(dragRight);
+                zoom.Drag(Ui.Zoom.Reach(dragRight, head));
                 if (handStart == null && hand != null) { handStart = hand; startYaw = yaw; startUp = up; }
                 if (handStart is Vector2 h0 && hand is Vector2 h1)
                 {
@@ -146,20 +159,20 @@ public class NotesPanel : MonoBehaviour
             else
             {
                 dragging = false;
-                PlayerPrefs.SetFloat(YawKey, yaw);
-                PlayerPrefs.SetFloat(UpKey, up);
-                PlayerPrefs.Save();
+                zoom.EndDrag();
                 Debug.Log($"[notes] moved to {yaw:0}° right, {up:0}° up");
             }
         }
-        // follows straight ahead (recenter) by heading only, so it stays upright
-        var dir = Quaternion.Euler(-up, FrameYaw + yaw, 0) * Vector3.forward;
-        card.localPosition = head.localPosition + dir * Distance;
+        // goes along with the menu row by heading only, so it stays upright
+        var dir = Quaternion.Euler(-up, (menu != null ? menu.Heading : 0) + yaw, 0) * Vector3.forward;
+        card.localPosition = head.localPosition + dir * zoom.Dist;
         card.localRotation = Quaternion.LookRotation(dir, Vector3.up);
 
         bool armed = Time.unscaledTime - armedAt < ConfirmS;
         bool de = Ui.German;
-        buttonText.text = armed ? (de ? "Wirklich? Nochmals pinchen" : "Sure? Pinch again") : (de ? "Neues Meeting" : "New meeting");
+        bool cleared = Time.unscaledTime - clearedAt < ClearedS;
+        buttonText.text = cleared ? (de ? "Notizen geleert" : "Notes cleared")
+            : armed ? (de ? "Wirklich? Nochmals pinchen" : "Sure? Pinch again") : (de ? "Neues Meeting" : "New meeting");
         var bs = Ui.Size(buttonText);
         // top right: fold / unfold, and left of it New meeting (not while folded)
         var foldAt = new Vector3(w / 2 - Pad - 0.01f, h / 2 - Pad - 0.025f, -0.003f);
@@ -179,7 +192,8 @@ public class NotesPanel : MonoBehaviour
             var aim = XrInput.Aim(right, head);
             var p = Ui.Pick(card, aim, head, q => Ui.Inside(q, handleAt, HandleW + 0.12f, 0.09f)
                 || !folded && Ui.Inside(q, buttonAt, bs.x + 0.06f, 0.08f) || Ui.Inside(q, foldAt, 0.09f, 0.09f)
-                || canMail && Ui.Inside(q, mailAt, 0.13f, 0.08f), out var byHand);
+                || canMail && Ui.Inside(q, mailAt, 0.13f, 0.08f) || zoom.On(q), out var byHand);
+            zoom.Point(hand, dragging ? null : p, handleAt);
             onHandle[hand] = !dragging && Ui.Inside(p, handleAt, HandleW + 0.12f, 0.09f);
             onButton[hand] = !dragging && !folded && Ui.Inside(p, buttonAt, bs.x + 0.06f, 0.08f);
             onFold[hand] = !dragging && Ui.Inside(p, foldAt, 0.09f, 0.09f);
@@ -188,11 +202,12 @@ public class NotesPanel : MonoBehaviour
             if (aim != null && onCard) cursors[hand].Show(byHand.Value, right ? control.RightLevel : control.LeftLevel);
             else cursors[hand].Hide();
         }
+        zoom.Draw();
         bool overHandle = onHandle[0] || onHandle[1], overButton = onButton[0] || onButton[1];
         handle.Set(HandleW, HandleH, HandleH / 2, handleAt,
             dragging ? Drag : new Color(1, 1, 1, overHandle ? 0.95f : 0.35f));
         button.Set(bs.x + 0.04f, 0.055f, 0.0275f, buttonAt + new Vector3(0, 0, 0.001f),
-            armed ? new Color(0.94f, 0.27f, 0.27f, 0.9f) : new Color(1, 1, 1, overButton ? 0.3f : 0.1f));
+            cleared ? new Color(0.29f, 0.87f, 0.5f, 0.55f) : armed ? new Color(0.94f, 0.27f, 0.27f, 0.9f) : new Color(1, 1, 1, overButton ? 0.3f : 0.1f));
         buttonText.transform.localPosition = buttonAt;
         fold.Set(0.06f, 0.055f, 0.0275f, foldAt + new Vector3(0, 0, 0.001f), new Color(1, 1, 1, onFold[0] || onFold[1] ? 0.3f : 0.1f));
         foldText.transform.localPosition = foldAt;
@@ -205,6 +220,7 @@ public class NotesPanel : MonoBehaviour
     {
         int hand = right ? 1 : 0;
         if (onHandle[hand]) { BeginDrag(right); return; }
+        if (zoom.Hovered(hand)) { zoom.Press(hand); return; }
         if (onMail[hand])
         {
             room?.Backend?.Send("{\"type\": \"mail_notes\"}");
@@ -224,6 +240,9 @@ public class NotesPanel : MonoBehaviour
         if (Time.unscaledTime - armedAt < ConfirmS)
         {
             armedAt = -10f;
+            clearedAt = Time.unscaledTime;
+            notes = null;
+            Redraw();
             room?.Backend?.Send("{\"type\": \"new_meeting\"}");
             Debug.Log("[notes] new meeting asked");
         }
@@ -257,7 +276,7 @@ public class NotesPanel : MonoBehaviour
         Redraw();
         if (menu != null)
             menu.Flash(empty ? Ui.German ? "Neues Meeting:\nNotizen geleert" : "New meeting:\nnotes cleared"
-                             : Ui.German ? "Meeting-Notizen\naktualisiert  →" : "Meeting notes\nupdated  →");
+                             : Ui.German ? "Meeting-Notizen\naktualisiert" : "Meeting notes\nupdated");
         Debug.Log($"[notes] {msg.summary?.Length ?? 0} bullets, {msg.actions?.Length ?? 0} actions, {msg.next_steps?.Length ?? 0} next steps");
     }
 

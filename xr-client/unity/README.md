@@ -188,9 +188,12 @@ Speech bubbles above the speaker's head came first: picking the face from mouth 
 | **Menu tile *Reachy*** | *AWAKE* → pinch: Reachy lies down and its motors go off (*ASLEEP*); pinch again: it wakes up as at the start. No picture during both motions. For the remote user, who has nobody at the robot |
 | **Pinch left and hold (0.7 s)** | Your current view direction becomes "straight ahead"; skips the room scan while it runs |
 | **Point at a menu tile with either hand + pinch with that hand** | The menu column at the lower left of your view, always visible, turning with your head: *Translate me* on/off, *Language* (opens a list: Deutsch, English, Français, Italiano, Español), *Help* (the tour again). A dot shows where the hand points and its ring closes as you pinch, like in the headset's own menus; the tile pointed at gets a little lighter |
-| **Look to your right** | The meeting notes: summary, action items (who, what, by when), next steps |
-| **Point at the bar under the notes, pinch (either hand), hold, move the hand** | Carry the notes like a window; they stay where you let go. Only the hand moves them, not the head |
-| **Point at *New meeting* on the notes, pinch twice** | Clear the notes for the next meeting (also happens by itself after 20 min without speech) |
+| **Menu tile *Notes*** | The meeting notes right in front of you, standing on the menu row: summary, action items (who, what, by when), next steps. Pinch the tile again to put them away |
+| **Point at the bar under the notes, pinch (either hand), hold, move the hand** | Carry the notes like a window; they stay there until you open them again. Only the hand moves them, not the head |
+| **Point at − or + beside the bar under the notes or the shared screen, pinch** | The window gets smaller / larger (15 % per pinch, 0.5× to 2.5×) |
+| **While carrying a window: pull the hand towards you / push it away** | The window comes closer / goes further away (20 cm of hand = 1 m, 0.7 to 3.5 m). Size and distance are kept on the headset (`Ui.Zoom`) |
+| **Point at *New meeting* on the notes, pinch twice within 6 s** | Clears the notes at once for the next meeting, the button says *Notes cleared* for 3 s (also happens by itself after 20 min without speech) |
+| **Hold a hand in front of you** | A dot shows where it points, also between the panels (there it picks nothing) |
 
 With controllers instead of hands: the trigger does what the pinch does.
 
@@ -201,7 +204,7 @@ With controllers instead of hands: the trigger does what the pinch does.
 `XrInput.cs`. Android XR only gives hand joints after a runtime permission, so the app asks for **microphone and hand tracking (`HAND_TRACKING`)** at the first start (plus face tracking for the smile, `FaceInput.cs`); the manifest entry comes from the OpenXR feature *Hand Tracking Subsystem* (XR Hands), switched on in `ProjectConfigure`. **No eye tracking since 2026-11-16:** only a hand picks, so looking at something never chooses it (until then the eyes picked wherever no hand pointed). *Eye Gaze Interaction* is off, and `EYE_TRACKING_FINE` is no longer asked for.
 
 - **Pinch:** the larger of the hand interaction profile's pinch value and the distance of thumb tip and index tip from the hand joints (4.5 cm = 0, 1.2 cm = 1). On the first headset test with the tour, pinches were not recognised; the joints are the second source, and `adb logcat -s Unity` shows `[input]` every 2 s with the joint pinch per hand, whether each hand is tracked, and the permission.
-- **Gaze:** the head direction, for the tour's "look at" tasks (the notes to your right) and for panels that glide after you. It picks nothing.
+- **Gaze:** the head direction, for panels that glide after you. It picks nothing.
 
 ### Pointing (menu and notes)
 
@@ -220,10 +223,10 @@ The menu is no longer on the video window: it moved whenever Reachy turned, so l
 | Menu and language | look at *Language* in the menu, pinch left, pick a language | hints while you do it, then "bubbles and notes now come in …" |
 | Talking | point at *Mic* (far left in the menu), pinch to mute, pinch again | "muted: now nobody hears you", then "the mic is on again" (the tour itself stays silent) |
 | Translation | read, pinch left | |
-| Meeting notes | look to your right | "here they are", how to drag them |
+| Meeting notes | read (the *Notes* tile), pinch left | |
 | Ready | pinch left | Reachy wakes up, the room scan follows |
 
-The card follows the gaze when it is more than 18° away, except on the cards whose task is to look somewhere else. Once finished it is remembered (`PlayerPrefs` `tutorial`); *Help* in the menu starts it again, and Reachy pauses again until its end.
+The card stands on the menu row, right in front of you, and goes along with it (its lower edge with *Skip* and *Next* stays 9° under eye height; until 2026-11-18 it appeared where you looked and followed the gaze). Once finished it is remembered (`PlayerPrefs` `tutorial`); *Help* in the menu starts it again, and Reachy pauses again until its end.
 
 ## Translation (Phase 4)
 
@@ -240,9 +243,9 @@ Tried in the headset on 2026-11-06: translation both ways, the notes and the tou
 
 ## Meeting notes (Phase 4)
 
-The backend writes live notes with Google Gemini every 45–60 s when something new was said (`GEMINI_API_KEY`, free tier; backend/README.md *Meeting notes*), in the bubble language, and sends them as `summary`: summary bullets, action items (who, what, by when) and next steps. `NotesPanel.cs` shows them on a card in the room, **45° to the right of straight ahead**, 1.7 m away and slightly below eye height, like the web app (`../pages/notes.js`). It follows recenter (heading only, so it stays upright). No button: look right to read it. When new notes arrive, *Meeting notes updated →* shows for 4 s under the menu.
+The backend writes live notes with Google Gemini every 45–60 s when something new was said (`GEMINI_API_KEY`, free tier; backend/README.md *Meeting notes*), in the bubble language, and sends them as `summary`: summary bullets, action items (who, what, by when) and next steps. `NotesPanel.cs` shows them on a card that the menu tile *Notes* opens **right in front of you**, 1.7 m away, standing on the menu row (lower edge 11° under eye height) and going along with it; the tile again puts it away, and it starts away because it covers the picture. Until 2026-11-18 it stood 45° to the right, always there. When new notes arrive, *Meeting notes updated* shows for 4 s above the menu.
 
-**Moving it**, like windows in the headset: a bar under the card lights up when a hand points at it; pinch with that hand (left or right), hold, and move the hand: the card goes along around you at the same distance (10° of hand movement = 25° of card, so a small move is enough). Only the hand moves it, not the head; it needs hand tracking. Its direction is kept relative to straight ahead (degrees right and up), also across restarts and recenters. The first version moved the card with the head only, which felt like holding it without being able to carry it.
+**Moving it**, like windows in the headset: a bar under the card lights up when a hand points at it; pinch with that hand (left or right), hold, and move the hand: the card goes along around you at the same distance (10° of hand movement = 25° of card, so a small move is enough). Only the hand moves it, not the head; it needs hand tracking. Its place is kept relative to the menu row until the notes are opened again, which puts them back in front. The first version moved the card with the head only, which felt like holding it without being able to carry it.
 
 **New meeting:** the notes are per meeting. The backend starts a new one by itself after **20 min without speech** (`--meeting-gap`), or when you point at *New meeting* top right on the card and pinch twice (the first pinch turns it red, *Sure? Pinch again*, for 3 s). It then drops the transcript, throws away a summary still being written for the old meeting, and sends empty notes with `"new_meeting": true`; the card clears and *New meeting: notes cleared* shows under the menu. Before, the notes of the last meeting stayed until the backend was restarted.
 

@@ -214,7 +214,7 @@ public static class ProjectConfigure
         video.mic.room = video.room;
         video.mic.menu = quick;
 
-        // Meeting notes in the room, right of straight ahead
+        // Meeting notes, opened in front of you by the Notes tile of the menu
         var notes = new GameObject("Meeting Notes");
         notes.transform.SetParent(offset.transform, false);
         var notesPanel = notes.AddComponent<NotesPanel>();

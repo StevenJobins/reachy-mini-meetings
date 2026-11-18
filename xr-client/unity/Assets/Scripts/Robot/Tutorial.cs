@@ -2,7 +2,8 @@
 // mic to nobody): you practise each gesture and the card tells you when it worked. The two dots on the card are your
 // real thumb and index finger (pinch strength from the hand tracking), so you see the pinch being recognised.
 // Cards: welcome, straight ahead (hold left), raise your hand, menu + language (look + pinch left), mic (switch it on), translation,
-// meeting notes (look right), ready. Opened again from Help in the menu. German if the headset is German, else English.
+// meeting notes, ready. The card stands on the menu row, right in front of you, and goes along with it (QuickMenu).
+// Opened again from Help in the menu. German if the headset is German, else English.
 
 using UnityEngine;
 
@@ -10,19 +11,17 @@ public class Tutorial : MonoBehaviour
 {
     const string DoneKey = "tutorial";
     const float Distance = 1.5f;         // m in front of the eye
-    const float FollowDeg = 18f;         // the card glides back in front once the gaze is further away than this
-    const float FollowRate = 4f;         // 1/s
+    const float BottomDeg = -9f;         // the card's lower edge, degrees above the horizon: just above the menu's language list
     const float BodyScale = 0.7f, TitleScale = 0.95f;
     const int BodyChars = 42;
     const float Pad = 0.06f, StripH = 0.012f, Dot = 0.018f, Illus = 0.14f;
-    const float NotesDeg = 20f;
     static readonly Color Panel = new Color(0.08f, 0.11f, 0.17f, 0.97f);
     static readonly Color Left = new Color(0.22f, 0.74f, 0.97f);           // #38bdf8
     static readonly Color Right = new Color(1f, 0.58f, 0f);                // #ff9500
     static readonly Color Good = new Color(0.29f, 0.87f, 0.5f);            // #4ade80
     static readonly Color DotOff = new Color(1, 1, 1, 0.25f);
 
-    enum Task { Start, Recenter, RaiseHand, PickLanguage, Mic, Info, LookNotes, Finish }
+    enum Task { Start, Recenter, RaiseHand, PickLanguage, Mic, Info, Finish }
     enum Hand { None, Left, Right }
 
     class Card
@@ -31,7 +30,6 @@ public class Tutorial : MonoBehaviour
         public Hand Hand;
         public string Title, Body, Footer;
         public float DoneS = 1.6f;   // how long the "well done" stays before the next card
-        public bool Stay;            // the card stays put: the task is to look somewhere else
     }
 
     public RobotControl control;
@@ -51,7 +49,6 @@ public class Tutorial : MonoBehaviour
     readonly Ui.Cursor[] cursors = new Ui.Cursor[2];
     const float BtnW = 0.3f, BtnH = 0.075f;
     Ui.Rect[] dots;
-    bool following;
     float width, height;
     string hintText;
     bool done;
@@ -107,18 +104,18 @@ public class Tutorial : MonoBehaviour
             new Card { Task = Task.RaiseHand, Hand = Hand.None, Title = "Wortmeldung und Reaktionen",
                 Body = "Heb eine Hand über den Kopf: Reachy winkt dann im Raum, damit alle sehen, dass du etwas sagen willst. Daumen hoch, Daumen runter, Nicken und Kopfschütteln zeigt Reachy mit seinen Antennen. Probier das Hand heben jetzt.",
                 Footer = "Eine Hand über den Kopf heben" },
-            new Card { Task = Task.PickLanguage, Hand = Hand.Left, Stay = true, DoneS = 2.5f, Title = "Menü und Sprache",
+            new Card { Task = Task.PickLanguage, Hand = Hand.Left, DoneS = 2.5f, Title = "Menü und Sprache",
                 Body = "Unten am Bild ist das Menü. Zeig mit einer Hand auf «Sprache»: Ein Punkt zeigt, wohin du zeigst, und sein Ring schliesst sich beim Pinchen. Wird «Sprache» heller, pinche mit dieser Hand.",
                 Footer = "Auf «Sprache» zeigen, pinchen" },
-            new Card { Task = Task.Mic, Hand = Hand.Left, Stay = true, DoneS = 2.5f, Title = "Sprechen",
+            new Card { Task = Task.Mic, Hand = Hand.Left, DoneS = 2.5f, Title = "Sprechen",
                 Body = "Ganz links im Menü ist dein Mikrofon. Es ist an: Man hört dich, sobald du sprichst. Zeig darauf und pinche, um es stumm zu schalten, und nochmals, um es wieder einzuschalten (die Übung bleibt still).",
                 Footer = "Auf «Mic» zeigen, pinchen" },
             new Card { Task = Task.Info, Hand = Hand.Left, Title = "Übersetzung",
                 Body = "Was im Raum gesagt wird, erscheint als Sprechblase über der Person, in deiner Sprache. Ist «Translate me» an (im Menü), sagt Reachy deine Sätze übersetzt in der Sprache des Raums. Ist es aus, hört man deine eigene Stimme.",
                 Footer = "«Weiter»" },
-            new Card { Task = Task.LookNotes, Hand = Hand.None, Stay = true, DoneS = 4f, Title = "Meeting-Notizen",
-                Body = "Schau nach rechts: Dort stehen laufend die Zusammenfassung, wer was bis wann erledigt, und die nächsten Schritte.",
-                Footer = "Nach rechts schauen" },
+            new Card { Task = Task.Info, Hand = Hand.Left, Title = "Meeting-Notizen",
+                Body = "«Notizen» im Menü holt die Notizen direkt vor dich: laufend die Zusammenfassung, wer was bis wann erledigt, und die nächsten Schritte. Nochmals darauf pinchen blendet sie wieder aus.",
+                Footer = "«Weiter»" },
             new Card { Task = Task.Finish, Hand = Hand.Left, Title = "Bereit",
                 Body = "Das war's. Diese Anleitung findest du jederzeit unter «Hilfe» im Menü.",
                 Footer = "«Fertig»: los geht's" },
@@ -134,18 +131,18 @@ public class Tutorial : MonoBehaviour
             new Card { Task = Task.RaiseHand, Hand = Hand.None, Title = "Asking for the word, reactions",
                 Body = "Raise a hand above your head: Reachy then waves in the room, so everyone sees you want to say something. Thumbs up, thumbs down, a nod and a head shake are shown by Reachy's antennas. Try raising your hand now.",
                 Footer = "Raise a hand above your head" },
-            new Card { Task = Task.PickLanguage, Hand = Hand.Left, Stay = true, DoneS = 2.5f, Title = "Menu and language",
+            new Card { Task = Task.PickLanguage, Hand = Hand.Left, DoneS = 2.5f, Title = "Menu and language",
                 Body = "The menu is at the foot of the picture. Point at \"Language\" with one hand: a dot shows where you point, and its ring closes as you pinch. Once \"Language\" lights up, pinch with that hand.",
                 Footer = "Point at \"Language\", pinch" },
-            new Card { Task = Task.Mic, Hand = Hand.Left, Stay = true, DoneS = 2.5f, Title = "Talking",
+            new Card { Task = Task.Mic, Hand = Hand.Left, DoneS = 2.5f, Title = "Talking",
                 Body = "On the far left of the menu is your mic. It is on: they hear you whenever you speak. Point at it and pinch to mute it, and again to switch it back on (the practice stays silent).",
                 Footer = "Point at \"Mic\", pinch" },
             new Card { Task = Task.Info, Hand = Hand.Left, Title = "Translation",
                 Body = "What is said in the room appears as a speech bubble above the person, in your language. With \"Translate me\" on (in the menu), Reachy says your sentences in the room's language. With it off, they hear your own voice.",
                 Footer = "\"Next\"" },
-            new Card { Task = Task.LookNotes, Hand = Hand.None, Stay = true, DoneS = 4f, Title = "Meeting notes",
-                Body = "Look to your right: a live summary, who does what by when, and the next steps.",
-                Footer = "Look to your right" },
+            new Card { Task = Task.Info, Hand = Hand.Left, Title = "Meeting notes",
+                Body = "\"Notes\" in the menu brings the notes right in front of you: a live summary, who does what by when, and the next steps. Pinch it again to put them away.",
+                Footer = "\"Next\"" },
             new Card { Task = Task.Finish, Hand = Hand.Left, Title = "Ready",
                 Body = "That's it. You find this guide again under \"Help\" in the menu.",
                 Footer = "\"Done\": off you go" },
@@ -155,10 +152,19 @@ public class Tutorial : MonoBehaviour
     public void Show()
     {
         root.gameObject.SetActive(true);
-        root.position = head.position + head.forward * Distance;
-        root.rotation = Quaternion.LookRotation(head.forward, Vector3.up);
+        if (notes != null) notes.Open(false);   // same place
         Go(0);
+        Place();
         Debug.Log("[tutorial] shown");
+    }
+
+    /// <summary>Standing on the menu row, facing you: its lower edge, with Skip and Next, stays where it is.</summary>
+    void Place()
+    {
+        float up = BottomDeg + Mathf.Atan2(height / 2, Distance) * Mathf.Rad2Deg;
+        var dir = Quaternion.Euler(-up, menu.Heading, 0) * Vector3.forward;
+        root.localPosition = head.localPosition + dir * Distance;
+        root.localRotation = Quaternion.LookRotation(dir, Vector3.up);
     }
 
     void Go(int i)
@@ -241,15 +247,7 @@ public class Tutorial : MonoBehaviour
         }
         else Check(c);
 
-        var want = head.position + head.forward * Distance;
-        if (!c.Stay && Vector3.Angle(head.forward, root.position - head.position) > FollowDeg) following = true;
-        if (following)
-        {
-            float k = 1 - Mathf.Exp(-FollowRate * Time.unscaledDeltaTime);
-            root.position = Vector3.Lerp(root.position, want, k);
-            root.rotation = Quaternion.Slerp(root.rotation, Quaternion.LookRotation(root.position - head.position, Vector3.up), k);
-            if ((root.position - want).sqrMagnitude < 0.0004f) following = false;
-        }
+        Place();
         DrawFingers(c);
 
         // Skip and Next, picked with either hand's ray and a pinch of that hand
@@ -299,11 +297,6 @@ public class Tutorial : MonoBehaviour
             case Task.RaiseHand:
                 if (XrInput.HandRaised)
                     Succeed(De ? "Gesehen! Im Meeting winkt Reachy jetzt drei Sekunden." : "Seen! In the meeting Reachy now waves for three seconds.");
-                break;
-            case Task.LookNotes:
-                if (notes != null && Vector3.Angle(XrInput.Gaze(head).direction, notes.Card.position - head.position) < NotesDeg)
-                    Succeed(De ? "Hier sind sie. Am Griff unten kannst du sie verschieben: darauf zeigen, pinchen, halten und die Hand bewegen."
-                               : "Here they are. Move them by the handle below: point at it, pinch, hold and move your hand.");
                 break;
         }
     }
