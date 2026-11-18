@@ -7,9 +7,9 @@ voice is tied to a person over several utterances:
   people   faces from vision.py become people by their direction in the room (head yaw + angle in the image):
            in a meeting people sit still, so a face that shows up again where someone was is that person
   votes    every final utterance of voice k is one vote for the person whose mouth moved most meanwhile, if one
-           clearly did; a voice belongs to the person with enough votes and a clear lead
-  where    the caption of voice k goes to that person, also when the mouth is not seen this time or the person is
-           out of the picture (the direction in the room stays)
+           clearly did (fusion.py casts them); a voice belongs to the person with enough votes and a clear lead
+  where    fusion.py weighs this together with the mouths and the mic direction: the caption of voice k can go to its
+           owner also when the mouth is not seen this time or the person is out of the picture
 
 Angles in degrees, yaw + = left, pitch + = up, in the robot base frame. The thresholds are first guesses, to be set
 from recordings (scripts/record_meeting.py).
@@ -154,17 +154,16 @@ class People:
             return None
         return scores[0][1]
 
-    def heard(self, voice: int | None, t0: float, t1: float) -> Person | None:
-        """A final utterance of `voice` during [t0, t1]: counts as a vote; returns whom the caption belongs to."""
-        seen = self.talker(t0, t1) if t1 - t0 >= MIN_S else None
-        if voice is None:
-            return seen
-        if seen:
-            v = self.votes.setdefault(voice, {})
-            for pid in v:
-                v[pid] *= FADE
-            v[seen.pid] = v.get(seen.pid, 0) + 1
-        return seen or self.owner(voice)   # who is seen talking now counts more than who it was before
+    def vote(self, voice: int, person: Person) -> None:
+        """`person` was seen saying an utterance of `voice` (older votes of the voice fade)."""
+        v = self.votes.setdefault(voice, {})
+        for pid in v:
+            v[pid] *= FADE
+        v[person.pid] = v.get(person.pid, 0) + 1
+
+    def voice_of(self, person: Person) -> int | None:
+        """The voice this person owns, if any."""
+        return next((v for v in self.votes if (o := self.owner(v)) is not None and o.pid == person.pid), None)
 
     def owner(self, voice: int | None) -> Person | None:
         """The person this voice belongs to, once that is clear."""

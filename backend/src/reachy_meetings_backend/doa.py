@@ -63,6 +63,16 @@ class DoaTracker:
         az = circular_mean_deg([d + y for d, y in hits])
         return round(doa, 1), round(az, 1)
 
+    def spread(self, t0: float, t1: float) -> tuple[float, float] | None:
+        """(azimuth_deg, circular spread in degrees) over [t0, t1], for fusion.py; None if no readings."""
+        az = [d + y for t, d, y in self.samples if t0 <= t <= t1]
+        if not az:
+            return None
+        s = sum(math.sin(math.radians(a)) for a in az) / len(az)
+        c = sum(math.cos(math.radians(a)) for a in az) / len(az)
+        r = min(1.0, math.hypot(s, c))
+        return math.degrees(math.atan2(s, c)), math.degrees(math.sqrt(-2 * math.log(max(r, 1e-9))))
+
     def _get(self, path: str) -> dict:
         with urllib.request.urlopen(self.url + path, timeout=1) as r:
             return json.loads(r.read())

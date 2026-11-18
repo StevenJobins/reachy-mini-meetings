@@ -182,6 +182,16 @@ class FaceFinder:
             else:
                 tr["missed"] += 1
         self.tracks = [tr for tr in self.tracks if tr["missed"] < LOST]
+        # Two tracks can end up on the same face (a crop around one face finds its neighbour, or both follow one
+        # face after the other left): keep the first. 2026-11-18: one face came as three people (3.8 faces per
+        # frame, three people with the same mouth readings), so no mouth ever stood out and the votes split.
+        kept: list[dict] = []
+        for tr in self.tracks:
+            if not any(self._same(k["face"], tr["face"]) for k in kept):
+                kept.append(tr)
+            elif tr["missed"] == 0:
+                people.remove(tr["face"])
+        self.tracks = kept
         tile = TILES[self.k % len(TILES)]   # and look for new ones in one piece of the picture
         self.k += 1
         for g in self._detect(frame, *tile):

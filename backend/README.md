@@ -95,11 +95,40 @@ With 🌐 *Translate* on, the headset sends your voice to this server (binary fr
 
 **Transcribe only** (the Unity app with *Translate me* off; with it on the app sends `"speak": true`): `{"type": "me_mode", "speak": false}` keeps the same path but stops after Whisper: no translation, no synthesis, just the `me` message for the "You" subtitles. The app plays your real voice on Reachy over WebRTC itself, so while your frames come in (+0.8 s) the room mic is ignored for captions and the room sound to the headset is silent, as when Reachy speaks.
 
-**Who is talking** (`speakers.py`): every utterance gets a voice embedding (WavLM x-vector, `microsoft/wavlm-base-plus-sv`, ~0.1 s on the CPU, ~380 MB downloaded once) and is matched against the voices heard so far (cosine similarity ≥ `--speaker-threshold`, default 0.80; else a new speaker, up to 6). Captions carry `"speaker": 1, 2, …`, null under ~1 s of speech; partials only name a voice heard before. Needs `pip install -e ".[speakers]"` (torch, transformers; the same as `[depth]`); `--speakers none` turns it off. Each decision is logged with its similarities (`Speakers: 4.8 s -> 2 (similarity 0.49 1.00 0.46)`), for tuning the threshold: on synthesized voices with added reverb, two different women's voices came to 0.77.
+**Who is talking** (`speakers.py`): every utterance gets a voice embedding (WavLM x-vector, `microsoft/wavlm-base-plus-sv`, ~0.1 s on the CPU, ~380 MB downloaded once) and is matched against the voices heard so far (cosine similarity ≥ `--speaker-threshold`, default 0.80; else a new speaker, up to 6). Captions carry `"speaker": 1, 2, …`, null under ~1 s of speech; partials only name a voice heard before. Needs `pip install -e ".[speakers]"` (torch, transformers; the same as `[depth]`); `--speakers none` turns it off. Since 2026-11-18 the voice is only one of three cues; which voice and which person an utterance is is decided in `fusion.py` (below). Utterances of 6 s or more are embedded in ~3 s windows, so a second voice inside one utterance is noticed. On synthesized voices with added reverb, two different women's voices came to 0.77.
 
 **Finding the faces** (`vision.py`, `FaceFinder`, 2026-11-11): the detector inside MediaPipe's landmarker looks at the whole picture shrunk to its small input, so a face that is small in the wide-angle image (someone 2 m away, a face on a phone) was not found, whatever the resolution; in a dim room the same test with a face in view gave 0.0 faces per frame. Now one piece of the picture is searched per frame (the whole, then six overlapping parts), and a face once found is followed in a close crop around it: the same face in the same seconds, 168 of 170 frames, 25 ms per frame. Dark crops (mean under 90/255) are brightened first (gamma 0.5).
 
 **Where the speaker is** (`people.py`, first version 2026-11-10, thresholds not yet set from recordings): the faces from `vision.py` become people by their direction in the room (head yaw + angle in the image, re-identified within 12°). Every final utterance of a voice is a vote for the person whose mouth clearly moved most meanwhile; a voice belongs to a person after 2 votes with a clear lead. Captions then carry `"at"` (direction of that person's face in the robot base frame), also when the mouth was not seen this time or the person is out of the picture; `null` when not known, and the headset falls back to the subtitle panel.
+
+#### Who said it: voice + mouths + mic direction (`fusion.py`, 2026-11-18)
+
+**Why it failed before** (log of the headset test on 2026-11-18, two or more people in the room): (1) *the voice merged people*: every final updated the matched speaker's mean voice, including 12–15 s utterances that may hold two people (turn-taking without a 0.8 s pause stays one utterance), so speaker 1's mean drifted towards everyone and nearly every utterance matched it at 0.82–0.98, while the clearly different ones came at 0.69–0.79; (2) *one face became several people*: two of `FaceFinder`'s tracks could follow the same face, so one face came three times per frame (3.8 faces per frame; three "people" with identical mouth readings), no mouth could stand out, and the votes for the voice split between the copies; (3) *the voice and the mouth were used one after the other*, never weighed against each other, and (4) *the mic direction was not used at all* for who it was (in an earlier test it pointed at 40–53° for everyone).
+
+**Design.** Per final utterance, every person `people.py` knows (in the picture or not) gets a score from three cues; the caption goes to the best one if the score is ≥ 1 and 1.5 ahead of the next, otherwise to nobody (subtitle panel: a bubble at the wrong face is worse than none).
+
+| Cue | Evidence | Score |
+|---|---|---|
+| Mouth (camera) | moves clearly most during the utterance (≥ 0.02 and 1.5× everyone else) / moves, not clearly most / seen with a still mouth (< 0.008) / in the picture but seen too rarely to judge | +2 / +1 / −1 / +1 ("may have been them") |
+| Voice (WavLM) | this voice belongs to the person (earlier mouth votes, as before) / the person owns another voice | +1.5 / −1 |
+| Mic direction (XVF3800 DoA) | how far the person's direction is from where the mic points, after the learnt offset; only once calibrated | −1.5 … +1.5 |
+
+- **The mic direction calibrates itself in each meeting.** Whenever the mouth alone clearly shows the talker and the mic direction was steady during the utterance (spread < 30°), the error *mic − face direction* is kept (last 30). The mic counts only once there are ≥ 4 such errors, from at least two people ≥ 25° apart, with a robust spread ≤ 20°; their mean is subtracted as an offset (so a mic relative to the body instead of the head, or a constant bias, still works). A mic that points the same way for everyone never passes this, and then counts nothing. Once it does, it places people who are out of the picture and breaks ties the camera cannot.
+- **The voice id is decided with the other cues.** Similarity ≥ 0.88: that voice. 0.70–0.88: if the mouth/mic point clearly at a person who owns a voice that is ≥ 0.70 similar, it is theirs; if that person owns no voice yet and the closest voice is someone else's, a new voice (≥ 2.5 s); otherwise the closest voice above `--speaker-threshold` or a new one, as before. **Only clear or confirmed utterances teach a voice's mean**, so it cannot drift over everyone.
+- **Mixed utterances**: when some 3 s windows sound like someone else (< 0.70 to the main voice), only the main voice's windows count for the voice, and the utterance casts no mouth vote (its mouth window holds two people).
+- **No feedback loop**: votes (voice ↔ person) and mic calibration come only from the mouth (`People.talker`), never from the fused answer.
+- **One behaviour changed**: a voice's owner who is in the picture with a still mouth while their voice talks no longer gets the bubble (the voice and the mouth disagree; maybe two people share one voice id).
+- **Duplicate faces**: `FaceFinder` drops a track that follows the same face as another one.
+- Protocol unchanged (`speaker`, `at`). Each final logs its decision: `[12] who: voice 1 (clear, 6.4 s, similarity 0.93 0.71, windows [0.97, 0.95]); person 3; p1 -1.0 (still -1.0) | p3 +3.5 (talks +2.0 voice +1.5); mic 12.0`.
+- Tests: `tests/test_fusion.py` (no models): the mic with an offset is calibrated and then finds people out of the picture; a mic stuck at one direction, or checked against one person only, never counts; the mic breaks a tie with a face seen too rarely; a doubtful voice goes to the person seen saying it; doubtful matches no longer drag a voice over everyone (and did before); the camera splits a similar voice into a new one; mixed utterances cast no vote; windows notice a second voice; one face followed twice is reported once.
+
+**Still to try in a real meeting** (2–3 people around the table, `record_meeting.py` for a labelled recording, then read the `who:` lines in `~/Library/Logs/reachy-meetings/backend.log`):
+- [ ] The weights and thresholds (`fusion.py`: `QUIET_STD`, `HIGH`/`LOW`, `ACCEPT`/`MARGIN`; `speakers.py`: `WIN_SAME`) are first guesses from one log; set them from a labelled recording.
+- [ ] Does the mic calibration ever pass? Look for `mic` terms in the `who:` lines. If not: is the DoA relative to the head or the body, and does the adaptive beam (`micarray.py`) hide the direction? Reading the raw DoA per utterance against who spoke settles it.
+- [ ] Mixed utterances: how often does a 15 s utterance hold two people, and is 0.70 between windows the right line (the `windows` in the log)? If often, cut utterances at a voice change instead of only marking them.
+- [ ] One person still splits into two people when Reachy's head turns (2026-11-18: people at −23°, −34°, −42° that were probably one or two faces); `REID_DEG` / `MERGE_DEG` in `people.py`.
+- [ ] The headset user in the same room as Reachy is captioned as a room speaker (known, see COORDINATION 2026-11-13); it will get a voice id of its own.
+- [ ] A stronger voice model (ECAPA-TDNN from SpeechBrain) if WavLM's far-field similarities stay this close (0.69–0.79 between people); new dependency, not tried.
 
 **Spoken languages:** auto-detection only picks among `--langs` (default `de,en`; `any` = all). Without it, short far-away clips came out as Czech or Polish.
 
@@ -217,9 +246,13 @@ src/reachy_meetings_backend/
 ├── audio.py      mic (sounddevice) and WAV file sources
 ├── stt.py        Whisper: mlx (Apple GPU) or faster-whisper (CUDA/CPU)
 ├── translate.py  DeepL (default) or Claude translation, with context
-└── doa.py        speaker direction from the robot bridge state
+├── doa.py        speaker direction from the robot daemon (DoA + head pose)
+├── speakers.py   voice embeddings (WavLM), known voices
+├── people.py     faces -> people in the room, mouth movement, voice <-> person votes
+└── fusion.py     who said it: voice + mouths + mic direction (pure logic, tested)
 scripts/print_captions.py
 tests/test_logic.py
+tests/test_fusion.py
 ```
 
 ### Open TODOs

@@ -8,6 +8,7 @@ import numpy as np
 
 from reachy_meetings_backend.captions import CaptionServer, NoiseGate, whole_sentence
 from reachy_meetings_backend.doa import DoaTracker, circular_mean_deg, doa_to_head_deg
+from reachy_meetings_backend.fusion import Fusion
 from reachy_meetings_backend.people import People, image_to_angles, to_base
 from reachy_meetings_backend.segmenter import SAMPLE_RATE, Segmenter, SegmenterCfg
 from reachy_meetings_backend.speakers import SpeakerClusters
@@ -470,6 +471,11 @@ def _watch(people, t0, t1, faces, head_yaw=0.0):
         people.update([_face(u, m(i)) for u, m in faces.items()], t0 + i / 20, head_yaw)
 
 
+def _heard(people, voice, t0, t1):
+    """The person a final utterance of `voice` goes to (fusion without voice model and mic)."""
+    return Fusion(people=people).attribute(voice, t0, t1).person
+
+
 def _still(i):
     return 0.01
 
@@ -511,26 +517,28 @@ def test_a_face_seen_for_a_moment_is_nobody():
 def test_voice_is_tied_to_the_person_whose_mouth_moves():
     people = People(_flat)
     _watch(people, 0, 2, {0.3: _talking, 0.7: _still})
-    assert people.heard(1, 0, 2).pid == 1                 # seen talking: this caption is theirs
+    assert _heard(people, 1, 0, 2).pid == 1                 # seen talking: this caption is theirs
     assert people.owner(1) is None                        # one utterance does not tie the voice yet
     _watch(people, 2, 4, {0.3: _still, 0.7: _talking})
-    assert people.heard(2, 2, 4).pid == 2
+    assert _heard(people, 2, 2, 4).pid == 2
     _watch(people, 4, 6, {0.3: _talking, 0.7: _still})
-    assert people.heard(1, 4, 6).pid == 1 and people.owner(1).pid == 1
-    _watch(people, 6, 8, {0.3: _still, 0.7: _still})       # mouth not seen moving: the voice still says who
-    assert people.heard(1, 6, 8).pid == 1
-    assert people.heard(2, 6, 8) is None                  # voice 2 has one vote only
+    assert _heard(people, 1, 4, 6).pid == 1 and people.owner(1).pid == 1
+    # The owner in the picture with a still mouth while their voice talks: the voice and the mouth disagree (two
+    # people merged into one voice?), so no bubble (fusion.py; it went to the owner before).
+    _watch(people, 6, 8, {0.3: _still, 0.7: _still})
+    assert _heard(people, 1, 6, 8) is None
+    assert _heard(people, 2, 6, 8) is None                  # voice 2 has one vote only
     _watch(people, 8, 10, {0.7: _still}, head_yaw=0)       # person 1 out of the picture
-    at = People.place(people.heard(1, 8, 10), 10)
+    at = People.place(_heard(people, 1, 8, 10), 10)
     assert at["person"] == 1 and round(at["yaw_deg"]) == 18 and at["seen_s"] >= 2
 
 
 def test_nobody_stands_out_no_answer():
     people = People(_flat)
     _watch(people, 0, 2, {0.3: _talking, 0.7: _talking})   # both mouths move
-    assert people.heard(1, 0, 2) is None
+    assert _heard(people, 1, 0, 2) is None
     _watch(people, 2, 2.5, {0.3: _talking, 0.7: _still})
-    assert people.heard(None, 2, 2.5) is None             # too short to judge
+    assert _heard(people, None, 2, 2.5) is None             # too short to judge
 
 
 def test_a_short_clip_does_not_start_a_new_speaker():
@@ -556,14 +564,14 @@ def test_who_is_seen_talking_now_beats_an_old_tie_and_empty_places_get_no_bubble
     people = People(_flat)
     for i in range(3):                                     # the voice belongs to person 1 ...
         _watch(people, 2 * i, 2 * i + 2, {0.3: _talking, 0.7: _still})
-        people.heard(1, 2 * i, 2 * i + 2)
+        _heard(people, 1, 2 * i, 2 * i + 2)
     assert people.owner(1).pid == 1
     _watch(people, 10, 12, {0.3: _still, 0.7: _talking})   # ... but now person 2 is seen saying it
-    assert people.heard(1, 10, 12).pid == 2
+    assert _heard(people, 1, 10, 12).pid == 2
     _watch(people, 12, 14, {0.3: _still, 0.7: _talking})
-    assert people.heard(1, 12, 14).pid == 2 and people.owner(1) is None, "in between nobody owns it"
+    assert _heard(people, 1, 12, 14).pid == 2 and people.owner(1) is None, "in between nobody owns it"
     _watch(people, 14, 16, {0.3: _still, 0.7: _talking})
-    assert people.heard(1, 14, 16).pid == 2 and people.owner(1).pid == 2, "the old votes fade"
+    assert _heard(people, 1, 14, 16).pid == 2 and people.owner(1).pid == 2, "the old votes fade"
     p1 = next(p for p in people.people if p.pid == 1)
     _watch(people, 20, 26, {0.7: _still})                  # person 1 left; the camera still looks there
     assert People.place(p1, 26, head_yaw_deg=0) is None
@@ -576,9 +584,9 @@ def test_taking_turns_each_gets_their_own_bubble():
     for i in range(3):                                     # person 1 talks 2 s, person 2 answers at once, 2 s
         t = 1 + 4 * i
         _watch(people, t, t + 2, {0.3: _talking, 0.7: _still})
-        assert people.heard(1, t, t + 2).pid == 1
+        assert _heard(people, 1, t, t + 2).pid == 1
         _watch(people, t + 2, t + 4, {0.3: _still, 0.7: _talking})
-        assert people.heard(2, t + 2, t + 4).pid == 2
+        assert _heard(people, 2, t + 2, t + 4).pid == 2
     assert people.owner(1).pid == 1 and people.owner(2).pid == 2
     # with the 0.8 s of silence after the sentence in the window (as it was), the answer counts too: nobody
     assert people.talker(1.8, 3.8) is None
@@ -590,9 +598,9 @@ def test_a_face_seen_too_rarely_to_judge_does_not_lose_the_vote_by_default():
     for i in range(40):                                    # person 2 is found only now and then (far away)
         faces = {0.3: _still} | ({0.7: _talking} if i == 20 else {})
         people.update([_face(u, m(i) if u == 0.7 else 0.01 + 0.05 * (i % 2)) for u, m in faces.items()], 1 + i / 20, 0)
-    assert people.heard(1, 1, 3) is None                   # person 1's mouth moved a little, person 2 unknown
+    assert _heard(people, 1, 1, 3) is None                   # person 1's mouth moved a little, person 2 unknown
     _watch(people, 3, 5, {0.3: _talking})                  # person 2 not in the picture at all: person 1 it is
-    assert people.heard(1, 3, 5).pid == 1
+    assert _heard(people, 1, 3, 5).pid == 1
 
 
 def test_one_person_does_not_own_two_voices():
@@ -600,13 +608,13 @@ def test_one_person_does_not_own_two_voices():
     _watch(people, 0, 1, {0.3: _still, 0.7: _still})
     for i in range(4):                                     # voice 1 is person 1's
         _watch(people, 1 + 2 * i, 3 + 2 * i, {0.3: _talking, 0.7: _still})
-        people.heard(1, 1 + 2 * i, 3 + 2 * i)
+        _heard(people, 1, 1 + 2 * i, 3 + 2 * i)
     for i in range(2):                                     # two sentences of voice 2 land on person 1 by mistake
         _watch(people, 9 + 2 * i, 11 + 2 * i, {0.3: _talking, 0.7: _still})
-        people.heard(2, 9 + 2 * i, 11 + 2 * i)
+        _heard(people, 2, 9 + 2 * i, 11 + 2 * i)
     assert people.owner(1).pid == 1 and people.owner(2) is None
     _watch(people, 13, 15, {0.3: _still, 0.7: _still})     # nobody seen talking: voice 2 gets no bubble at person 1
-    assert people.heard(2, 13, 15) is None
+    assert _heard(people, 2, 13, 15) is None
 
 
 def test_a_far_face_found_a_few_times_a_second_becomes_a_person():

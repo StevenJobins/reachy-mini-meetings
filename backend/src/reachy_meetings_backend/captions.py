@@ -11,8 +11,9 @@ Protocol (server -> headset, one JSON per message; keep in sync with xr-client):
            (caption ids restart then); t = server clock, for mapping backend times onto the page's clock
   caption  {"id": int, "final": bool, "text": str, "lang": str, "translation": str | null,
             "target": str, "translating": bool, "doa_deg": float | null, "azimuth_deg": float | null, "speaker": int | null,
-            "t_start": s, "t_end": s}   speaker = 1, 2, ... from the voice (speakers.py); null = not known
-            (short utterance, no model); on a partial only a voice heard before
+            "t_start": s, "t_end": s}   speaker = 1, 2, ... the voice (speakers.py), decided together with the
+            mouths and the mic direction (fusion.py); null = not known (short utterance, no model); on a partial
+            only a voice heard before
             "at": {"person": int, "yaw_deg", "pitch_deg", "top_deg", "h_deg", "seen_s"} | null   where the
             speaker's face is, in the robot base frame (people.py: yaw + = left, pitch + = up, top_deg = top of
             the face, h_deg = its height, seen_s = how long ago the camera saw it); null = not known who
@@ -337,6 +338,10 @@ class Pipeline:
             from .speakers import VoiceIds
 
             self.speakers = VoiceIds(args.speaker_threshold)
+        from .fusion import Fusion
+
+        # who said it: voice + mouths + mic direction (fusion.py); gets the people once the camera runs
+        self.fusion = Fusion(self.speakers.clusters if self.speakers else None)
         self.worker = Worker()  # Whisper runs one job at a time
         self.pending = 0
         self.finalized: set[int] = set()
@@ -420,15 +425,22 @@ class Pipeline:
             self.pending -= 1
 
     def _caption(self, seg: Segment, wall_end: float, text: str, lang: str,
-                 translation: str | None = None, speaker: int | None = None) -> dict:
+                 translation: str | None = None, voice=None) -> dict:
         """wall_end = wall clock at the end of the segment's audio (the last word, not the silence waited for
-        after it: with that silence in it, the next speaker's mouth counted for this sentence)."""
+        after it: with that silence in it, the next speaker's mouth counted for this sentence). voice = the
+        utterance's speakers.VoiceObs or None. A final teaches the fusion (voices, votes, mic calibration), so
+        call this once per final."""
         t_start = wall_end - (seg.t_end - seg.t_start)
         doa_deg, azimuth_deg = self.doa.direction(t_start, wall_end) if self.doa else (None, None)
+        if seg.final and text:
+            who = self.fusion.final(voice, t_start, wall_end, self.doa.spread(t_start, wall_end) if self.doa else None)
+            log.info("[%d] who: %s; mic %s", seg.id, who.why(), doa_deg)
+        else:
+            who = self.fusion.partial(voice)
+        speaker = who.voice
         at = None
-        if self.people and text:   # a final utterance also counts as a vote for who owns this voice
-            who = self.people.heard(speaker, t_start, wall_end) if seg.final else self.people.owner(speaker)
-            at = self.people.place(who, time.time(), self.doa.head_yaw_deg if self.doa else None)
+        if self.people and text:
+            at = self.people.place(who.person, time.time(), self.doa.head_yaw_deg if self.doa else None)
         return {
             "id": seg.id, "final": seg.final, "text": text, "lang": lang,
             "translation": translation, "target": self.target,
@@ -442,7 +454,7 @@ class Pipeline:
         """Who is talking, next to Whisper (CPU, its own thread)."""
         if not self.speakers:
             return None
-        return asyncio.create_task(self.speakers.identify(seg.audio, learn=seg.final))
+        return asyncio.create_task(self.speakers.embed(seg.audio, windows=seg.final))
 
     async def _partial(self, seg: Segment, wall_end: float) -> None:
         speaker = self._speaker(seg)
@@ -452,7 +464,7 @@ class Pipeline:
             return
         if len(seg.audio) >= LANG_MIN_S * 16000:
             self.seg_lang[seg.id] = lang
-        cap = self._caption(seg, wall_end, text, lang, speaker=speaker)
+        cap = self._caption(seg, wall_end, text, lang, voice=speaker)
         self.server.send(cap)
         # Translate live text too, so the bubble is readable while the person still talks. Throttled
         # (DeepL quota): only when enough new text came in since the last partial translation.
@@ -483,7 +495,7 @@ class Pipeline:
         speaker = await speaker if speaker else None
         target, translator = self.target, self.translator
         if text and self.early.get(seg.id, (0, None))[1] is me:   # not if speech went on or the final took over
-            cap = self._caption(seg, wall_end, text, lang, speaker=speaker)
+            cap = self._caption(seg, wall_end, text, lang, voice=speaker)
             self.server.send(cap)
         if text and lang != target and translator:
             translation = await translator(text, remember=False)
@@ -512,7 +524,7 @@ class Pipeline:
             translation = None
         cap = self._caption(seg, wall_end, text, lang, translation, speaker)
         self.server.send(cap)
-        log.info("[%d %s speaker %s] %s  (%.2f s after the last word%s)", seg.id, lang, speaker or "?", text,
+        log.info("[%d %s speaker %s] %s  (%.2f s after the last word%s)", seg.id, lang, cap["speaker"] or "?", text,
                  time.time() - wall_end, ", started early" if reused else "")
         if self.people and text:
             t1 = cap["t_end"]
@@ -747,6 +759,7 @@ class Pipeline:
             from .vision import FaceStream
 
             self.people = People()
+            self.fusion.people = self.people
 
             def faces(people: list, t: float) -> None:
                 d = self.doa
