@@ -3,6 +3,9 @@ which helps with names, pronouns and half-sentences that Whisper cut in the midd
 
 DeepLTranslator   default. Free Developer plan (our key: 500k characters, ~10 meeting hours).
                   Key from deepl.com/your-account/keys in DEEPL_AUTH_KEY.
+                  Or without a key of one's own, through the project's hosted service (service/worker.js):
+                  REACHY_SERVICE_URL and REACHY_INSTALL_ID, set by the Mac app. That counts first when set. The
+                  service gives an hour a day for free and then answers like DeepL when its quota is used up.
 ClaudeTranslator  optional (`pip install -e ".[claude]"`, ANTHROPIC_API_KEY), paid per token.
                   Also fixes speech-recognition errors from context.
 """
@@ -21,7 +24,9 @@ class DeepLTranslator:
     def __init__(self, target: str, context: int = 3) -> None:
         import deepl
 
-        key = os.environ.get("DEEPL_AUTH_KEY")
+        service, install = os.environ.get("REACHY_SERVICE_URL"), os.environ.get("REACHY_INSTALL_ID")
+        self.hosted = bool(service and install)
+        key = install if self.hosted else os.environ.get("DEEPL_AUTH_KEY")
         if not key:
             raise RuntimeError("DEEPL_AUTH_KEY is not set (key: deepl.com/your-account/keys)")
         self._deepl = deepl
@@ -29,7 +34,8 @@ class DeepLTranslator:
         # bubble and Reachy's voice back for half a minute while the Mac's WLAN hung (2026-10-08 log).
         deepl.http_client.min_connection_timeout = 3
         deepl.http_client.max_network_retries = 1
-        self.client = deepl.Translator(key)  # picks the right endpoint from the key
+        # with a key of one's own: the endpoint that belongs to it; else the hosted service, which speaks the same
+        self.client = deepl.Translator(key, server_url=service.rstrip("/")) if self.hosted else deepl.Translator(key)
         # DeepL wants a variant for some targets
         self.target = {"EN": "EN-US", "PT": "PT-PT"}.get(target.upper(), target.upper())
         self.history: deque[str] = deque(maxlen=context)
@@ -43,7 +49,9 @@ class DeepLTranslator:
             result = await asyncio.to_thread(self.client.translate_text, text,
                                              target_lang=self.target, context=context)
         except self._deepl.QuotaExceededException:
-            log.warning("DeepL: character quota used up")
+            # the Mac app looks for this line (supervisor.py, LIMIT_LINE)
+            log.warning("Free time used up: no translation for the rest of today" if self.hosted
+                        else "DeepL: character quota used up")
             return None
         except self._deepl.DeepLException as e:
             log.warning("translation failed: %s", e)

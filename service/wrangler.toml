@@ -1,0 +1,14 @@
+name = "reachy-meetings"
+main = "worker.js"
+compatibility_date = "2026-11-01"
+workers_dev = true
+preview_urls = false
+
+[vars]
+FREE_MINUTES = "60"
+
+# from `npx wrangler d1 create reachy-meetings` (an id, not a secret)
+[[d1_databases]]
+binding = "DB"
+database_name = "reachy-meetings"
+database_id = "5eba6173-35ff-4b5f-ab94-2190ce071d28"

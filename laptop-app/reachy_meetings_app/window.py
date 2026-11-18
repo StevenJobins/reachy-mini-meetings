@@ -19,7 +19,7 @@ from PyObjCTools import AppHelper
 
 from . import updates
 from .live import Live
-from .supervisor import MEETING_LANGS, Status, Supervisor
+from .supervisor import MEETING_LANGS, PLANS_URL, Status, Supervisor
 
 SIDE = 320            # the side panel
 BAR = 76              # the row of buttons
@@ -520,6 +520,10 @@ class Controller(NSObject):
             notes.append(s.problem)
         if s.share_note:
             notes.append(s.share_note)
+        if s.limit:
+            notes.append("Today's free hour of translation and meeting notes is used up. Captions go on, untranslated. "
+                         f"Longer meetings: {PLANS_URL}  (this installation: {s.install})")
+        self.buttons["key"].setHidden_(bool(s.install))   # the hosted service has the keys: none to enter
         if not s.translation_key and s.backend:
             notes.append("No DeepL key: captions are not translated. Set it with the gear button.")
         if not s.notes_key and s.backend:

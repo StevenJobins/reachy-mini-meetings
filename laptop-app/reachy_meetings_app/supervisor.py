@@ -60,6 +60,14 @@ def connected_headsets(gateway_log: str) -> list:
     return sorted(name for name, n in open_lines.items() if n > 0)
 
 
+# Translation and meeting notes without keys of one's own: the project's hosted service (service/worker.js).
+# Set to "" to switch it off: the backend then needs DEEPL_AUTH_KEY and GEMINI_API_KEY as before. REACHY_SERVICE_URL in the
+# environment names another one. The service gives an hour a day for free; the backend writes LIMIT_LINE when it is over.
+SERVICE_URL = "https://reachy-meetings.dominic-ill.workers.dev"
+LIMIT_LINE = "Free time used up"
+PLANS_URL = "https://stevenjobins.github.io/reachy-mini-meetings/#plans"
+
+
 def faces_in_view(backend_log: str) -> str:
     """ "1.0 faces in view" from the backend's last vision line, or "" before the first."""
     found = FACES.findall(backend_log)
@@ -131,6 +139,8 @@ class Status:
     connected: list = field(default_factory=list)
     translation_key: bool = False
     notes_key: bool = True       # GEMINI_API_KEY for the meeting notes
+    limit: bool = False          # the hosted service's free hour of today is used up: no translation, no notes
+    install: str = ""            # this installation's id at the hosted service, "" when it is not used
     video_patch: bool = True
     problem: str = ""            # a part that stopped, with its last log lines
     version: str = ""            # of the code that runs
@@ -185,6 +195,15 @@ class Supervisor:
         return lang if lang in dict(MEETING_LANGS) else "auto"
 
     # ------------------------------------------------------------ the parts
+    def install_id(self) -> str:
+        """Made once, kept in the settings: what the hosted service counts the free time by."""
+        if not self.settings.get("install"):
+            import uuid
+
+            self.settings["install"] = str(uuid.uuid4())
+            self._save_settings()
+        return self.settings["install"]
+
     def child_env(self) -> dict:
         env = dict(self.environ)
         env["PATH"] = env.get("PATH", "/usr/bin:/bin:/usr/sbin:/sbin") + ":" + EXTRA_PATH
@@ -207,18 +226,22 @@ class Supervisor:
         env["PYTHONPATH"] = "src"
         if self.standalone:   # the app's own Python has none of the backend's libraries: they are in their folder
             env["PYTHONPATH"] += os.pathsep + str(self.libs())
-        if self.settings.get("deepl_key"):                 # set in the app: that one counts
+        service = self.environ.get("REACHY_SERVICE_URL", SERVICE_URL)
+        if service:   # the hosted service has the keys; it knows this installation by its id
+            env["REACHY_SERVICE_URL"], env["REACHY_INSTALL_ID"] = service, self.install_id()
+            env.pop("DEEPL_AUTH_KEY", None)
+        elif self.settings.get("deepl_key"):                 # set in the app: that one counts
             env["DEEPL_AUTH_KEY"] = self.settings["deepl_key"]
         elif not env.get("DEEPL_AUTH_KEY"):
             key = self.shell_key()
             if key:
                 env["DEEPL_AUTH_KEY"] = self.environ["DEEPL_AUTH_KEY"] = key   # kept for a restart, in memory only
-        self.has_key = bool(env.get("DEEPL_AUTH_KEY"))
-        if not env.get("GEMINI_API_KEY"):   # the meeting notes; until 2026-11-18 only DeepL's key was looked up
+        self.has_key = bool(service or env.get("DEEPL_AUTH_KEY"))
+        if not service and not env.get("GEMINI_API_KEY"):   # the meeting notes; until 2026-11-18 only DeepL's key was looked up
             key = self.shell_notes_key()
             if key:
                 env["GEMINI_API_KEY"] = self.environ["GEMINI_API_KEY"] = key
-        self.has_notes_key = bool(env.get("GEMINI_API_KEY"))
+        self.has_notes_key = bool(service or env.get("GEMINI_API_KEY"))
         # Models already on this laptop: no questions to Hugging Face at the start (an expired login stops them loading)
         if (Path.home() / ".cache/huggingface/hub/models--mlx-community--whisper-large-v3-turbo").is_dir():
             env["HF_HUB_OFFLINE"] = "1"
@@ -422,6 +445,8 @@ class Supervisor:
             translation_key=getattr(self, "has_key", False) or bool(self.settings.get("deepl_key"))
             or bool(self.environ.get("DEEPL_AUTH_KEY")),
             notes_key=self.has_notes_key,
+            limit=LIMIT_LINE in backend_text,
+            install=self.settings.get("install", "") if self.environ.get("REACHY_SERVICE_URL", SERVICE_URL) else "",
             video_patch=self._patched(),
             setup=self.setup_text, setup_fraction=self.setup_fraction,
             version=self.version, update=self.update_ready,

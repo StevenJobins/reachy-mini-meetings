@@ -64,7 +64,10 @@ def parse_summary(text: str) -> dict | None:
 
 class Summarizer:
     def __init__(self, target: str, model: str, every_s: float = 60.0, gap_s: float = 20 * 60) -> None:
-        self.key = os.environ.get("GEMINI_API_KEY")
+        # through the project's hosted service when the Mac app set it (it speaks like Gemini), else one's own key
+        service, install = os.environ.get("REACHY_SERVICE_URL"), os.environ.get("REACHY_INSTALL_ID")
+        self.url = service.rstrip("/") + "/chat/completions" if service and install else URL
+        self.key = install if service and install else os.environ.get("GEMINI_API_KEY")
         if not self.key:
             raise RuntimeError("GEMINI_API_KEY is not set (free key: aistudio.google.com/apikey)")
         self.system = SYSTEM.format(target=target)
@@ -117,7 +120,8 @@ class Summarizer:
             "messages": [{"role": "system", "content": self.system},
                          {"role": "user", "content": transcript}],
         }).encode()
-        req = urllib.request.Request(URL, body, {"Content-Type": "application/json",
+        # a name of our own: Cloudflare, where the hosted service runs, turns Python's default one away (error 1010)
+        req = urllib.request.Request(self.url, body, {"Content-Type": "application/json", "User-Agent": "reachy-meetings",
                                                  "Authorization": f"Bearer {self.key}"})
         with urllib.request.urlopen(req, timeout=60) as r:
             return json.loads(r.read())["choices"][0]["message"]["content"]

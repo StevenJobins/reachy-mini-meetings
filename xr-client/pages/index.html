@@ -123,6 +123,7 @@
     <nav>
       <a href="#how">How it works</a>
       <a href="#features">Features</a>
+      <a href="#plans">Pricing</a>
       <a href="#setup">Setup</a>
       <a href="#faq">Questions</a>
       <a class="btn small" href="#download">Download</a>
@@ -262,8 +263,8 @@
         <h3>What else you need</h3>
         <div class="row">
           <div><b>A Reachy Mini</b><span>The robot by Pollen Robotics, connected to the Mac by USB.</span></div>
-          <div><b>A DeepL key</b><span>For the translation. The free plan is enough to start.</span></div>
-          <div><b>A Gemini key</b><span>Optional, for the meeting notes. Free from Google AI Studio.</span></div>
+          <div><b>Reachy Mini Control</b><span>Pollen Robotics' own app for the robot, installed on the same Mac.</span></div>
+          <div><b>No keys, no accounts</b><span>Translation and notes come from our service. An hour a day is free.</span></div>
           <div><b>Good Wi-Fi</b><span>Video and sound go live to the headset; 5 GHz in the room helps.</span></div>
         </div>
       </div>
@@ -271,13 +272,24 @@
     </div>
   </section>
 
-  <section id="setup">
+  <section id="plans">
+    <div class="wrap">
+      <h2>What it costs</h2>
+      <p class="sub">The apps are free. Translation and meeting notes run on our service, so you need no keys or accounts of your own.</p>
+      <div class="grid g2">
+        <div class="card"><h3>Free</h3><p>One hour of translated meeting a day, with meeting notes. Enough to try it and for the short weekly call. After the hour the captions go on, untranslated.</p></div>
+        <div class="card"><h3>Longer meetings</h3><p>More than an hour a day will be a paid plan. It is not open yet; until then we unlock installations by hand. The Mac app shows the number to send us when the hour is used up.</p></div>
+      </div>
+    </div>
+  </section>
+
+  <section id="setup" class="alt">
     <div class="wrap">
       <h2>Set up in ten minutes</h2>
       <p class="sub">Once per laptop and headset. After that, opening both apps is all it takes.</p>
       <ol class="steps">
         <li><b>Connect Reachy Mini to the Mac</b><span>Plug it in by USB and install Reachy Mini Control from Pollen Robotics.</span></li>
-        <li><b>Open Reachy Meetings on the Mac</b><span>Drag it to Applications and open it. macOS asks once for the microphone, the camera and the local network. Enter your DeepL key with the gear button.</span></li>
+        <li><b>Open Reachy Meetings on the Mac</b><span>Drag it to Applications and open it. macOS asks once for the microphone, the camera and the local network.</span></li>
         <li><b>Install the app on the headset</b><span>Until it is in the store: switch on developer mode on the headset, connect it to a computer and run <code>adb install ReachyMeetings.apk</code>.</span></li>
         <li><b>Pair the headset</b><span>Open the app in the headset and type the six-digit code the Mac app shows. The headset is remembered from then on.</span></li>
         <li><b>Take the tour</b><span>The first start shows every gesture and lets you practise it, while Reachy wakes up and looks around the room.</span></li>
@@ -285,11 +297,11 @@
     </div>
   </section>
 
-  <section id="faq" class="alt">
+  <section id="faq">
     <div class="wrap">
       <h2>Questions</h2>
       <p class="sub">The short answers. The details are in the repository.</p>
-      <details><summary>Where does what is said in the room go?</summary><p>Speech is turned into text on the Mac itself. The text goes to DeepL for translation and, if you set a Gemini key, to Google for the meeting notes. On Google's free plan the content may be used to improve its products, so leave the notes off for confidential meetings. Video and sound travel from the laptop straight to the headset.</p></details>
+      <details><summary>Where does what is said in the room go?</summary><p>Speech is turned into text on the Mac itself. The text then goes through our service to DeepL for the translation and to Google Gemini for the meeting notes; our service keeps none of it, only how many minutes each installation used. Video and sound travel from the laptop straight to the headset.</p></details>
       <details><summary>Does it work without a Reachy Mini?</summary><p>No. The robot is the camera, the microphones and your presence in the room. Without it the apps have nothing to connect to.</p></details>
       <details><summary>Which headsets work?</summary><p>The app is built and tested on the Samsung Galaxy XR. It needs hand tracking; other Android headsets are untested.</p></details>
       <details><summary>Can several people join through one robot?</summary><p>One person at a time sees through the robot and turns its head. Several headsets can be paired with the same laptop.</p></details>

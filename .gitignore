@@ -50,3 +50,6 @@ node_modules/
 
 # The built Mac app (laptop-app/build_app.sh)
 laptop-app/dist/
+
+# Cloudflare tool state (service/)
+service/.wrangler/

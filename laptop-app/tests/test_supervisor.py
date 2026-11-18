@@ -8,6 +8,12 @@ import pytest
 from reachy_meetings_app import supervisor as sup
 
 
+@pytest.fixture(autouse=True)
+def no_hosted_service(monkeypatch):
+    """The tests about keys are about a laptop without the hosted service; the one about it names its own."""
+    monkeypatch.setattr(sup, "SERVICE_URL", "")
+
+
 class Proc:
     """Stands in for a started program."""
 
@@ -385,3 +391,18 @@ def test_the_notes_key_comes_from_the_login_shell_too(made, tmp_path):
                           shell_key=lambda: "", shell_notes_key=lambda: "")
     none.start_backend()
     assert "GEMINI_API_KEY" not in none.backend.kw["env"] and not none.has_notes_key
+
+
+def test_with_the_hosted_service_the_backend_gets_an_installation_id_and_no_keys(tmp_path):
+    s = sup.Supervisor(logs=tmp_path / "l", settings_path=tmp_path / "a.json", popen=Proc,
+                       environ={"REACHY_SERVICE_URL": "https://example.test/meeting", "DEEPL_AUTH_KEY": "own"},
+                       shell_key=lambda: "shell", shell_notes_key=lambda: "shell")
+    s.start_backend()
+    env = s.backend.kw["env"]
+    assert env["REACHY_SERVICE_URL"] == "https://example.test/meeting" and "DEEPL_AUTH_KEY" not in env
+    install = env["REACHY_INSTALL_ID"]
+    assert len(install) == 36 and json.loads((tmp_path / "a.json").read_text())["install"] == install
+    assert s.has_key and s.has_notes_key
+    again = sup.Supervisor(logs=tmp_path / "l", settings_path=tmp_path / "a.json", popen=Proc,
+                           environ={"REACHY_SERVICE_URL": "https://example.test/meeting"})
+    assert again.install_id() == install   # the same installation after a restart
