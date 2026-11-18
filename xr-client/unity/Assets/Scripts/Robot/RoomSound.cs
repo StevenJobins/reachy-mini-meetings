@@ -19,7 +19,8 @@ public class RoomSound : MonoBehaviour
     AudioSource source;
     volatile bool muted;
     Out direct;
-    float startedAt;
+    float startedAt, callsAt, loggedAt;
+    int lastCalls;
 
     /// <summary>The mixer's audio thread asks for the next ~21 ms.</summary>
     class Out : MonoBehaviour
@@ -76,6 +77,9 @@ public class RoomSound : MonoBehaviour
             var go = new GameObject("Room Sound Out");
             go.transform.SetParent(transform, false);
             source = go.AddComponent<AudioSource>();   // before the filter: it feeds it
+            // a second of silence, looping: with no clip the source does not count as playing, and the mixer may
+            // stop asking the filter for sound
+            source.clip = AudioClip.Create("Silence", AudioJitterBuffer.SampleRate, 1, AudioJitterBuffer.SampleRate, false);
             source.loop = true;
             direct = go.AddComponent<Out>();
             direct.room = this;
@@ -90,6 +94,23 @@ public class RoomSound : MonoBehaviour
             source.clip = AudioClip.Create("Room", AudioJitterBuffer.SampleRate, 1, AudioJitterBuffer.SampleRate, true, OnRead);
             source.Play();
             Debug.LogWarning("[room sound] the mixer does not ask for sound: streamed clip instead (about 0.3 s later)");
+        }
+        if (direct != null)
+        {
+            // the mixer stopped asking (the app was in the background, the audio device changed): start again
+            if (direct.Calls != lastCalls) { lastCalls = direct.Calls; callsAt = Time.unscaledTime; }
+            else if (Time.unscaledTime - callsAt > 1f && Application.isFocused)
+            {
+                callsAt = Time.unscaledTime;
+                source.Play();
+                Debug.LogWarning("[room sound] the mixer stopped asking for sound: started again");
+            }
+        }
+        // to the laptop's ~/Library/Logs/reachy-headset.log, so a test leaves numbers behind without adb
+        if (backend.Connected && Time.unscaledTime - loggedAt > 10f)
+        {
+            loggedAt = Time.unscaledTime;
+            backend.Send($"{{\"type\": \"log\", \"lines\": [\"{System.DateTime.Now:HH:mm:ss} unity {Status}, connects {backend.Connects}, stalls {backend.Stalls}\"]}}");
         }
         Status = backend.Connected
             ? $"room sound {backend.Audio.BufferedMs:0} ms (keeps {backend.Audio.SafetyMs:0}), {backend.Audio.Underruns} gaps{(direct == null ? ", clip" : "")}"

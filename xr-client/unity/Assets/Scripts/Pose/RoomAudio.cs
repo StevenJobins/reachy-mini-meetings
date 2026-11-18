@@ -12,20 +12,22 @@ using System;
 /// slowly while there is none. After a gap it refills to Safety plus one packet, with a short fade.
 /// After a stall the sound that then comes in one burst is kept and played faster (12 % above Fast) until the delay
 /// is gone; only above Hard is old sound dropped.
+/// Safety started at 50 ms and shrank 3 ms per window at first: in the headset the sound was still choppy at times, so
+/// it now starts at 100 ms, never goes below 60 and shrinks 1 ms per window.
 /// Until 2026-11-18 it held a fixed 200 to 300 ms (and Unity read it 256 ms at a time, RoomSound): one saw the lips
 /// move before one heard the voice.</summary>
 public class AudioJitterBuffer
 {
     public const int SampleRate = 16000;
     const int Ms = SampleRate / 1000;
-    const int MinSafety = 30 * Ms, StartSafety = 50 * Ms, MaxSafety = 250 * Ms, Packet = 40 * Ms;
+    const int MinSafety = 60 * Ms, StartSafety = 100 * Ms, MaxSafety = 300 * Ms, Packet = 40 * Ms;
     const int Fast = SampleRate / 2, Hard = SampleRate * 3 / 2;
     const int Window = SampleRate * 4;       // the least held is watched over this much played sound
     const int SkipEvery = 25, SkipEveryFast = 8;
 
     readonly float[] buf = new float[SampleRate * 4];
     readonly object gate = new object();
-    int read, write, count, skip;
+    int read, write, count, skip, half = -1;
     int safety = StartSafety, low = int.MaxValue, played, shave;
     bool playing;
     float last;
@@ -40,12 +42,22 @@ public class AudioJitterBuffer
     {
         lock (gate)
         {
-            for (int i = 0; i + 1 < length; i += 2)
+            int i = 0, n = 0;
+            if (half >= 0 && length > 0)   // a frame that came in two pieces, cut inside a sample
+            {
+                buf[write] = (short)(half | data[i++] << 8) / 32768f;
+                write = (write + 1) % buf.Length;
+                n++;
+                half = -1;
+            }
+            for (; i + 1 < length; i += 2)
             {
                 buf[write] = (short)(data[i] | data[i + 1] << 8) / 32768f;
                 write = (write + 1) % buf.Length;
+                n++;
             }
-            count += length / 2;
+            if (i < length) half = data[i];
+            count += n;
             if (count > buf.Length) { count = buf.Length; read = write; }   // keep the newest, no hidden delay
         }
     }
@@ -87,7 +99,7 @@ public class AudioJitterBuffer
             if (played < Window) return;
             // a window without a gap: what was never needed goes, and a little less is kept in hand
             shave = Math.Max(0, low - safety - 10 * Ms);
-            safety = Math.Max(MinSafety, safety - 3 * Ms);
+            safety = Math.Max(MinSafety, safety - Ms);
             low = int.MaxValue;
             played = 0;
         }

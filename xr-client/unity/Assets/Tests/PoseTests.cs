@@ -173,10 +173,10 @@ public class PoseTests
     {
         var a = new AudioJitterBuffer();
         var output = new float[320];
-        a.PushPcm16(Pcm(960, 16384), 1920);   // 60 ms, below the 90 ms it starts at
+        a.PushPcm16(Pcm(1200, 16384), 2400);   // 75 ms, below the 140 ms it starts at
         a.Read(output, 0, 320);
         Assert.That(output[319], Is.EqualTo(0).Within(1e-6), "still filling");
-        a.PushPcm16(Pcm(960, 16384), 1920);
+        a.PushPcm16(Pcm(1200, 16384), 2400);
         a.Read(output, 0, 320);
         Assert.That(output[0], Is.EqualTo(0.5f).Within(1e-3), "playing");
         double before = a.SafetyMs;
@@ -201,7 +201,7 @@ public class PoseTests
             a.Read(output, 0, 341);
         }
         Assert.That(a.Underruns, Is.EqualTo(0));
-        Assert.That(a.BufferedMs, Is.LessThan(110), "the 300 ms are gone");
+        Assert.That(a.BufferedMs, Is.LessThan(150), "the 300 ms are gone");
     }
 
     [Test]
@@ -234,7 +234,7 @@ public class PoseTests
             a.PushPcm16(Pcm(640, 1000), 1280);
             a.Read(output, 0, 640);
         }
-        Assert.That(a.BufferedMs, Is.LessThan(150), "played faster until the delay was gone");
+        Assert.That(a.BufferedMs, Is.LessThan(200), "played faster until the delay was gone");
         Assert.That(a.Underruns, Is.EqualTo(0));
     }
 
@@ -244,7 +244,22 @@ public class PoseTests
         var a = new AudioJitterBuffer();
         a.PushPcm16(Pcm(32000, 1000), 64000);   // 2 s burst
         a.Read(new float[160], 0, 160);
-        Assert.That(a.BufferedMs, Is.LessThan(100));
+        Assert.That(a.BufferedMs, Is.LessThan(150));
+    }
+
+    [Test]
+    public void AudioBufferJoinsAFrameCutInsideASample()
+    {
+        var a = new AudioJitterBuffer();
+        var whole = Pcm(4000, 16384);
+        var first = whole.Take(2401).ToArray();
+        var rest = whole.Skip(2401).ToArray();
+        a.PushPcm16(first, first.Length);
+        a.PushPcm16(rest, rest.Length);
+        Assert.That(a.BufferedMs, Is.EqualTo(250).Within(0.1));
+        var output = new float[3000];
+        a.Read(output, 0, 3000);
+        Assert.That(output.Min(), Is.EqualTo(0.5f).Within(1e-3), "no sample torn apart at the cut");
     }
 
     [Test]

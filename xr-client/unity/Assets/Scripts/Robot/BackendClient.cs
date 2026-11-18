@@ -57,6 +57,10 @@ public class BackendClient : IDisposable
         if (Connected) outgoing.Enqueue(data);
     }
 
+    const int SilentMs = 4000;
+    /// <summary>How often the connection went silent and was opened again.</summary>
+    public int Stalls { get; private set; }
+
     async Task Loop()
     {
         var buffer = new byte[64 * 1024];
@@ -77,7 +81,19 @@ public class BackendClient : IDisposable
                 var text = new StringBuilder();
                 while (ws.State == WebSocketState.Open)
                 {
-                    var r = await ws.ReceiveAsync(new ArraySegment<byte>(buffer), cts.Token);
+                    // The backend sends room sound every 40 ms. Nothing for SilentMs: the connection is dead (a Wi-Fi
+                    // hang leaves it half open, and this wait then never ended: no sound and no captions until the
+                    // app was restarted). Give it up and connect again.
+                    using var alive = CancellationTokenSource.CreateLinkedTokenSource(cts.Token);
+                    alive.CancelAfter(SilentMs);
+                    WebSocketReceiveResult r;
+                    try { r = await ws.ReceiveAsync(new ArraySegment<byte>(buffer), alive.Token); }
+                    catch (OperationCanceledException) when (!cts.IsCancellationRequested)
+                    {
+                        LastError = "nothing received, connecting again";
+                        Stalls++;
+                        break;
+                    }
                     if (r.MessageType == WebSocketMessageType.Close)
                     {
                         LastError = ws.CloseStatusDescription;
