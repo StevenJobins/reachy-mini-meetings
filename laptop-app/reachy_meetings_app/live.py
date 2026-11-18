@@ -1,6 +1,6 @@
 """What happens in the meeting right now, for the window: the backend's messages (captions, who speaks), read from
-its WebSocket on this laptop (ws://127.0.0.1:8766, protocol in backend/.../captions.py). Listens only, never sends a
-setting. Standard library only: the app's own Python has no websockets package, and the system's URL loading
+its WebSocket on this laptop (ws://127.0.0.1:8766, protocol in backend/.../captions.py). Listens, and sends only what
+the person at the laptop asks for with a button (send: the meeting notes as a mail draft), never a setting. Standard library only: the app's own Python has no websockets package, and the system's URL loading
 would need a setting in the app bundle to talk to a plain ws:// address.
 
     Live(on_message).start()      on_message(dict) is called from the reader thread for every JSON message
@@ -56,9 +56,22 @@ class Live(threading.Thread):
         self.on_message, self.host, self.port, self.retry_s = on_message, host, port, retry_s
         self.connected = False
         self.stopped = threading.Event()
+        self.sock, self.writing = None, threading.Lock()
 
     def stop(self) -> None:
         self.stopped.set()
+
+    def send(self, message: dict) -> bool:
+        """One JSON message to the backend; False if it is not connected."""
+        sock = self.sock
+        if not (self.connected and sock):
+            return False
+        try:
+            with self.writing:
+                sock.sendall(frame(0x1, json.dumps(message).encode()))
+            return True
+        except OSError:
+            return False
 
     def run(self) -> None:
         while not self.stopped.is_set():
@@ -80,12 +93,13 @@ class Live(threading.Thread):
             if b" 101 " not in head.split(b"\r\n", 1)[0]:
                 raise ConnectionError("no WebSocket there")
             sock.settimeout(60)   # the backend pings every 20 s: longer silence means it is gone
-            self.connected = True
+            self.sock, self.connected = sock, True
             text = b""
             while not self.stopped.is_set():
                 fin, opcode, payload = read_frame(sock)
                 if opcode == 0x9:        # ping: answer, or the backend drops us
-                    sock.sendall(frame(0xA, payload))
+                    with self.writing:
+                        sock.sendall(frame(0xA, payload))
                 elif opcode == 0x8:
                     return
                 elif opcode == 0x1 or (opcode == 0x0 and text):

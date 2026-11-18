@@ -19,7 +19,10 @@ Open *Reachy Meetings* from there, or drag it to Applications first. The window 
   live picture of it, and the button stops it (`screencap.swift`, built into the app, captures with ScreenCaptureKit;
   `robot/scripts/share_screen.py` sends it; an app built before 2026-11-18 shares only the whole screen; macOS asks once
   for Screen Recording; needs Reachy Mini Control on this Mac, same Wi-Fi only), *captions* on / off, *other
-  networks* (below), *people* (the side panel), the *translation key*, and in red *end* (quits, stops the parts);
+  networks* (below), *people* (the side panel), *mail* (the meeting notes as a draft in this Mac's mail program; the
+  only place to send them from, the headset has no such button since 2026-11-18), *?* (what Reachy's gestures mean:
+  a window with a little moving Reachy per gesture, `gestures.py`; it opens by itself the first time), the
+  *translation key*, and in red *end* (quits, stops the parts);
 - **the side panel**, described in the points below:
 - **the parts** with a dot each: robot (Reachy Mini Control is opened if it does not answer), camera stream,
   captions and translation, the door for headsets, and which headsets are connected;

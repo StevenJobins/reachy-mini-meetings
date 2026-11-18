@@ -27,7 +27,9 @@ CAPTION = 50          # the caption line
 CAPTION_S = 8.0       # a caption stays this long after the last one
 GREEN, GREY, AMBER = "systemGreenColor", "tertiaryLabelColor", "systemOrangeColor"
 BG, TILE, PANEL, BUTTON = "#0e1116", "#1b2029", "#161a21", "#2f3541"
-ACCENT, RED, SPEAKING = "#ff9500", "#e5484d", "#4ade80"   # the project's orange (xr-client/pages)
+# One look for the Mac app, the headset app (Ui.cs) and the website (xr-client/pages/index.html): dark surfaces, blue
+# for what is on or can be pressed, red for leaving, green for speaking; orange belongs to Reachy (the icon, notes).
+ACCENT, INK, RED, SPEAKING, WARM = "#4cc3ff", "#0b1220", "#e5484d", "#4ade80", "#ff9500"
 
 
 def rgb(hex_: str, alpha: float = 1.0):
@@ -98,14 +100,17 @@ def box(cx: float, cy: float, w: float, h: float, r: float, color) -> None:
     AppKit.NSBezierPath.bezierPathWithRoundedRect_xRadius_yRadius_(NSMakeRect(cx - w / 2, cy - h / 2, w, h), r, r).fill()
 
 
-def draw_reachy(cx: float, cy: float, a: float, alpha: float, speaking: bool, gaze: tuple[float, float]) -> None:
+def draw_reachy(cx: float, cy: float, a: float, alpha: float, speaking: bool, gaze: tuple[float, float],
+                antennas: tuple[float, float] = (0.0, 0.0)) -> None:
     """A little Reachy, `a` across: who is in the headset. gaze (-1..1 right, up) moves the eyes; nothing sets it
-    yet, it is there for the headset's eye tracking."""
+    yet, it is there for the headset's eye tracking. antennas (left, right as drawn): -1 hanging down .. 1 up
+    (gestures.py)."""
     oval(cx, cy, a / 2, rgb("#2a303b", alpha))
     light, shade, dark = rgb("#f4f5f7", alpha), rgb("#d3d7de", alpha), rgb("#14171c", alpha)
-    for side in (-1, 1):   # antennas: up a little more while speaking
+    for side, v in zip((-1, 1), antennas):   # antennas: up a little more while speaking
         line = AppKit.NSBezierPath.bezierPath()
-        tip = (cx + side * a * (0.25 if speaking else 0.21), cy + a * (0.41 if speaking else 0.38))
+        v += 0.5 if speaking else 0
+        tip = (cx + side * a * (0.21 + (0.08 * v if v > 0 else -0.14 * v)), cy + a * (0.38 + (0.06 * v if v > 0 else 0.2 * v)))
         line.moveToPoint_(NSMakePoint(cx + side * a * 0.13, cy + a * 0.16))
         line.lineToPoint_(NSMakePoint(*tip))
         line.setLineWidth_(a * 0.026)
@@ -214,9 +219,9 @@ class Stage(AppKit.NSView):
                 rgb(ACCENT).setStroke()
                 border.stroke()
                 top -= ph + 8
-                pill(text, min(x + w - s.width - 34, x + w - pw - 14), top - s.height - 10, rgb(ACCENT), rgb("#1a1205"))
+                pill(text, min(x + w - s.width - 34, x + w - pw - 14), top - s.height - 10, rgb(ACCENT), rgb(INK))
             else:
-                pill(text, x + 14, top - s.height - 10, rgb(ACCENT), rgb("#1a1205"))
+                pill(text, x + 14, top - s.height - 10, rgb(ACCENT), rgb(INK))
 
 
 class RoundButton(AppKit.NSView):
@@ -237,7 +242,7 @@ class RoundButton(AppKit.NSView):
         fill = rgb(RED) if self.danger else rgb(ACCENT) if self.active else rgb(BUTTON)
         (fill.highlightWithLevel_(0.2) if self.pressed else fill).setFill()
         AppKit.NSBezierPath.bezierPathWithRoundedRect_xRadius_yRadius_(b, r, r).fill()
-        image = tinted_symbol(self.symbols, 17, rgb("#1a1205") if self.active and not self.danger else rgb("#ffffff"))
+        image = tinted_symbol(self.symbols, 17, rgb(INK) if self.active and not self.danger else rgb("#ffffff"))
         if image is not None:
             s = image.size()
             image.drawInRect_(NSMakeRect((b.size.width - s.width) / 2, (b.size.height - s.height) / 2, s.width, s.height))
@@ -305,6 +310,8 @@ class Controller(NSObject):
         self.caption = ("", "")      # the line and its translation
         self.caption_at = 0.0
         self.live = None
+        self.has_notes = False
+        self.gestures = None
         self.share_choices = []    # (source, label) per item of the share menu
         return self
 
@@ -378,7 +385,7 @@ class Controller(NSObject):
         # that wish is stronger than the window keeping its size)
         self.caption_text.setContentCompressionResistancePriority_forOrientation_(
             AppKit.NSLayoutPriorityDefaultLow, AppKit.NSLayoutConstraintOrientationHorizontal)
-        self.clock = label("", 13, color="secondaryLabelColor", width=260)
+        self.clock = label("", 13, color="secondaryLabelColor", width=60)
 
         self.buttons = {
             "share": round_button(("rectangle.inset.filled.and.person.filled", "rectangle.on.rectangle", "display"),
@@ -387,6 +394,10 @@ class Controller(NSObject):
             "remote": round_button(("globe",), "Let headsets on other networks (at home) connect", self.toggleRemote),
             "people": round_button(("person.2", "person.2.fill"), "People, pairing code and the state of the parts",
                                    self.toggleSide),
+            "mail": round_button(("envelope",), "Mail the meeting notes: opens a draft in this Mac's mail program",
+                                 self.mailNotes),
+            "gestures": round_button(("questionmark", "questionmark.circle"), "What Reachy's gestures mean",
+                                     self.showGestures),
             "key": round_button(("gearshape", "gear"), "Translation key (DeepL)", lambda: self.translationKey_(None)),
             "end": round_button(("phone.down.fill", "xmark"), "End: stops the parts and quits", self.end, danger=True),
         }
@@ -534,7 +545,7 @@ class Controller(NSObject):
         if not s.connected:
             stage.speaking = False
         stage.setNeedsDisplay_(True)
-        self.clock.setStringValue_(time.strftime("%H:%M") + (f"   ·   {s.address}" if s.address else ""))
+        self.clock.setStringValue_(time.strftime("%H:%M"))   # the address is in the side panel; eight buttons need the room
         for name, on in (("share", s.sharing), ("captions", self.captions_on), ("remote", s.remote_wanted),
                          ("people", self.side_on)):
             if self.buttons[name].active != on:
@@ -565,6 +576,8 @@ class Controller(NSObject):
         if kind == "me_vad":
             self.stage.speaking = bool(m.get("speaking"))
             self.stage.setNeedsDisplay_(True)
+        elif kind == "summary":
+            self.has_notes = bool(m.get("summary") or m.get("actions") or m.get("next_steps"))
         elif kind in ("caption", "me") and m.get("text"):
             who = "Headset: " if kind == "me" else ""
             self.caption, self.caption_at = (who + m["text"], m.get("translation") or ""), time.time()
@@ -583,6 +596,10 @@ class Controller(NSObject):
         self.live.start()
         NSTimer.scheduledTimerWithTimeInterval_target_selector_userInfo_repeats_(2.0, self, "tick:", None, True)
         self.tick_(None)
+        defaults = AppKit.NSUserDefaults.standardUserDefaults()
+        if not defaults.boolForKey_("gesturesShown"):   # the first time: the room should know how to read Reachy
+            defaults.setBool_forKey_(True, "gesturesShown")
+            self.showGestures()
 
     def tick_(self, timer) -> None:
         self.ticks += 1
@@ -698,6 +715,33 @@ class Controller(NSObject):
         self.captions_on = not self.captions_on
         self.caption_height.setConstant_(CAPTION if self.captions_on else 0)
         self.show(self.status)
+
+    @objc.python_method
+    def say(self, text: str) -> None:
+        """A word from the app itself, where the captions are."""
+        self.caption, self.caption_at = (text, ""), time.time()
+        was, self.captions_on = self.captions_on, True
+        self.show_caption()
+        self.captions_on = was
+
+    @objc.python_method
+    def mailNotes(self) -> None:
+        """The notes as a draft in this Mac's mail program: the backend runs here and opens it (mail_notes)."""
+        if not (self.live and self.live.connected):
+            self.say("No meeting notes: the captions are not running.")
+        elif not self.has_notes:
+            self.say("No meeting notes yet: they appear after the first minute of talking.")
+        elif self.live.send({"type": "mail_notes"}):
+            self.say("The meeting notes open as a draft in your mail program.")
+
+    @objc.python_method
+    def showGestures(self) -> None:
+        from . import gestures
+
+        if self.gestures and self.gestures.isVisible():
+            self.gestures.close()
+        else:
+            self.gestures = gestures.open_window()
 
     @objc.python_method
     def toggleSide(self) -> None:

@@ -47,7 +47,7 @@ public class QuickMenu : MonoBehaviour
     // What you point at or look at only gets a little lighter, as in the headsets' own menus (a soft highlight, no
     // colour of its own). A yellow frame, and yellow rows with dark text, jumped around with the eyes and made the
     // languages hard to read (headset test 2026-11-13).
-    static readonly Color Leave = new Color(0.92f, 0.26f, 0.21f);
+    static readonly Color Leave = new Color(0.90f, 0.28f, 0.30f);   // #e5484d, as "end" in the Mac app
     static readonly Color HoverFill = new Color(1, 1, 1, 0.16f), HoverEdge = new Color(1, 1, 1, 0.45f);
 
     public RoomSound room;
