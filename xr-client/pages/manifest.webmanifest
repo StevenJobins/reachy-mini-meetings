@@ -2,7 +2,7 @@
   "name": "Reachy Meetings XR",
   "short_name": "Reachy XR",
   "description": "Join a meeting through Reachy Mini from your XR headset.",
-  "start_url": "./",
+  "start_url": "./app.html",
   "scope": "./",
   "display": "standalone",
   "background_color": "#111111",

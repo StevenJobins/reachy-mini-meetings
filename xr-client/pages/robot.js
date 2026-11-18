@@ -9,10 +9,10 @@ const SILENT_TRIED = "reachy-xr-silent-signin-tried";
 /**
  * The SDK uses the current URL as OAuth redirect_uri, and HF only accepts the exact registered URL
  * (page URL without query/hash, see xr-client/README.md). A failed silent sign-in comes back with
- * ?error=..., so strip query, hash and "index.html" right before every login redirect.
+ * ?error=..., so strip query, hash and the file name (the app is app.html since 2026-11-18; the address registered is the folder, where index.html, the website, passes the answer on to app.html) right before every login redirect.
  */
 function cleanUrlForLogin() {
-  const path = location.pathname.replace(/index\.html$/, "");
+  const path = location.pathname.replace(/(index|app)\.html$/, "");
   if (location.search || location.hash || path !== location.pathname) history.replaceState(null, "", path);
 }
 

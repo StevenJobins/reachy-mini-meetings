@@ -3,232 +3,343 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Reachy Meetings XR</title>
-<meta name="theme-color" content="#0b0d12">
-<link rel="manifest" href="manifest.webmanifest">
-<link rel="icon" href="icon.svg" type="image/svg+xml">
-<link rel="apple-touch-icon" href="icon-192.png">
+<title>Reachy Meetings: be in the room, from anywhere</title>
+<meta name="description" content="Join a meeting through a Reachy Mini robot: see the room in your headset, read what is said in your language, and be there as a robot that turns its head with yours.">
+<link rel="icon" href="icon.svg">
 <style>
   :root {
-    --bg: #0b0d12; --panel: rgba(255,255,255,0.045); --line: rgba(255,255,255,0.09);
-    --fg: #eef0f4; --muted: #9aa1ad; --accent: #ff9500; --ok: #4ade80; --wait: #fbbf24; --off: #5b616e;
-    --radius: 20px;
+    --bg: #0b1220; --bg2: #101a2e; --card: #131f37; --line: #22304d;
+    --ink: #eef2f8; --soft: #a6b3c9; --dim: #6f7f9b;
+    --accent: #38bdf8; --accent-ink: #06202d; --warm: #ff9500; --good: #4ade80;
+  }
+  @media (prefers-color-scheme: light) {
+    :root {
+      --bg: #f7f9fc; --bg2: #eef2f8; --card: #ffffff; --line: #d9e0ec;
+      --ink: #0f1a2e; --soft: #47566f; --dim: #74829a;
+      --accent: #0284c7; --accent-ink: #ffffff; --warm: #d97706; --good: #15803d;
+    }
   }
   * { box-sizing: border-box; }
-  html, body { margin: 0; min-height: 100%; }
+  html { scroll-behavior: smooth; }
   body {
-    font: 16px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; color: var(--fg); background: var(--bg);
-    background-image:
-      radial-gradient(900px 500px at 10% -10%, rgba(255,149,0,0.16), transparent 60%),
-      radial-gradient(800px 600px at 110% 10%, rgba(99,102,241,0.14), transparent 60%);
-    background-attachment: fixed;
+    margin: 0; background: var(--bg); color: var(--ink);
+    font: 17px/1.6 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    -webkit-font-smoothing: antialiased;
   }
-  button, select, input { font: inherit; color: inherit; }
+  a { color: var(--accent); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  .wrap { max-width: 1080px; margin: 0 auto; padding: 0 24px; }
+  header.nav {
+    position: sticky; top: 0; z-index: 5; background: color-mix(in srgb, var(--bg) 88%, transparent);
+    backdrop-filter: blur(10px); border-bottom: 1px solid var(--line);
+  }
+  .nav .wrap { display: flex; align-items: center; gap: 28px; height: 64px; }
+  .brand { display: flex; align-items: center; gap: 10px; font-weight: 700; color: var(--ink); font-size: 18px; }
+  .brand img { width: 32px; height: 32px; border-radius: 8px; }
+  .nav nav { margin-left: auto; display: flex; gap: 24px; align-items: center; }
+  .nav nav a { color: var(--soft); font-size: 15px; }
+  .nav nav a:hover { color: var(--ink); text-decoration: none; }
+  .btn {
+    display: inline-flex; align-items: center; gap: 8px; padding: 12px 22px; border-radius: 999px;
+    background: var(--accent); color: var(--accent-ink) !important; font-weight: 650; border: 0; cursor: pointer; font-size: 16px;
+  }
+  .btn:hover { text-decoration: none; filter: brightness(1.08); }
+  .btn.ghost { background: transparent; color: var(--ink) !important; border: 1px solid var(--line); }
+  .btn.small { padding: 8px 16px; font-size: 14px; }
+  .btn.off { background: var(--bg2); color: var(--dim) !important; cursor: default; border: 1px dashed var(--line); filter: none; }
 
-  /* header */
-  header { display: flex; align-items: center; gap: 14px; padding: 16px 24px; flex-wrap: wrap; }
-  header img { width: 40px; height: 40px; }
-  header h1 { font-size: 20px; margin: 0; letter-spacing: 0.2px; }
-  header h1 span { color: var(--muted); font-weight: 400; }
-  .chips { margin-left: auto; display: flex; gap: 8px; flex-wrap: wrap; }
-  .chip { display: inline-flex; align-items: center; gap: 7px; padding: 5px 12px; border-radius: 999px;
-    background: var(--panel); border: 1px solid var(--line); font-size: 13px; color: var(--muted); }
-  .chip::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--off); }
-  .chip[data-state="ok"] { color: var(--fg); }
-  .chip[data-state="ok"]::before { background: var(--ok); box-shadow: 0 0 10px var(--ok); }
-  .chip[data-state="wait"]::before { background: var(--wait); animation: pulse 1.2s infinite; }
-  @keyframes pulse { 50% { opacity: 0.3; } }
+  .hero { padding: 84px 0 72px; }
+  .hero .wrap { display: grid; grid-template-columns: 1.1fr 0.9fr; gap: 48px; align-items: center; }
+  .eyebrow { color: var(--accent); font-weight: 650; font-size: 14px; letter-spacing: 0.08em; text-transform: uppercase; }
+  h1 { font-size: clamp(36px, 5.2vw, 58px); line-height: 1.08; margin: 14px 0 20px; letter-spacing: -0.02em; }
+  .lead { font-size: 20px; color: var(--soft); max-width: 34em; margin: 0 0 30px; }
+  .cta { display: flex; gap: 14px; flex-wrap: wrap; }
+  .scene { position: relative; }
+  .scene svg { width: 100%; height: auto; display: block; }
 
-  /* layout */
-  main { display: grid; gap: 20px; padding: 0 24px 24px; max-width: 1400px; margin: 0 auto; }
-  @media (min-width: 1000px) { main { grid-template-columns: minmax(0, 1fr) 380px; align-items: start; } }
-  @media (max-width: 600px) { header, main { padding-left: 16px; padding-right: 16px; } }
-  .card { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius);
-    backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px); }
+  section { padding: 72px 0; }
+  section.alt { background: var(--bg2); border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+  h2 { font-size: clamp(26px, 3.4vw, 36px); line-height: 1.15; margin: 0 0 12px; letter-spacing: -0.015em; }
+  .sub { color: var(--soft); max-width: 44em; margin: 0 0 40px; }
+  .grid { display: grid; gap: 20px; }
+  .g3 { grid-template-columns: repeat(3, 1fr); }
+  .g2 { grid-template-columns: repeat(2, 1fr); }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 18px; padding: 26px; }
+  .card h3 { margin: 0 0 8px; font-size: 19px; }
+  .card p { margin: 0; color: var(--soft); font-size: 16px; }
+  .num {
+    width: 34px; height: 34px; border-radius: 50%; background: var(--accent); color: var(--accent-ink);
+    display: grid; place-items: center; font-weight: 700; margin-bottom: 16px;
+  }
+  .ico { width: 30px; height: 30px; color: var(--accent); margin-bottom: 14px; }
 
-  /* stage: video + controls */
-  .stage { padding: 14px; display: flex; flex-direction: column; gap: 14px; }
-  .screen { position: relative; aspect-ratio: 16 / 9; border-radius: 14px; overflow: hidden; background: #05060a; }
-  .screen video { width: 100%; height: 100%; object-fit: cover; display: block; }
-  .screen .idle { position: absolute; inset: 0; display: none; flex-direction: column; align-items: center;
-    justify-content: center; gap: 10px; color: var(--muted); text-align: center; padding: 20px; }
-  .screen .idle img { width: 84px; height: 84px; opacity: 0.85; }
-  .screen:has(video[hidden]) .idle { display: flex; }
-  #live-caption { position: absolute; left: 50%; bottom: 18px; transform: translateX(-50%); max-width: 86%;
-    padding: 10px 18px; border-radius: 14px; background: rgba(10,12,18,0.72); backdrop-filter: blur(8px);
-    font-size: clamp(15px, 2vw, 22px); text-align: center; border: 1px solid var(--line); }
-  #live-caption[hidden] { display: none; }
-  #message { color: var(--muted); min-height: 1.5em; margin: 0 4px; }
-  .actions { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
-  .actions button { border: 1px solid var(--line); border-radius: 999px; cursor: pointer; padding: 11px 20px;
-    background: rgba(255,255,255,0.06); transition: transform .08s, background .15s; }
-  .actions button:hover { background: rgba(255,255,255,0.12); }
-  .actions button:active { transform: scale(0.97); }
-  .actions button.primary { background: var(--accent); color: #111; border-color: transparent; font-weight: 650;
-    padding: 13px 34px; font-size: 18px; box-shadow: 0 8px 28px rgba(255,149,0,0.28); }
-  .actions button.primary:hover { background: #ffa92e; }
-  [hidden] { display: none !important; }
-  /* mic: big round call-style button, red when muted */
-  .actions button#mic { display: inline-flex; align-items: center; gap: 10px; padding: 8px 20px 8px 8px; font-weight: 650;
-    background: rgba(255,255,255,0.1); }
-  #mic .mic-icon { width: 52px; height: 52px; border-radius: 50%; display: grid; place-items: center; background: rgba(255,255,255,0.14); }
-  #mic .mic-icon svg { width: 28px; height: 28px; }
-  #mic .slash { display: none; }
-  #mic:not(.muted) .mic-icon { box-shadow: 0 0 0 calc(var(--lvl, 0) * 14px) rgba(74,222,128,0.55); transition: box-shadow .08s; }
-  #volume-box { display: inline-flex; align-items: center; gap: 8px; color: var(--muted); font-size: 14px; }
-  #volume-box input { width: 120px; accent-color: var(--accent); padding: 0; }
-  #mic.muted { background: rgba(229,72,77,0.18); border-color: rgba(229,72,77,0.6); color: #ffb4b6; }
-  #mic.muted .mic-icon { background: #e5484d; color: #fff; box-shadow: 0 6px 22px rgba(229,72,77,0.45); }
-  #mic.muted .slash { display: inline; }
-  #toast { position: absolute; top: 16px; left: 50%; transform: translateX(-50%); padding: 10px 18px; border-radius: 999px;
-    background: rgba(10,12,18,0.8); border: 1px solid var(--line); font-weight: 650; backdrop-filter: blur(8px); }
+  .dl { display: flex; flex-direction: column; }
+  .dl .tag { font-size: 13px; color: var(--dim); text-transform: uppercase; letter-spacing: 0.08em; font-weight: 650; }
+  .dl h3 { font-size: 23px; margin: 6px 0 8px; }
+  .dl ul { margin: 14px 0 22px; padding-left: 20px; color: var(--soft); font-size: 15.5px; }
+  .dl li { margin: 4px 0; }
+  .dl .foot { margin-top: auto; display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+  .meta { font-size: 14px; color: var(--dim); }
+  .need { margin-top: 20px; }
+  .need h3 { font-size: 17px; }
+  .need .row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 18px; margin-top: 14px; }
+  .need b { display: block; font-size: 15px; }
+  .need span { color: var(--soft); font-size: 14.5px; }
 
-  /* side column */
-  aside { display: flex; flex-direction: column; gap: 20px; }
-  aside .card { padding: 16px 18px; }
-  .card-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 10px; }
-  .card-head h2 { font-size: 13px; margin: 0; text-transform: uppercase; letter-spacing: 1.2px; color: var(--muted); }
-  select, input { background: rgba(0,0,0,0.3); border: 1px solid var(--line); border-radius: 10px; padding: 6px 10px; }
-  #captions { max-height: 340px; overflow: auto; display: flex; flex-direction: column; gap: 10px; }
-  #captions:empty::before { content: "Captions appear here when someone speaks."; color: var(--muted); font-size: 14px; }
-  .line { display: grid; gap: 2px; }
-  .line .who { font-size: 12px; font-weight: 650; color: var(--c); }
-  .line .who::before { content: "● "; }
-  .line.partial .text { color: var(--muted); font-style: italic; }
-  .line .sub { font-size: 13px; color: var(--muted); }
-  #notes h3 { font-size: 14px; margin: 6px 0; color: var(--accent); }
-  #notes ul { margin: 0 0 8px; padding-left: 18px; }
-  #notes li { margin: 3px 0; }
-  .muted { color: var(--muted); font-size: 13px; margin: 0; }
+  ol.steps { margin: 0; padding: 0; list-style: none; counter-reset: s; display: grid; gap: 14px; }
+  ol.steps li {
+    counter-increment: s; position: relative; padding: 18px 22px 18px 66px; background: var(--card);
+    border: 1px solid var(--line); border-radius: 14px;
+  }
+  ol.steps li::before {
+    content: counter(s); position: absolute; left: 20px; top: 18px; width: 30px; height: 30px; border-radius: 50%;
+    border: 1.5px solid var(--accent); color: var(--accent); display: grid; place-items: center; font-weight: 700; font-size: 15px;
+  }
+  ol.steps b { display: block; }
+  ol.steps span { color: var(--soft); font-size: 15.5px; }
+  code { background: var(--bg2); border: 1px solid var(--line); border-radius: 6px; padding: 1px 6px; font-size: 0.88em; }
 
-  /* settings */
-  details.card > summary { cursor: pointer; color: var(--muted); list-style: none; }
-  details.card > summary::before { content: "⚙  "; }
-  .settings-body { display: grid; gap: 12px; margin-top: 12px; font-size: 14px; }
-  .settings-body > * { min-width: 0; }   /* grid items may shrink below their content, so long lines wrap */
-  .settings-body select, .settings-body input:not([type=checkbox]):not([type=range]) { width: 100%; min-width: 0; text-overflow: ellipsis; }
-  .settings-body label { display: grid; gap: 4px; color: var(--muted); }
-  .settings-body label.check { display: flex; align-items: center; gap: 8px; }
-  .settings-body .row { display: flex; gap: 8px; flex-wrap: wrap; }
-  .settings-body button { border: 1px solid var(--line); background: rgba(255,255,255,0.06); border-radius: 10px; padding: 6px 12px; cursor: pointer; }
-  #debug-text, #log, #prev-log { font: 12px ui-monospace, monospace; white-space: pre-wrap; overflow-wrap: anywhere; }
-  #debug-text { color: #86efac; background: rgba(0,0,0,0.3); border-radius: 10px; padding: 8px 10px; line-height: 1.45; }
-  #log, #prev-log { max-height: 200px; overflow: auto; color: var(--muted); }
+  details { border-bottom: 1px solid var(--line); padding: 16px 0; }
+  details summary { cursor: pointer; font-weight: 650; list-style: none; display: flex; justify-content: space-between; gap: 16px; }
+  details summary::after { content: "+"; color: var(--accent); font-weight: 400; font-size: 22px; line-height: 1; }
+  details[open] summary::after { content: "–"; }
+  details p { color: var(--soft); margin: 10px 0 0; max-width: 46em; }
+
+  footer { padding: 40px 0 56px; color: var(--dim); font-size: 14.5px; }
+  footer .wrap { display: flex; gap: 24px; justify-content: space-between; flex-wrap: wrap; }
+  footer p { margin: 0 0 6px; max-width: 40em; }
+
+  @media (max-width: 860px) {
+    .hero { padding: 48px 0; }
+    .hero .wrap, .g3, .g2 { grid-template-columns: 1fr; }
+    .need .row { grid-template-columns: 1fr 1fr; }
+    .nav nav a:not(.btn) { display: none; }
+    section { padding: 52px 0; }
+  }
 </style>
 </head>
 <body>
-<header>
-  <img src="icon.svg" alt="">
-  <h1>Reachy Meetings <span>XR</span></h1>
-  <span id="version" class="muted"></span>
-  <div class="chips">
-    <span class="chip" id="chip-user" title="Hugging Face account of this page. The robot must be registered with the same account (Settings → Sign out to switch)."><span>Not signed in</span></span>
-    <span class="chip" id="chip-robot"><span>Robot</span></span>
-    <span class="chip" id="chip-camera"><span>Camera</span></span>
-    <span class="chip" id="chip-captions"><span>Captions</span></span>
-    <span class="chip" id="chip-xr"><span>VR</span></span>
+
+<header class="nav">
+  <div class="wrap">
+    <a class="brand" href="#top"><img src="icon.svg" alt="">Reachy Meetings</a>
+    <nav>
+      <a href="#how">How it works</a>
+      <a href="#features">Features</a>
+      <a href="#setup">Setup</a>
+      <a href="#faq">Questions</a>
+      <a class="btn small" href="#download">Download</a>
+    </nav>
   </div>
 </header>
 
-<main>
-  <section class="card stage">
-    <div class="screen">
-      <video id="video" autoplay playsinline muted></video>
-      <div class="idle"><img src="icon.svg" alt=""><div>Camera is off while Reachy sleeps</div></div>
-      <div id="live-caption" hidden></div>
-      <div id="toast" hidden></div>
+<main id="top">
+  <div class="hero">
+    <div class="wrap">
+      <div>
+        <div class="eyebrow">Meetings through a robot</div>
+        <h1>Be in the room, from anywhere.</h1>
+        <p class="lead">A small robot sits at the table for you. In your headset you see the room through its eyes and read what is said in your own language. When you turn your head, it turns its head.</p>
+        <div class="cta">
+          <a class="btn" href="#download">Download the apps</a>
+          <a class="btn ghost" href="#how">See how it works</a>
+        </div>
+      </div>
+      <div class="scene" aria-hidden="true">
+        <svg viewBox="0 0 500 380" role="img">
+          <rect x="20" y="342" width="460" height="12" rx="6" fill="var(--line)"/>
+          <g transform="translate(170 120)">
+            <line x1="52" y1="34" x2="30" y2="-14" stroke="var(--warm)" stroke-width="7" stroke-linecap="round"/>
+            <line x1="108" y1="34" x2="130" y2="-14" stroke="var(--warm)" stroke-width="7" stroke-linecap="round"/>
+            <circle cx="30" cy="-16" r="8" fill="var(--warm)"/>
+            <circle cx="130" cy="-16" r="8" fill="var(--warm)"/>
+            <rect x="0" y="28" width="160" height="124" rx="58" fill="#f2f2f2"/>
+            <rect x="18" y="62" width="124" height="54" rx="27" fill="#111"/>
+            <circle cx="52" cy="89" r="15" fill="var(--warm)"/>
+            <circle cx="108" cy="89" r="15" fill="var(--warm)"/>
+            <rect x="46" y="152" width="68" height="70" rx="20" fill="#dfe3ea"/>
+          </g>
+          <g font-family="-apple-system, Segoe UI, Helvetica, Arial, sans-serif">
+            <g transform="translate(0 14)">
+              <rect width="188" height="62" rx="18" fill="var(--card)" stroke="var(--line)"/>
+              <text x="18" y="26" font-size="12" fill="var(--dim)">Anna · DE → EN</text>
+              <text x="18" y="46" font-size="15" font-weight="600" fill="var(--ink)">Shall we start at ten?</text>
+            </g>
+            <g transform="translate(310 262)">
+              <rect width="186" height="62" rx="18" fill="var(--accent)"/>
+              <text x="18" y="26" font-size="12" fill="var(--accent-ink)" opacity="0.75">You, spoken by Reachy</text>
+              <text x="18" y="46" font-size="15" font-weight="600" fill="var(--accent-ink)">Ja, das passt mir gut.</text>
+            </g>
+            <g transform="translate(0 250)">
+              <rect width="172" height="62" rx="14" fill="var(--card)" stroke="var(--line)"/>
+              <rect x="12" y="12" width="4" height="38" rx="2" fill="var(--warm)"/>
+              <text x="26" y="27" font-size="12" font-weight="700" fill="var(--ink)">Meeting notes</text>
+              <text x="26" y="45" font-size="11.5" fill="var(--soft)">□ Kevin: sign the release</text>
+            </g>
+          </g>
+        </svg>
+      </div>
     </div>
-    <div id="message">Loading…</div>
-    <div class="actions">
-      <button id="wake" class="primary" hidden>Wake up</button>
-      <button id="start" class="primary" hidden>Start</button>
-      <button id="mic" hidden title="Mute (M)">
-        <span class="mic-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <rect x="9" y="2" width="6" height="12" rx="3" fill="currentColor"/><path d="M5 10a7 7 0 0 0 14 0"/><path d="M12 17v4"/>
-          <path class="slash" d="M3 3l18 18" stroke-width="2.5"/></svg></span>
-        <span class="mic-label">Mute</span>
-      </button>
-      <label id="volume-box" hidden title="Robot speaker volume (also by voice: &quot;Reachy, volume 7&quot;)">🔊
-        <input id="volume" type="range" min="0" max="100" step="5" value="50"><span id="volume-val">–</span></label>
-      <button id="talk" hidden>🙋 I want to talk</button>
-      <button id="laugh" hidden title="Reachy laughs (key L)">😂 Laugh</button>
-      <button id="mute" hidden>🔇 Robot muted: tap to unmute</button>
-      <button id="sleep" hidden>Sleep</button>
-      <button id="signin" class="primary" hidden>Sign in with Hugging Face</button>
-      <button id="retry" class="primary" hidden>Try again</button>
+  </div>
+
+  <section id="how" class="alt">
+    <div class="wrap">
+      <h2>How it works</h2>
+      <p class="sub">Three things work together: the robot on the meeting table, a laptop next to it, and your headset wherever you are.</p>
+      <div class="grid g3">
+        <div class="card"><div class="num">1</div><h3>Reachy sits at the table</h3><p>A Reachy Mini is your place in the room. Its camera and microphones are your eyes and ears; its head and antennas show the others what you do.</p></div>
+        <div class="card"><div class="num">2</div><h3>The laptop does the work</h3><p>The Mac app next to the robot transcribes and translates what is said, writes the meeting notes and lets your headset in with a pairing code.</p></div>
+        <div class="card"><div class="num">3</div><h3>You put on the headset</h3><p>You see the room, with a speech bubble above whoever speaks. Everything is worked with one gesture, a pinch of thumb and index finger.</p></div>
+      </div>
     </div>
   </section>
 
-  <aside>
-    <section class="card">
-      <div class="card-head">
-        <h2>Live transcript</h2>
-        <select id="caption-mode" title="What the speech bubbles show">
-          <option value="both">Translation + original</option>
-          <option value="translation">Translation only</option>
-          <option value="original">Original only</option>
-        </select>
-      </div>
-      <div id="captions"></div>
-    </section>
-
-    <section class="card">
-      <div class="card-head"><h2>Meeting notes</h2></div>
-      <div id="notes"><p class="muted">The summary and action items appear after the first minute of talking.</p></div>
-    </section>
-
-    <details class="card">
-      <summary>Settings &amp; debug</summary>
-      <div class="settings-body">
-        <div class="row" title="After wake-up Reachy looks around once (~20 s); the frames form a world-locked room panorama in VR, with depth from the laptop if available">
-          <label class="check"><input type="checkbox" id="scan-after-wake"> Scan the room after wake-up</label>
-          <label class="check"><input type="checkbox" id="room-visible"> Show the scanned room in VR</label>
-          <button id="scan-now">Scan room now</button></div>
-        <div class="row" title="QR loop: this page shows a QR with the current time, Reachy films the screen, the page reads it back. Run it on the computer whose screen Reachy looks at.">
-          <button id="latency-open">📏 Measure camera latency (QR here)</button>
-          <button id="latency-remote" title="For the headset: open qr.html on the robot laptop, Reachy looks at that screen, this device reads the QR (clocks synced via the caption backend)">📏 Measure on this device (QR on robot laptop)</button>
-          <a href="qr.html" title="Opens the QR page in this tab, with this tab's Hugging Face sign-in (needed to reach the caption backend through the tunnel from another computer)">Open the QR page (other screen) →</a></div>
-        <label>Camera model (lens) <select id="camera-model" title="How the camera image maps to directions: VR sphere, bubbles, face following">
-          <option value="auto">Auto: calibrated (camera.json) if present, else estimate</option><option value="estimate">Estimate: pinhole, 54° vertical</option>
-          <option value="factory">Pollen factory calibration (unverified for the stream)</option><option value="calibrated">Calibrated (camera.json)</option></select></label>
-        <div class="row" title="Camera calibration: hold the checkerboard in front of Reachy at many angles and distances, then run robot/scripts/calibrate_camera.py on the downloaded frames">
-          <button id="calib-shot">Capture calibration frame</button><button id="calib-auto">Auto-capture every 2 s: off</button>
-          <a href="calib-board.html" target="_blank" rel="noopener">Checkerboard ↗</a><span id="calib-count" class="muted"></span></div>
-        <label>VR view <select id="view-mode" title="World-locked hides the robot's delay (reprojection); comfort keeps the window calm in front of you">
-          <option value="world">World-locked (reprojection, default)</option><option value="comfort">Comfort (window follows you calmly)</option></select></label>
-        <label>Perf test <select id="perf-mode" title="Switch one rendering cost off to find what limits the VR frame rate (reloads the page)">
-          <option value="">Off (normal)</option><option value="scale50">Resolution 50 %</option><option value="scale100">Resolution 100 %</option>
-          <option value="noaa">No anti-aliasing</option><option value="nosky">No sky and floor</option><option value="noroom">No room panorama</option>
-          <option value="novideo">No video window</option>
-          <option value="vidfreeze">Video: frozen frame</option><option value="vidhidden">Video: hidden, still copied</option><option value="empty">Empty (no sky, panorama, video)</option></select></label>
-        <label>Reachy speaks for you <select id="meeting-lang" title="Translate me: the language Reachy says your words in">
-          <option value="auto">Auto: the language most spoken in the room</option><option value="de">German</option>
-          <option value="en">English</option><option value="fr">French</option><option value="it">Italian</option>
-          <option value="es">Spanish</option></select></label>
-        <label>Speech bubbles in <select id="bubble-lang" title="The language the captions are translated into">
-          <option value="de">German</option><option value="en">English</option><option value="fr">French</option>
-          <option value="it">Italian</option><option value="es">Spanish</option></select></label>
-        <label>Caption server <input id="captions-url" placeholder="automatic (localhost, else wireless tunnel)"></label>
-        <label>Trusted backend keys <input id="tunnel-keys" placeholder="another laptop's key (logged by reachy-captions --tunnel)"></label>
-        <label class="check"><input type="checkbox" id="show-faces"> Show detected faces (frame in the video)</label>
-        <div class="row">
-          <button id="recenter">Recenter</button>
-          <button id="signout">Sign out</button>
+  <section id="features">
+    <div class="wrap">
+      <h2>What you get</h2>
+      <p class="sub">Built for the person who is not in the room, so that they follow the meeting as well as those who are.</p>
+      <div class="grid g3">
+        <div class="card">
+          <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5h16v11H9l-5 4z"/><path d="M8 9h8M8 12h5"/></svg>
+          <h3>Speech bubbles in your language</h3><p>What is said appears above the speaker, translated into German, English, French, Italian or Spanish.</p>
         </div>
-        <div id="debug-text"></div>
-        <div id="log"></div>
-        <details><summary>Previous session log (survives a crash)</summary><div id="prev-log"></div></details>
+        <div class="card">
+          <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h8M8 4v2M6 6c0 4 3 7 6 8M11 6c0 4-3 7-7 8"/><path d="M13 20l4-9 4 9M14.5 17h5"/></svg>
+          <h3>Translate me</h3><p>Speak your own language. Reachy says your sentences in the language of the room, or lets your own voice through.</p>
+        </div>
+        <div class="card">
+          <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="9" width="14" height="10" rx="5"/><path d="M9 9L7.5 4M15 9l1.5-5"/><circle cx="10" cy="14" r="1"/><circle cx="14" cy="14" r="1"/></svg>
+          <h3>A body in the room</h3><p>Reachy follows your head. Raise a hand and it waves for the word; a nod, a head shake or a thumbs-up shows on its antennas.</p>
+        </div>
+        <div class="card">
+          <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="3" width="14" height="18" rx="2"/><path d="M9 8h6M9 12h6M9 16h3"/></svg>
+          <h3>Meeting notes, written for you</h3><p>A running summary, who does what by when, and the next steps. One pinch sends them to the laptop as a mail draft.</p>
+        </div>
+        <div class="card">
+          <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="12" rx="2"/><path d="M8 20h8M12 16v4"/></svg>
+          <h3>Shared screen</h3><p>The room shares a screen, an app or a single window from the laptop, and it hangs next to the picture in your headset.</p>
+        </div>
+        <div class="card">
+          <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c3 3 3 15 0 18M12 3c-3 3-3 15 0 18"/></svg>
+          <h3>From the same Wi-Fi or from home</h3><p>Pair the headset once with a six-digit code. One switch in the Mac app opens the meeting to headsets on other networks.</p>
+        </div>
       </div>
-    </details>
-  </aside>
+    </div>
+  </section>
+
+  <section id="download" class="alt">
+    <div class="wrap">
+      <h2>Download</h2>
+      <p class="sub">You need both apps: one on the Mac next to the robot, one on the headset. They are free, and the source is open.</p>
+      <div class="grid g2">
+        <div class="card dl">
+          <div class="tag">For the laptop next to Reachy</div>
+          <h3>Reachy Meetings for Mac</h3>
+          <p>Starts everything the meeting needs, shows the pairing code and who is connected, and shares your screen.</p>
+          <ul>
+            <li>Mac with Apple silicon</li>
+            <li>Reachy Mini Control installed</li>
+            <li>Updates itself</li>
+          </ul>
+          <div class="foot">
+            <a class="btn off" id="dl-mac" aria-disabled="true">Not available yet</a>
+            <span class="meta" id="meta-mac"></span>
+          </div>
+        </div>
+        <div class="card dl">
+          <div class="tag">For the remote person</div>
+          <h3>Reachy Meetings for the headset</h3>
+          <p>The view of the room, the speech bubbles, the menu and the notes. A guided tour shows the gestures on the first start.</p>
+          <ul>
+            <li>Samsung Galaxy XR (Android XR)</li>
+            <li>Hand tracking, no controllers needed</li>
+            <li>Installed as an APK file for now</li>
+          </ul>
+          <div class="foot">
+            <a class="btn off" id="dl-apk" aria-disabled="true">Not available yet</a>
+            <span class="meta" id="meta-apk"></span>
+          </div>
+        </div>
+      </div>
+      <div class="card need">
+        <h3>What else you need</h3>
+        <div class="row">
+          <div><b>A Reachy Mini</b><span>The robot by Pollen Robotics, connected to the Mac by USB.</span></div>
+          <div><b>A DeepL key</b><span>For the translation. The free plan is enough to start.</span></div>
+          <div><b>A Gemini key</b><span>Optional, for the meeting notes. Free from Google AI Studio.</span></div>
+          <div><b>Good Wi-Fi</b><span>Video and sound go live to the headset; 5 GHz in the room helps.</span></div>
+        </div>
+      </div>
+      <p class="meta" style="margin-top:18px">Source code and earlier versions: <a href="https://github.com/StevenJobins/reachy-mini-meetings">github.com/StevenJobins/reachy-mini-meetings</a></p>
+    </div>
+  </section>
+
+  <section id="setup">
+    <div class="wrap">
+      <h2>Set up in ten minutes</h2>
+      <p class="sub">Once per laptop and headset. After that, opening both apps is all it takes.</p>
+      <ol class="steps">
+        <li><b>Connect Reachy Mini to the Mac</b><span>Plug it in by USB and install Reachy Mini Control from Pollen Robotics.</span></li>
+        <li><b>Open Reachy Meetings on the Mac</b><span>Drag it to Applications and open it. macOS asks once for the microphone, the camera and the local network. Enter your DeepL key with the gear button.</span></li>
+        <li><b>Install the app on the headset</b><span>Until it is in the store: switch on developer mode on the headset, connect it to a computer and run <code>adb install ReachyMeetings.apk</code>.</span></li>
+        <li><b>Pair the headset</b><span>Open the app in the headset and type the six-digit code the Mac app shows. The headset is remembered from then on.</span></li>
+        <li><b>Take the tour</b><span>The first start shows every gesture and lets you practise it, while Reachy wakes up and looks around the room.</span></li>
+      </ol>
+    </div>
+  </section>
+
+  <section id="faq" class="alt">
+    <div class="wrap">
+      <h2>Questions</h2>
+      <p class="sub">The short answers. The details are in the repository.</p>
+      <details><summary>Where does what is said in the room go?</summary><p>Speech is turned into text on the Mac itself. The text goes to DeepL for translation and, if you set a Gemini key, to Google for the meeting notes. On Google's free plan the content may be used to improve its products, so leave the notes off for confidential meetings. Video and sound travel from the laptop straight to the headset.</p></details>
+      <details><summary>Does it work without a Reachy Mini?</summary><p>No. The robot is the camera, the microphones and your presence in the room. Without it the apps have nothing to connect to.</p></details>
+      <details><summary>Which headsets work?</summary><p>The app is built and tested on the Samsung Galaxy XR. It needs hand tracking; other Android headsets are untested.</p></details>
+      <details><summary>Can several people join through one robot?</summary><p>One person at a time sees through the robot and turns its head. Several headsets can be paired with the same laptop.</p></details>
+      <details><summary>How good is the translation live?</summary><p>A sentence appears about a second and a half after it was said. Names and technical terms can come out wrong, as with any live transcription.</p></details>
+    </div>
+  </section>
 </main>
 
-<script type="importmap">
-{ "imports": {
-  "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
-  "reachy": "https://cdn.jsdelivr.net/npm/@pollen-robotics/reachy-mini-sdk@1.11.0/+esm"
-} }
+<footer>
+  <div class="wrap">
+    <div>
+      <p><b style="color:var(--soft)">Reachy Meetings</b> began as a Mixed Reality course project at ETH Zurich.</p>
+      <p>Reachy Mini is a product of Pollen Robotics. This project is independent of Pollen Robotics.</p>
+    </div>
+    <div>
+      <p><a href="https://github.com/StevenJobins/reachy-mini-meetings">Source on GitHub</a></p>
+      <p><a href="https://github.com/StevenJobins/reachy-mini-meetings/issues">Report a problem</a></p>
+      <p><a href="app.html">The earlier web app for headsets</a></p>
+    </div>
+  </div>
+</footer>
+
+<script>
+  // The headset web app signs in through Hugging Face, which sends people back to this address: pass them on
+  if (/[?&]code=/.test(location.search) && /[?&]state=/.test(location.search)) location.replace("app.html" + location.search);
+
+  // The downloads are the files of the GitHub release tagged "downloads" (not the newest release: that one carries
+  // the Mac app's own code updates). A file that is not there yet leaves its button as "Not available yet".
+  const FILES = { "dl-mac": /\.(dmg|zip)$/i, "dl-apk": /\.apk$/i };
+  const LABEL = { "dl-mac": "Download for Mac", "dl-apk": "Download the APK" };
+  fetch("https://api.github.com/repos/StevenJobins/reachy-mini-meetings/releases/tags/downloads")
+    .then(r => r.ok ? r.json() : null)
+    .then(release => {
+      if (!release) return;
+      for (const [id, pattern] of Object.entries(FILES)) {
+        const file = release.assets.find(a => pattern.test(a.name));
+        if (!file) continue;
+        const button = document.getElementById(id);
+        button.href = file.browser_download_url;
+        button.textContent = LABEL[id];
+        button.classList.remove("off");
+        button.removeAttribute("aria-disabled");
+        const date = new Date(file.updated_at).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
+        document.getElementById(id.replace("dl-", "meta-")).textContent = `${Math.round(file.size / 1048576)} MB · ${date}`;
+      }
+    })
+    .catch(() => {});
 </script>
-<script type="module" src="app.js"></script>
 </body>
 </html>
