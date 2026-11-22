@@ -1,0 +1,682 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Multisensory Features · Paper Presentation</title>
+<link href="../midterm/vendor/fonts.css" rel="stylesheet">   <!-- the midterm deck's local font copies: runs without internet -->
+<style>
+  :root {
+    --bg: #070b16; --panel: rgba(255,255,255,.045); --panel2: rgba(255,255,255,.075);
+    --line: rgba(255,255,255,.11); --text: #e9edf6; --muted: #8d97ad; --dim: #5d6782;
+    --vid: #38bdf8; --aud: #f472b6; --fuse: #a78bfa; --ok: #4ade80; --orange: #ff9f2e;
+    --head: "Space Grotesk", system-ui, sans-serif; --body: "Inter", system-ui, sans-serif; --mono: "JetBrains Mono", ui-monospace, monospace;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text); font-family: var(--body); overflow: hidden; }
+  #stage { position: fixed; inset: 0; overflow: hidden; }
+  #deck { position: absolute; left: 50%; top: 50%; width: 1600px; height: 900px; transform-origin: center; }
+  .slide { position: absolute; inset: 0; padding: 62px 90px; opacity: 0; visibility: hidden; transition: opacity .55s ease, transform .55s ease, visibility 0s .55s; transform: translateX(40px);
+    background: radial-gradient(1200px 700px at 85% -10%, rgba(244,114,182,.10), transparent 60%), radial-gradient(900px 600px at -10% 110%, rgba(56,189,248,.11), transparent 60%), var(--bg); overflow: hidden; }
+  .slide.active { opacity: 1; visibility: visible; transform: none; transition: opacity .55s ease, transform .55s ease, visibility 0s; }
+  .slide.past { transform: translateX(-40px); }
+  .slide::before { content: ""; position: absolute; inset: 0; pointer-events: none; opacity: .5;
+    background-image: linear-gradient(rgba(255,255,255,.035) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,.035) 1px, transparent 1px); background-size: 40px 40px;
+    mask-image: radial-gradient(ellipse at center, black 30%, transparent 85%); }
+  .slide > * { position: relative; }
+  .kicker { font: 600 15px/1 var(--mono); letter-spacing: .14em; text-transform: uppercase; color: var(--aud); margin-bottom: 14px; }
+  h1 { font: 700 92px/1.0 var(--head); margin: 0; letter-spacing: -.02em; }
+  h2 { font: 700 54px/1.08 var(--head); margin: 0 0 26px; letter-spacing: -.015em; }
+  h3 { font: 600 23px/1.2 var(--head); margin: 0 0 8px; }
+  p, li { font-size: 20px; line-height: 1.42; color: #cfd6e6; }
+  b { color: #fff; }
+  .muted { color: var(--muted); }
+  .grad { background: linear-gradient(90deg, #7dd3fc, #a78bfa 50%, #f472b6); -webkit-background-clip: text; background-clip: text; color: transparent; }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 20px; padding: 20px 24px; backdrop-filter: blur(6px); }
+  .chip { display: inline-flex; align-items: center; gap: 8px; padding: 8px 14px; border-radius: 999px; font: 600 15px/1 var(--mono); border: 1px solid var(--line); background: var(--panel2); color: #dbe2f0; }
+  .footer { position: absolute; left: 90px; right: 90px; bottom: 24px; display: flex; justify-content: space-between; font: 500 13px var(--mono); color: var(--dim); }
+  /* a line of the released code, with the file it is from */
+  .code { display: block; font: 500 14.5px/1.5 var(--mono); color: #d6ccff; background: rgba(167,139,250,.09); border: 1px solid rgba(167,139,250,.22); border-radius: 10px; padding: 8px 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .code i { font-style: normal; color: var(--fuse); font-weight: 700; margin-right: 10px; }
+  .code u { text-decoration: none; color: var(--muted); margin-left: 10px; font-family: var(--body); font-size: 15px; }
+
+  /* entrance animations, replayed every time a slide becomes active */
+  .a { opacity: 0; }
+  .slide.active .a { animation: rise .8s cubic-bezier(.2,.75,.2,1) var(--d, 0s) both; }
+  .slide.active .a.pop { animation-name: pop; }
+  .slide.active .a.fade { animation-name: fade; }
+  @keyframes rise { from { opacity: 0; transform: translateY(26px); } to { opacity: 1; transform: none; } }
+  @keyframes pop { from { opacity: 0; transform: scale(.86); } to { opacity: 1; transform: none; } }
+  @keyframes fade { from { opacity: 0; } to { opacity: 1; } }
+  .slide.active .draw { stroke-dasharray: var(--len, 400); stroke-dashoffset: var(--len, 400); animation: draw 1s ease var(--d, 0s) forwards; }
+  @keyframes draw { to { stroke-dashoffset: 0; } }
+
+  /* progress + nav + notes */
+  #progress { position: fixed; left: 0; bottom: 0; height: 3px; background: linear-gradient(90deg, var(--vid), var(--fuse), var(--aud)); transition: width .5s ease; z-index: 5; }
+  #nav { position: fixed; right: 16px; top: 12px; display: flex; gap: 6px; z-index: 6; opacity: .25; transition: opacity .2s; }
+  #nav:hover { opacity: 1; }
+  #nav button { background: rgba(255,255,255,.08); color: var(--text); border: 1px solid var(--line); border-radius: 10px; font: 600 13px var(--mono); padding: 7px 10px; cursor: pointer; }
+  #nav button.on { border-color: var(--ok); color: var(--ok); }
+  #notes { position: fixed; left: 50%; bottom: 18px; transform: translateX(-50%); width: min(1100px, 94vw); background: rgba(10,14,28,.94); border: 1px solid var(--line); border-radius: 16px;
+    padding: 16px 20px; z-index: 7; display: none; font-size: 17px; line-height: 1.5; color: #dbe2f0; box-shadow: 0 20px 60px rgba(0,0,0,.5); }
+  #notes.show { display: block; }
+  #notes .meta { display: flex; justify-content: space-between; font: 600 13px var(--mono); color: var(--aud); margin-bottom: 8px; }
+  #notes-text { white-space: pre-line; }
+  aside.notes { display: none; }
+  /* presenter view (?presenter): slide on top, notes below */
+  html.presenter #deck { top: 25vh; }
+  html.presenter #nav-presenter { display: none; }
+  html.presenter #notes { display: block; left: 16px; right: 16px; top: calc(50vh + 8px); bottom: 16px; width: auto; transform: none; overflow: auto; font-size: 23px; line-height: 1.5; }
+  html.presenter #notes .meta, html.presenter #notes-next { font-size: 17px; }
+
+  /* the sync demo (slides 1 and 2): a bouncing ball on top, its soundtrack below */
+  .scope { position: relative; border-radius: 22px; border: 1px solid var(--line); background: rgba(5,8,18,.78); overflow: hidden; cursor: pointer; }
+  .scope canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+  .scope .read { position: absolute; left: 30px; right: 30px; bottom: 16px; font: 500 18px var(--mono); color: var(--muted); white-space: nowrap; }
+  .scope .read b { font-weight: 700; margin-right: 12px; font-size: 21px; }
+  .good { color: var(--ok); } .bad { color: var(--aud); }
+  .btns { display: flex; gap: 10px; }
+  .btn { font: 600 16px var(--mono); padding: 11px 18px; border-radius: 12px; border: 1px solid var(--line); background: var(--panel2); color: var(--text); cursor: pointer; }
+  .btn.on { border-color: var(--aud); background: rgba(244,114,182,.15); }
+  .btn.on.ok { border-color: var(--ok); background: rgba(74,222,128,.13); }
+  .key { font: 600 13px var(--mono); color: var(--dim); border: 1px solid var(--line); border-radius: 6px; padding: 3px 7px; }
+
+  /* ---------- 1 title ---------- */
+  #s1 .left { position: absolute; left: 90px; top: 132px; width: 740px; }
+  #s1 .paper { margin: 36px 0 8px; font: 600 27px/1.3 var(--head); color: #e4e9f4; }
+  #s1 .meta { font: 500 18px var(--mono); color: var(--muted); }
+  #s1 .who { margin-top: 44px; display: flex; gap: 12px; flex-wrap: wrap; }
+  #s1 .who .chip { font-size: 16px; padding: 10px 16px; }
+  #s1 .scope { position: absolute; right: 80px; top: 150px; width: 680px; height: 540px; }
+
+  /* ---------- 2 the trick ---------- */
+  #s2 .grid { display: grid; grid-template-columns: 1000px 1fr; gap: 30px; }
+  #s2 .scope { height: 540px; }
+  #s2 .ctrl { display: flex; align-items: center; gap: 14px; margin-top: 14px; }
+  #s2 .ctrl .code { flex: 1; }
+  #s2 .col { display: flex; flex-direction: column; gap: 16px; }
+  #s2 .col .card { flex: 1; display: flex; flex-direction: column; justify-content: center; }
+  .big { font: 700 66px/1 var(--head); letter-spacing: -.03em; }
+  .cap { font: 500 16px/1.35 var(--mono); color: var(--muted); margin-top: 10px; }
+  .three { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; text-align: center; }
+  .three b { display: block; font: 700 35px/1 var(--head); letter-spacing: -.02em; }
+  .three span { display: block; font: 500 14.5px var(--mono); color: var(--muted); margin-top: 8px; }
+  #s2 .why p { margin: 0; font-size: 19px; }
+
+  /* ---------- 3 network + code ---------- */
+  #s3 .grid { display: grid; grid-template-columns: 900px 1fr; gap: 40px; }
+  #arch { width: 900px; height: 650px; margin-top: -4px; }
+  #arch .base { fill: #0a0f1d; }
+  #arch .box { stroke-width: 1.6; }
+  #arch .t { font: 600 19px var(--head); fill: #fff; }
+  #arch .sm { font: 500 14.5px var(--mono); fill: #aab3c7; }
+  #arch .lbl { font: 700 13px var(--mono); letter-spacing: .12em; }
+  #arch .link { fill: none; stroke-width: 3; }
+  #s3 .col { display: flex; flex-direction: column; gap: 14px; padding-top: 6px; }
+  .from { font: 600 13.5px var(--mono); color: var(--fuse); letter-spacing: .12em; text-transform: uppercase; }
+  .gem { padding: 16px 18px; }
+  .gem h3 { font-size: 21px; }
+  .gem p { margin: 0 0 10px; font-size: 17px; line-height: 1.35; color: var(--muted); }
+  .gem .code { font-size: 13.5px; }
+  .cost { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 4px; }
+
+  /* ---------- 4 what it learned ---------- */
+  #s4 .grid { display: grid; grid-template-columns: 820px 1fr; gap: 44px; }
+  .camwrap { position: relative; }
+  .camwrap img { width: 820px; height: 450px; display: block; border-radius: 16px; border: 1px solid var(--line); }
+  .camlbl { position: absolute; left: 10px; font: 700 14px var(--mono); color: #fff; background: rgba(7,11,22,.8); padding: 5px 10px; border-radius: 8px; }
+  .credit { font: 500 12.5px var(--mono); color: var(--dim); margin: 8px 0 12px; }
+  #s4 h3 { margin-bottom: 14px; }
+  .bars { display: flex; flex-direction: column; gap: 10px; }
+  .bar { display: grid; grid-template-columns: 236px 1fr 54px; align-items: center; gap: 12px; font-size: 16.5px; color: #cfd6e6; }
+  .bar .trk { height: 28px; border-radius: 7px; background: rgba(255,255,255,.05); overflow: hidden; }
+  .bar .fill { height: 100%; width: 0; border-radius: 7px; background: rgba(148,163,184,.45); }
+  .slide.active .bar .fill { animation: grow 1.1s cubic-bezier(.2,.75,.2,1) var(--d, .3s) forwards; }
+  @keyframes grow { to { width: var(--w); } }
+  .bar .val { font: 700 17px var(--mono); text-align: right; }
+  .bar.me { color: #fff; font-weight: 700; }
+  .bar.me .fill { background: linear-gradient(90deg, var(--vid), var(--fuse), var(--aud)); }
+  .bar.sup .fill { background: repeating-linear-gradient(45deg, rgba(148,163,184,.34) 0 8px, rgba(148,163,184,.16) 8px 16px); }
+  .grp { font: 600 12px var(--mono); letter-spacing: .12em; text-transform: uppercase; color: var(--dim); margin: 8px 0 0; }
+  .delta { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-top: 24px; }
+  .delta .card { padding: 16px 18px; }
+  .delta b { font: 700 48px/1 var(--head); letter-spacing: -.02em; }
+  .delta span { display: block; font-size: 16.5px; color: var(--muted); margin-top: 6px; line-height: 1.3; }
+
+  /* ---------- 5 separation + our take ---------- */
+  #s5 .grid { display: grid; grid-template-columns: 800px 1fr; gap: 40px; }
+  .sep { position: relative; width: 800px; border-radius: 18px; overflow: hidden; border: 1px solid var(--line); background: #03050c; }
+  .sep .frames { position: relative; height: 315px; }
+  .sep .specs { position: relative; height: 170px; border-top: 1px solid var(--line); }
+  .sep img { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; transition: opacity .5s; }
+  .sep img.show { opacity: 1; }
+  .sep .tag { position: absolute; left: 12px; top: 10px; font: 600 12.5px var(--mono); letter-spacing: .1em; text-transform: uppercase; color: #cbd5e1; background: rgba(3,5,12,.72); padding: 4px 9px; border-radius: 7px; z-index: 1; }
+  .sepctl { display: flex; align-items: center; gap: 12px; margin-top: 14px; }
+  .sep #sep-out { left: auto; right: 12px; color: var(--ok); text-transform: none; letter-spacing: 0; font-size: 14.5px; }
+  #s5 .btn { white-space: nowrap; }
+  #sep-yt { margin-left: auto; font: 600 14px var(--mono); color: var(--muted); text-decoration: none; border: 1px solid var(--line); border-radius: 10px; padding: 8px 12px; white-space: nowrap; }
+  #sep-yt:hover { color: #fff; }
+  #s5 .under { display: flex; gap: 10px; margin-top: 14px; align-items: center; justify-content: space-between; }
+  #s5 .under .code { font-size: 14px; }
+  #s5 .col { display: flex; flex-direction: column; gap: 16px; }
+  #s5 ul { margin: 6px 0 0; padding-left: 22px; }
+  #s5 li { font-size: 20px; line-height: 1.38; margin: 7px 0; }
+  #s5 .us { border-color: rgba(255,159,46,.45); }
+  #s5 .us h3 { color: var(--orange); }
+  #s5 .take { font: 600 28px/1.3 var(--head); color: #fff; padding: 22px 24px; flex: 1; display: flex; align-items: center; }
+
+  /* ---------- print / PDF: all slides one per page (?print) ---------- */
+  @page { size: 1600px 900px; margin: 0; }
+  html.print, html.print body { overflow: visible; height: auto; }
+  html.print #stage { position: static; }
+  html.print #deck { position: static; transform: none !important; width: 1600px; height: auto; }
+  html.print .slide { position: relative; width: 1600px; height: 900px; opacity: 1; visibility: visible; transform: none; transition: none; break-after: page; }
+  html.print .a { opacity: 1; animation: none !important; }
+  html.print .bar .fill { width: var(--w); animation: none !important; }
+  html.print .draw { stroke-dasharray: none !important; animation: none !important; }
+  html.print .flow { display: none; }
+  html.print .grad { background: none; color: #c4b5fd; }   /* clipped gradient text prints as a solid box */
+  html.print .sep img { transition: none; }
+  html.print #nav, html.print #progress, html.print #notes { display: none; }
+</style>
+</head>
+<body>
+<div id="stage"><div id="deck">
+
+<!-- ======================================================= 1 TITLE -->
+<section class="slide" id="s1" data-t="20">
+  <div class="left">
+    <div class="kicker a">Paper presentation · Mixed Reality HS 2026 · Team 1</div>
+    <h1 class="a" style="--d:.1s">Does this sound<br>belong to<br><span class="grad">this video?</span></h1>
+    <div class="paper a" style="--d:.25s">Audio-Visual Scene Analysis with<br>Self-Supervised Multisensory Features</div>
+    <div class="meta a" style="--d:.32s">Andrew Owens, Alexei A. Efros · UC Berkeley · ECCV 2018</div>
+    <div class="who a" style="--d:.45s"><span class="chip">Dominic Ill</span><span class="chip">Kevin Stöckli</span><span class="chip">Simon Thut</span></div>
+  </div>
+  <div class="scope a pop" style="--d:.2s" id="scope1"><canvas></canvas><div class="read"></div></div>
+  <div class="footer"><span>arXiv 1804.03641 · code and videos: andrewowens.com/multisensory</span><span>1 / 5</span></div>
+  <aside class="notes">• Watch the ball and its sound. In sync ... and now? (flips by itself, M turns the sound on)
+• You see it at once. This paper turns that one question into training data.
+• Owens and Efros, UC Berkeley, ECCV 2018: audio-visual features learned from video alone, no labels.</aside>
+</section>
+
+<!-- ======================================================= 2 THE TRICK -->
+<section class="slide" id="s2" data-t="60">
+  <div class="kicker a">01 · the trick</div>
+  <h2 class="a" style="--d:.05s">Free labels: <span class="grad">shift the soundtrack</span></h2>
+  <div class="grid">
+    <div>
+      <div class="scope a fade" style="--d:.15s" id="scope2"><canvas></canvas><div class="read"></div></div>
+      <div class="ctrl a" style="--d:.3s">
+        <div class="btns"><button class="btn ok" data-shift="0">in sync</button><button class="btn" data-shift="1">shifted</button></div>
+        <span class="key">S</span>
+        <span class="code"><i>shift_params.py</i>max_intersection = 30*2<u>the two windows share at most 60 frames</u></span>
+      </div>
+    </div>
+    <div class="col">
+      <div class="card a pop" style="--d:.3s"><div class="big grad">0 labels</div><div class="cap">≈ 750,000 AudioSet videos<br>raw pixels, raw waveform</div></div>
+      <div class="card a pop" style="--d:.42s">
+        <div class="three"><div><b class="grad">59.9%</b><span>network</span></div><div><b>66.6%</b><span>people</span></div><div><b class="muted">50%</b><span>chance</span></div></div>
+        <div class="cap" style="text-align:center">in sync or not?</div>
+      </div>
+      <div class="card why a pop" style="--d:.54s">
+        <h3>Why shift, not swap?</h3>
+        <p>A swapped soundtrack gives itself away in <b>one frame</b>. A shifted one keeps the scene, so only <b>motion</b> can tell.</p>
+      </div>
+    </div>
+  </div>
+  <div class="footer"><span>Owens &amp; Efros 2018 · Sec. 3 · shifts of 2.0 to 5.8 s</span><span>2 / 5</span></div>
+  <aside class="notes">• One 10 s video. Cut a 4.2 s clip. Half of the time keep its own sound, half of the time take the sound from 2 to 5.8 s away in the same video. (press S)
+• The network answers one question: in sync or not? That label costs nothing. 750,000 AudioSet videos, no annotation.
+• Hard task: network 59.9 %, people on Mechanical Turk 66.6 %, chance 50 %. Often the sound source is not on screen.
+• Why shift and not swap in another video's sound, as Look, Listen and Learn does? A swap shows in a single frame: beach picture, piano sound. A shift keeps the scene, only the timing is left, so the network has to watch motion.
+• In the code: both windows are cut from the same clip and may share at most 60 frames, that is 2 s.</aside>
+</section>
+
+<!-- ======================================================= 3 NETWORK + CODE -->
+<section class="slide" id="s3" data-t="65">
+  <div class="kicker a">02 · the network</div>
+  <h2 class="a" style="--d:.05s">Fuse early, <span class="grad">keep it raw</span></h2>
+  <div class="grid">
+    <svg id="arch" viewBox="0 0 900 650">
+      <defs><linearGradient id="gf" x1="0" x2="0" y1="0" y2="1"><stop offset="0" stop-color="#a78bfa" stop-opacity=".30"/><stop offset="1" stop-color="#a78bfa" stop-opacity=".10"/></linearGradient></defs>
+      <!-- links, and the two signals travelling along them (hidden behind the boxes) -->
+      <path class="link draw" style="--d:.3s" d="M220 556 V514" stroke="#38bdf8"/>
+      <path class="link draw" style="--d:.4s" d="M680 556 V514" stroke="#f472b6"/>
+      <path class="link draw" style="--d:.55s" d="M220 440 V358 H200" stroke="#38bdf8"/>
+      <path class="link draw" style="--d:.65s" d="M680 440 V358 H700" stroke="#f472b6"/>
+      <path class="link draw" style="--d:.95s" d="M450 318 V278" stroke="#a78bfa"/>
+      <path class="link draw" style="--d:1.15s" d="M450 198 V158" stroke="#a78bfa"/>
+      <path class="link draw" style="--d:1.35s" d="M450 86 V50" stroke="#4ade80"/>
+      <circle r="7" fill="#7dd3fc" class="flow"><animateMotion dur="2.6s" repeatCount="indefinite" path="M220 600 V358 H450 V60"/></circle>
+      <circle r="7" fill="#f9a8d4" class="flow"><animateMotion dur="2.6s" begin=".35s" repeatCount="indefinite" path="M680 600 V358 H450 V60"/></circle>
+      <!-- video stream -->
+      <g class="a fade" style="--d:.1s">
+        <rect class="base" x="30" y="556" width="380" height="74" rx="14"/><rect class="box" x="30" y="556" width="380" height="74" rx="14" fill="rgba(56,189,248,.09)" stroke="rgba(56,189,248,.6)"/>
+        <text class="t" x="50" y="587">125 frames · 224 × 224 px</text><text class="sm" x="50" y="611">4.2 s of video at 29.97 fps</text>
+        <rect class="base" x="30" y="440" width="380" height="74" rx="14"/><rect class="box" x="30" y="440" width="380" height="74" rx="14" fill="rgba(56,189,248,.09)" stroke="rgba(56,189,248,.6)"/>
+        <text class="t" x="50" y="471">3D conv + 2 residual blocks</text><text class="sm" x="50" y="495">→ 32 time steps · 28 × 28 · 64 ch</text>
+        <text class="lbl" x="30" y="428" fill="#38bdf8">VIDEO</text>
+      </g>
+      <!-- audio stream -->
+      <g class="a fade" style="--d:.2s">
+        <rect class="base" x="490" y="556" width="380" height="74" rx="14"/><rect class="box" x="490" y="556" width="380" height="74" rx="14" fill="rgba(244,114,182,.09)" stroke="rgba(244,114,182,.6)"/>
+        <text class="t" x="510" y="587">raw waveform · 21 kHz stereo</text><text class="sm" x="510" y="611">the same 4.2 s, about 88,000 samples</text>
+        <rect class="base" x="490" y="440" width="380" height="74" rx="14"/><rect class="box" x="490" y="440" width="380" height="74" rx="14" fill="rgba(244,114,182,.09)" stroke="rgba(244,114,182,.6)"/>
+        <text class="t" x="510" y="471">1D conv + 3 residual blocks</text><text class="sm" x="510" y="495">→ 32 time steps · 128 ch</text>
+        <text class="lbl" x="870" y="428" fill="#f472b6" text-anchor="end">AUDIO</text>
+      </g>
+      <!-- fusion, trunk, head -->
+      <g class="a pop" style="--d:.8s">
+        <rect class="base" x="200" y="318" width="500" height="80" rx="14"/><rect class="box" x="200" y="318" width="500" height="80" rx="14" fill="url(#gf)" stroke="#a78bfa" stroke-width="2.4"/>
+        <text class="t" x="450" y="351" text-anchor="middle">tile audio over 28 × 28 · concatenate</text>
+        <text class="sm" x="450" y="377" text-anchor="middle" fill="#c4b5fd">early fusion: motion meets sound every 0.13 s</text>
+      </g>
+      <g class="a fade" style="--d:1s">
+        <rect class="base" x="200" y="198" width="500" height="80" rx="14"/><rect class="box" x="200" y="198" width="500" height="80" rx="14" fill="rgba(167,139,250,.08)" stroke="rgba(167,139,250,.55)"/>
+        <text class="t" x="450" y="231" text-anchor="middle">3D ResNet-18 style · 128 → 256 → 512</text>
+        <text class="sm" x="450" y="257" text-anchor="middle">these features feed all three applications</text>
+      </g>
+      <g class="a fade" style="--d:1.2s">
+        <rect class="base" x="290" y="86" width="320" height="72" rx="14"/><rect class="box" x="290" y="86" width="320" height="72" rx="14" fill="rgba(74,222,128,.09)" stroke="rgba(74,222,128,.6)"/>
+        <text class="t" x="450" y="117" text-anchor="middle">average pool · fc · sigmoid</text>
+        <text class="sm" x="450" y="141" text-anchor="middle">one number</text>
+      </g>
+      <text class="t a fade" style="--d:1.4s" x="450" y="36" text-anchor="middle" fill="#86efac">p(in sync)</text>
+    </svg>
+    <div class="col">
+      <div class="from a" style="--d:.3s">Found in the code · shift_net.py</div>
+      <div class="card gem a" style="--d:.4s"><h3>µ-law before the first filter</h3><p>The waveform is compressed like telephone audio.</p>
+        <span class="code">sign(x) · log(1 + 255|x|) / log(256)</span></div>
+      <div class="card gem a" style="--d:.55s"><h3>One video pass, two soundtracks</h3><p>Video features are reused for the true and the shifted sound.</p>
+        <span class="code">make_net(None, samples1, pr, im_net=net0.im_net, …)</span></div>
+      <div class="card gem a" style="--d:.7s"><h3>Audio fitted to the video rate</h3><p>The paper's "pool / 3" is a fractional pooling.</p>
+        <span class="code">fractional_max_pool(sf_net, [1, (Ta-1)/Tv, 1, 1])</span></div>
+      <div class="cost a" style="--d:.85s"><span class="chip">650k iterations</span><span class="chip">≈ 17 days</span><span class="chip">3 GPUs</span></div>
+    </div>
+  </div>
+  <div class="footer"><span>Owens &amp; Efros 2018 · Fig. 2, Sec. A1 · tensor sizes from src/shift_net.py</span><span>3 / 5</span></div>
+  <aside class="notes">• Two inputs, both raw: 125 frames into a 3D CNN, the waveform into a 1D CNN. No spectrogram, no face detector, no optical flow.
+• Both end at 32 time steps. Then the audio features are copied to every image position and concatenated. That is the early fusion: the network can compare a movement with the sound of the same eighth of a second.
+• On top a 3D ResNet-18 and one sigmoid: the probability of being in sync.
+• From the code, not in the paper's figure: mu-law compression of the waveform; the video part runs once and is reused for the true and the shifted sound; a fractional pooling layer fits the audio length to the video length.
+• Cost: 650,000 iterations, about 17 days on 3 GPUs.</aside>
+</section>
+
+<!-- ======================================================= 4 WHAT IT LEARNED -->
+<section class="slide" id="s4" data-t="60">
+  <div class="kicker a">03 · what it learned</div>
+  <h2 class="a" style="--d:.05s">It finds <span class="grad">what makes the sound</span></h2>
+  <div class="grid">
+    <div>
+      <div class="camwrap a fade" style="--d:.15s">
+        <img src="cam_grid.jpg" alt="Strongest class activation maps for four Kinetics-Sounds classes">
+        <span class="camlbl" style="top:10px">dribbling</span>
+        <span class="camlbl" style="top:124px">chopping wood</span>
+        <span class="camlbl" style="top:237px">playing guitar</span>
+        <span class="camlbl" style="top:350px">shuffling cards</span>
+      </div>
+      <div class="credit">Strongest responses on Kinetics-Sounds, never trained with a label · Owens &amp; Efros 2018, Fig. 5</div>
+      <span class="code a" style="--d:.4s"><i>shift_net.py</i>cam = conv3d(last_conv, 1, [1,1,1], scope='joint/logits', …, reuse=True)</span>
+      <div class="cost a" style="--d:.55s;margin-top:14px"><span class="chip">actions, not objects</span><span class="chip">on AudioSet: mostly talking faces</span></div>
+    </div>
+    <div>
+      <h3 class="a" style="--d:.2s">Fine-tuned on UCF-101 action recognition</h3>
+      <div class="bars">
+        <div class="grp">pretrained with labels</div>
+        <div class="bar sup"><span>I3D · ImageNet + Kinetics</span><div class="trk"><div class="fill" style="--w:94.5%;--d:.3s"></div></div><span class="val muted">94.5</span></div>
+        <div class="bar sup"><span>I3D · ImageNet</span><div class="trk"><div class="fill" style="--w:84.2%;--d:.35s"></div></div><span class="val muted">84.2</span></div>
+        <div class="grp">this paper, no labels</div>
+        <div class="bar me"><span>Multisensory</span><div class="trk"><div class="fill" style="--w:82.1%;--d:.45s"></div></div><span class="val">82.1</span></div>
+        <div class="bar"><span>… swapped, not shifted</span><div class="trk"><div class="fill" style="--w:78.7%;--d:.55s"></div></div><span class="val">78.7</span></div>
+        <div class="bar"><span>… without sound</span><div class="trk"><div class="fill" style="--w:77.6%;--d:.6s"></div></div><span class="val">77.6</span></div>
+        <div class="bar"><span>… no pretraining</span><div class="trk"><div class="fill" style="--w:68.1%;--d:.65s"></div></div><span class="val">68.1</span></div>
+        <div class="grp">earlier self-supervised</div>
+        <div class="bar"><span>O3N</span><div class="trk"><div class="fill" style="--w:60.3%;--d:.75s"></div></div><span class="val">60.3</span></div>
+        <div class="bar"><span>Shuffle &amp; Learn</span><div class="trk"><div class="fill" style="--w:50.9%;--d:.8s"></div></div><span class="val">50.9</span></div>
+      </div>
+      <div class="delta">
+        <div class="card a pop" style="--d:1s"><b class="good">+14</b><span>points from sync pretraining</span></div>
+        <div class="card a pop" style="--d:1.1s"><b class="bad">+3.4</b><span>points for shifting over swapping</span></div>
+      </div>
+    </div>
+  </div>
+  <div class="footer"><span>Owens &amp; Efros 2018 · Table 1 (UCF-101 split 1, accuracy in %)</span><span>4 / 5</span></div>
+  <aside class="notes">• What did it learn? The heat map is the sync classifier applied at every position of the last layer. One line in the code.
+• It lights up on the bounce, the axe hitting, the strumming hand, the cards: actions, not objects. On AudioSet the strongest responses are faces with moving mouths.
+• Is it useful? Fine-tuned on UCF-101: 82.1 %. Earlier self-supervised methods: 60 % at best. Close to I3D pretrained with ImageNet labels, 84.2 %.
+• Ablations: without the pretraining 68.1, so sync is worth 14 points. Swapped instead of shifted sound 78.7. Without the audio stream 77.6.
+• Honest gap: with Kinetics labels I3D reaches 94.5.</aside>
+</section>
+
+<!-- ======================================================= 5 SEPARATION + OUR TAKE -->
+<section class="slide" id="s5" data-t="70">
+  <div class="kicker a">04 · on/off-screen separation · our take</div>
+  <h2 class="a" style="--d:.05s">Hide a face, <span class="grad">lose a voice</span></h2>
+  <div class="grid">
+    <div>
+      <div class="sep a fade" style="--d:.15s">
+        <div class="frames">
+          <span class="tag">video the model sees</span>
+          <img data-m="both" class="show" src="frame_both.jpg" alt="Two speakers talk at the same time">
+          <img data-m="left" src="frame_left_masked.jpg" alt="Left half of the frame painted grey">
+          <img data-m="right" src="frame_right_masked.jpg" alt="Right half of the frame painted grey">
+        </div>
+        <div class="specs">
+          <span class="tag">predicted on-screen sound</span><span class="tag" id="sep-out"></span>
+          <img data-m="both" class="show" src="spec_both.jpg" alt="Spectrogram with both voices">
+          <img data-m="left" src="spec_left_masked.jpg" alt="Spectrogram: only the right speaker's voice is kept">
+          <img data-m="right" src="spec_right_masked.jpg" alt="Spectrogram: only the left speaker's voice is kept">
+        </div>
+      </div>
+      <div class="sepctl a" style="--d:.3s">
+        <div class="btns"><button class="btn on ok" data-mask="both">both</button><button class="btn" data-mask="left">mask left</button><button class="btn" data-mask="right">mask right</button></div>
+        <span class="key">S</span>
+        <a id="sep-yt" target="_blank" rel="noopener">▶ hear the real result</a>
+      </div>
+      <div class="under a" style="--d:.45s">
+        <span class="code"><i>sep_video.py</i>ims[:, :, :ims.shape[2]/2] = 128<u>grey</u></span>
+        <span class="chip">frozen frame: error 11.4 → 14.8</span>
+      </div>
+    </div>
+    <div class="col">
+      <div class="card us a" style="--d:.4s">
+        <h3>For Reachy Mini Meetings</h3>
+        <ul>
+          <li>Who is speaking? We weigh <b>mouth motion, voice and mic direction</b> with hand-set weights.</li>
+          <li>This paper <b>learns</b> that link from raw video and sound.</li>
+          <li>Idea: pass on only the voice Reachy looks at.</li>
+        </ul>
+      </div>
+      <div class="card a" style="--d:.55s">
+        <h3>Limits</h3>
+        <ul>
+          <li>Trained and scored on <b>synthetic</b> mixes only</li>
+          <li>Audio-only is close: SDR <b>7.3 vs 7.6</b></li>
+          <li>17 days of training, Python 2.7 code</li>
+        </ul>
+      </div>
+      <div class="card take a pop" style="--d:.75s"><div><span class="grad">Sync is a free label.</span> Detecting it forces a network to tie motion to sound.</div></div>
+    </div>
+  </div>
+  <div class="footer"><span>Owens &amp; Efros 2018 · Sec. 6, Table 2 · frames and spectrograms: Fig. 1c and the code release</span><span>5 / 5</span></div>
+  <aside class="notes">• Third use: split a soundtrack into on-screen and off-screen sound. A u-net works on the spectrogram of the mix and gets the multisensory features at three time scales. Training data is free again: a video's sound plus the sound of a random other video.
+• Demo from the paper (press S): two people talk at once. Left half grey: only the right voice is kept (green). Right half grey: only the left voice. "hear it" opens the real result.
+• Motion is what counts: with one frozen frame the error rises from 11.4 to 14.8.
+• For us: Reachy must decide who is speaking. Our backend weighs mouth motion, voice and mic direction by hand. This paper learns that link from raw data. Idea: pass on only the voice Reachy looks at.
+• Limits: only synthetic mixes are measured. An audio-only u-net is almost as good, SDR 7.3 vs 7.6: seeing mainly tells whose voice it is. 17 days of training, Python 2 code.
+• Takeaway: sync is a free label.
+
+Questions we may get
+• Why only 59.9 %? Sound source often off screen. People: 66.6 % with 15 s clips and 5 s shifts.
+• Why the raw waveform? A spectrogram version scored about the same: 81.1 vs 82.1 % on UCF-101.
+• Does stereo help? No. Mono gives the same separation score, and 39 % of the tracks were mono.
+• Does early fusion matter? A little for separation: error 11.4 with it, 11.6 without the audio in the feature network.
+• Two voices of the same sex? Hardest case, and where seeing helps most: SDR 6.5 vs 5.9 audio-only, 3.1 with a frozen frame.</aside>
+</section>
+
+</div></div>
+
+<div id="progress"></div>
+<div id="nav"><button id="nav-prev">←</button><button id="nav-presenter">presenter (P)</button><button id="nav-notes">notes (N)</button><button id="nav-sound">sound off (M)</button><button id="nav-full">full (F)</button><button id="nav-next">→</button></div>
+<div id="notes"><div class="meta"><span id="notes-slide"></span><span id="notes-time"></span></div><div id="notes-text"></div><div class="meta" style="margin:10px 0 0"><span id="notes-next"></span></div></div>
+
+<script>
+const $ = (s, r = document) => r.querySelector(s), $$ = (s, r = document) => [...r.querySelectorAll(s)];
+const params = new URLSearchParams(location.search);
+const print = params.has("print"), presenter = params.has("presenter");
+document.documentElement.classList.toggle("print", print);
+document.documentElement.classList.toggle("presenter", presenter);
+const slides = $$(".slide"), deck = $("#deck");
+let cur = 0, started = null, deckScale = 1;
+const enter = {}, leave = {}, action = {};   // per slide id: when it is shown, when it is left, on the S key
+
+// Presenter view: ?presenter shows the slide on top and the notes below; P opens it in its own window. The two
+// windows follow each other over a BroadcastChannel: the slide, the demo states and the sound switch.
+const sync = "BroadcastChannel" in window ? new BroadcastChannel("paper-deck") : null;
+const tell = (msg) => sync?.postMessage(msg);
+
+function fit() {
+  if (print) return;
+  deckScale = Math.min(innerWidth / 1600, (presenter ? innerHeight * 0.5 - 16 : innerHeight) / 900);
+  deck.style.transform = `translate(-50%, -50%) scale(${deckScale})`;
+  dispatchEvent(new Event("deckscale"));
+}
+addEventListener("resize", fit); fit();
+
+function go(i, remote = false) {
+  i = Math.max(0, Math.min(slides.length - 1, i));
+  if (i !== cur) leave[slides[cur].id]?.();
+  slides.forEach((s, k) => { s.classList.toggle("past", k < i); if (k !== i) s.classList.remove("active"); });
+  const s = slides[i];
+  s.classList.remove("active"); void s.offsetWidth; s.classList.add("active");   // replays the entrance animations
+  cur = i;
+  enter[s.id]?.();
+  $("#progress").style.width = `${(i + 1) / slides.length * 100}%`;
+  history.replaceState(null, "", `${location.search}#${i + 1}`);
+  const budget = slides.slice(0, i + 1).reduce((a, x) => a + Number(x.dataset.t || 0), 0);
+  $("#notes-slide").textContent = `slide ${i + 1}/${slides.length} · ~${s.dataset.t}s · cumulative target ${Math.floor(budget / 60)}:${String(budget % 60).padStart(2, "0")}`;
+  $("#notes-text").textContent = $("aside.notes", s)?.textContent.trim() ?? "";
+  $("#notes-next").textContent = slides[i + 1] ? `next → ${$("h2", slides[i + 1]).textContent}` : "last slide";
+  started ??= performance.now();
+  if (!remote) tell({ i });
+}
+function openPresenter() { window.open(`${location.pathname}?presenter#${cur + 1}`, "paper-presenter", "width=1200,height=850"); }
+setInterval(() => {
+  if (!started) return;
+  const t = Math.round((performance.now() - started) / 1000);
+  $("#notes-time").textContent = `elapsed ${Math.floor(t / 60)}:${String(t % 60).padStart(2, "0")} / 5:00 (T restarts)`;
+}, 500);
+
+addEventListener("keydown", (e) => {
+  if (e.metaKey || e.ctrlKey || e.altKey) return;
+  const k = e.key.toLowerCase();
+  if (["arrowright", "pagedown", " ", "enter"].includes(k)) { e.preventDefault(); go(cur + 1); }
+  else if (["arrowleft", "pageup", "backspace"].includes(k)) { e.preventDefault(); go(cur - 1); }
+  else if (k === "home") go(0);
+  else if (k === "end") go(slides.length - 1);
+  else if (k === "n") $("#notes").classList.toggle("show");
+  else if (k === "f") toggleFull();
+  else if (k === "t") { started = performance.now(); tell({ t: 1 }); }
+  else if (k === "s") action[slides[cur].id]?.();
+  else if (k === "m") setSound(!sound);
+  else if (k === "p" && !presenter) openPresenter();
+});
+function toggleFull() { document.fullscreenElement ? document.exitFullscreen() : document.documentElement.requestFullscreen().catch(() => {}); }
+$("#nav-prev").onclick = () => go(cur - 1);
+$("#nav-next").onclick = () => go(cur + 1);
+$("#nav-notes").onclick = () => $("#notes").classList.toggle("show");
+$("#nav-full").onclick = toggleFull;
+$("#nav-presenter").onclick = openPresenter;
+$("#nav-sound").onclick = () => setSound(!sound);
+let tx = null;
+addEventListener("touchstart", (e) => { tx = e.touches[0].clientX; }, { passive: true });
+addEventListener("touchend", (e) => { if (tx == null) return; const dx = e.changedTouches[0].clientX - tx; if (Math.abs(dx) > 50) go(cur + (dx < 0 ? 1 : -1)); tx = null; });
+
+/* ---------------- sound (M): a thud for every bounce in the soundtrack, off until asked for ---------------- */
+let actx = null, sound = false;
+function setSound(on, remote = false) {
+  sound = on;
+  if (on && !presenter) { actx ??= new (window.AudioContext || window.webkitAudioContext)(); actx.resume(); }   // the presenter window stays silent: one source
+  $("#nav-sound").textContent = `sound ${on ? "on" : "off"} (M)`; $("#nav-sound").classList.toggle("on", on);
+  if (!remote) tell({ sound: on });
+}
+function thud(level) {
+  if (!sound || !actx || presenter) return;
+  const t = actx.currentTime, o = actx.createOscillator(), g = actx.createGain();
+  o.frequency.setValueAtTime(190, t); o.frequency.exponentialRampToValueAtTime(52, t + 0.12);
+  g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.85 * level, t + 0.005); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.24);
+  o.connect(g).connect(actx.destination); o.start(t); o.stop(t + 0.26);
+}
+
+/* ---------------- the toy video: a ball bounced for 10.1 s, cut and shifted with the paper's numbers ---------------- */
+const SRC = 10.1, CLIP = 4.2, V0 = 0.1;        // length of the source video, of a clip, and where the video clip starts (s)
+let seed = 20; const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+const hits = [-0.45, 0.42];                    // times the ball lands: irregular, so that no shift lines up by chance
+while (hits.at(-1) < SRC + 1) hits.push(hits.at(-1) + 0.42 + rnd() * 0.62);
+const inClip = (h, i) => hits[i + 1] > V0 && h < V0 + CLIP;
+const LONGEST = Math.max(...hits.slice(0, -1).map((h, i) => (inClip(h, i) ? hits[i + 1] - h : 0)));   // the longest flight seen in the video clip
+function height(t) {                           // 0..1; a longer flight is a higher one
+  let i = 0; while (hits[i + 1] <= t) i++;
+  const d = hits[i + 1] - hits[i], u = (t - hits[i]) / d;
+  return Math.min(1, (d / LONGEST) ** 2) * 4 * u * (1 - u);
+}
+const loud = (i) => Math.min(1, 0.45 + 0.55 * ((hits[i] - hits[i - 1]) / LONGEST) ** 2);   // a higher bounce lands louder
+function envelope(t) { let e = 0; for (let i = 1; i < hits.length; i++) { const dt = t - hits[i]; if (dt >= 0 && dt < 0.6) e += loud(i) * Math.exp(-dt / 0.1); } return Math.min(1, e); }
+const hash = (i) => { const x = Math.sin(i * 12.9898) * 43758.5453; return x - Math.floor(x); };
+// Shifts from the paper's range (2.0 to 5.8 s), the three that leave every bounce of the clip furthest from any thud
+const SHIFTS = (() => {
+  const clip = hits.filter((h) => h >= V0 && h <= V0 + CLIP), all = [];
+  for (let k = 20; k <= 58; k++) { const s = k / 10; all.push([Math.min(...clip.map((h) => Math.min(...hits.map((g) => Math.abs(g - s - h))))), s]); }
+  all.sort((a, b) => b[0] - a[0]);
+  const out = []; for (const [, s] of all) if (out.length < 3 && out.every((o) => Math.abs(o - s) >= 0.9)) out.push(s);
+  return out;
+})();
+
+const scopes = {};
+function makeScope(id, { strip = false, auto = false }) {
+  const el = $("#" + id), cv = $("canvas", el), ctx = cv.getContext("2d"), read = $(".read", el);
+  const PERIOD = CLIP + 0.7;                    // the clip, then a short rest
+  let token = 0, dirty = true, shifted = false, by = SHIFTS[0], n = 0, off = 0, t0 = 0, prev = 0, loop = 0, manual = false, lastNow = 0;
+  addEventListener("deckscale", () => { dirty = true; });
+  const mono = (px) => `600 ${px}px "JetBrains Mono", ui-monospace, monospace`;
+  const line = (xa, ya, xb, yb) => { ctx.beginPath(); ctx.moveTo(xa, ya); ctx.lineTo(xb, yb); ctx.stroke(); };
+
+  function apply(on, withBy) {                  // the state, without telling the other window
+    shifted = on; if (on) by = withBy ?? SHIFTS[n++ % SHIFTS.length];
+    read.innerHTML = on ? `<b class="bad">out of sync</b>audio from ${by.toFixed(1)} s later · label y = 0` : `<b class="good">in sync</b>audio of the same 4.2 s · label y = 1`;
+    el.dispatchEvent(new CustomEvent("shift", { detail: on }));
+  }
+
+  function frame(now, still) {
+    if (dirty) {
+      const r = Math.min(3, (devicePixelRatio || 1) * (print ? 2 : Math.max(1, deckScale)));   // sharp when the deck is scaled up
+      cv.width = Math.round(el.clientWidth * r); cv.height = Math.round(el.clientHeight * r); ctx.setTransform(r, 0, 0, r, 0, 0); dirty = false;
+    }
+    const W = el.clientWidth, H = el.clientHeight, dt = Math.min(0.1, (now - lastNow) / 1000); lastNow = now;
+    const lp = Math.floor((now - t0) / 1000 / PERIOD), tau = still ?? ((now - t0) / 1000) % PERIOD;
+    if (still == null && lp !== loop) { loop = lp; prev = 0; if (auto && !manual) apply(!shifted); }
+    const play = Math.min(tau, CLIP), live = tau <= CLIP, target = shifted ? by : 0;
+    off = still != null || Math.abs(target - off) < 0.004 ? target : off + (target - off) * (1 - Math.exp(-dt * 8));   // the soundtrack slides
+    const acol = off < 0.02 ? "#4ade80" : "#f472b6";
+
+    ctx.clearRect(0, 0, W, H);
+    const x0 = 30, x1 = W - 30, X = (t) => x0 + (t / CLIP) * (x1 - x0);
+    let top = 22;
+    if (strip) {                                // the 10 s video with the two windows cut from it
+      const sx = (t) => x0 + (t / SRC) * (x1 - x0), y = 64, bh = 20;
+      ctx.fillStyle = "rgba(255,255,255,.07)"; ctx.fillRect(x0, y, x1 - x0, bh);
+      ctx.fillStyle = "rgba(255,255,255,.16)"; for (let s = 1; s <= 10; s++) ctx.fillRect(sx(s), y, 1, bh);
+      ctx.fillStyle = "rgba(255,255,255,.6)"; for (const h of hits) if (h > 0 && h < SRC) { ctx.beginPath(); ctx.arc(sx(h), y + bh / 2, 2.2, 0, 7); ctx.fill(); }
+      ctx.font = mono(13); ctx.fillStyle = "#8d97ad"; ctx.textAlign = "right"; ctx.fillText("one 10 s video", x1, y - 20); ctx.textAlign = "left";
+      const win = (a, col, up, text) => {
+        const xa = sx(a), xb = sx(a + CLIP), e = up ? y - 3 : y + bh + 3, f = up ? y - 11 : y + bh + 11;
+        ctx.fillStyle = col + "3a"; ctx.fillRect(xa, up ? y : y + bh / 2, xb - xa, bh / 2);
+        ctx.strokeStyle = col; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(xa, e); ctx.lineTo(xa, f); ctx.lineTo(xb, f); ctx.lineTo(xb, e); ctx.stroke();
+        ctx.fillStyle = col; ctx.fillText(text, xa, up ? y - 20 : y + bh + 29);
+      };
+      win(V0, "#38bdf8", true, "video frames · 4.2 s");
+      win(V0 + off, acol, false, off < 0.02 ? "audio · the same 4.2 s" : `audio · ${off.toFixed(1)} s later`);
+      top = 134;
+    }
+    // video track above (the ball's height over time is also its path), audio track below
+    const bottom = H - 58, hv = (bottom - top) * 0.56, R = 11;
+    const floor = top + hv - 8, rise = hv - 62, ya = floor + 30, mid = (ya + bottom) / 2 + 6, ha = (bottom - ya) / 2 - 8;
+    const ballY = (t) => floor - R - height(V0 + t) * rise;
+    const bounces = hits.filter((h) => h >= V0 && h <= V0 + CLIP).map((h) => h - V0);
+    const thuds = []; hits.forEach((h, i) => { const t = h - V0 - off; if (i && t >= 0 && t <= CLIP) thuds.push([t, loud(i)]); });
+
+    ctx.font = mono(12.5); ctx.fillStyle = "#38bdf8"; ctx.fillText("VIDEO", x0, top + 14); ctx.fillStyle = acol; ctx.fillText("AUDIO", x0, ya + 14);
+    ctx.strokeStyle = "rgba(255,255,255,.22)"; ctx.lineWidth = 1.5; line(x0, floor, x1, floor);
+    ctx.strokeStyle = "rgba(255,255,255,.12)"; ctx.lineWidth = 1; line(x0, mid, x1, mid);
+    ctx.setLineDash([3, 5]); ctx.strokeStyle = "rgba(255,255,255,.2)"; for (const t of bounces) line(X(t), floor, X(t), bottom); ctx.setLineDash([]);
+
+    const path = (a, b) => { ctx.beginPath(); ctx.moveTo(X(a), ballY(a)); for (let t = a + 0.012; t < b; t += 0.012) ctx.lineTo(X(t), ballY(t)); ctx.lineTo(X(b), ballY(b)); ctx.stroke(); };
+    ctx.lineWidth = 2; ctx.strokeStyle = "rgba(56,189,248,.3)"; ctx.setLineDash([4, 6]); path(play, CLIP); ctx.setLineDash([]);
+    ctx.lineWidth = 2.5; ctx.strokeStyle = "rgba(56,189,248,.9)"; path(0, play);
+    for (const t of bounces) {
+      ctx.fillStyle = t <= play ? "#38bdf8" : "rgba(56,189,248,.45)"; ctx.fillRect(X(t) - 1.5, floor, 3, 8);
+      const age = play - t;
+      if (live && age >= 0 && age < 0.4) { ctx.strokeStyle = `rgba(125,211,252,${1 - age / 0.4})`; ctx.lineWidth = 2; ctx.beginPath(); ctx.ellipse(X(t), floor, 12 + 90 * age, 3 + 22 * age, 0, 0, 7); ctx.stroke(); }
+    }
+
+    for (let x = x0; x <= x1; x += 3) {         // the soundtrack: a burst of noise for every landing
+      const t = ((x - x0) / (x1 - x0)) * CLIP, s = V0 + off + t, h = Math.max(0.8, envelope(s) * (0.45 + 0.55 * hash(Math.floor(s * 300))) * ha);
+      ctx.globalAlpha = t <= play ? 1 : 0.42; ctx.fillStyle = acol; ctx.fillRect(x, mid - h, 2, 2 * h);
+    }
+    ctx.globalAlpha = 1;
+    for (const t of bounces) {                  // under every bounce: is its thud there?
+      ctx.beginPath(); ctx.arc(X(t), bottom, 5, 0, 7);
+      if (thuds.some(([u]) => Math.abs(u - t) < 0.03)) { ctx.fillStyle = "#4ade80"; ctx.fill(); } else { ctx.fillStyle = "#070b16"; ctx.fill(); ctx.strokeStyle = "#f472b6"; ctx.lineWidth = 2; ctx.stroke(); }
+    }
+    for (const [t, l] of thuds) {
+      const age = play - t;
+      if (live && age >= 0 && age < 0.35) { ctx.globalAlpha = 1 - age / 0.35; ctx.strokeStyle = acol; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(X(t), mid, 10 + 70 * age * l, 0, 7); ctx.stroke(); ctx.globalAlpha = 1; }
+      if (still == null && off === target && t > prev && t <= play) thud(l);
+    }
+    prev = play;
+
+    ctx.strokeStyle = "rgba(255,255,255,.5)"; ctx.lineWidth = 1.5; line(X(play), top + 26, X(play), bottom - 8);
+    const squash = bounces.some((t) => Math.abs(play - t) < 0.045) ? 0.78 : 1;
+    ctx.save(); ctx.translate(X(play), ballY(play) + (1 - squash) * R); ctx.scale(2 - squash, squash);
+    ctx.shadowColor = "rgba(56,189,248,.9)"; ctx.shadowBlur = 22;
+    const g = ctx.createRadialGradient(-3, -4, 1, 0, 0, R); g.addColorStop(0, "#fff"); g.addColorStop(1, "#38bdf8");
+    ctx.fillStyle = g; ctx.beginPath(); ctx.arc(0, 0, R, 0, 7); ctx.fill(); ctx.restore();
+  }
+
+  const me = scopes[id] = {
+    get shifted() { return shifted; },
+    start(on = false) {                         // runs from the start of the clip, in sync unless asked otherwise
+      if (print) n = 0;                         // the PDF always shows the same shift
+      apply(on); manual = false; dirty = true;
+      if (print) return frame(performance.now(), 2.95);
+      const my = ++token; t0 = lastNow = performance.now(); loop = 0; prev = 0; off = on ? by : 0;
+      const tick = (now) => { if (my !== token) return; requestAnimationFrame(tick); frame(now); };
+      requestAnimationFrame(tick);
+    },
+    stop() { token++; },
+    set(on, withBy, remote = false) { manual = true; apply(on, withBy); if (!remote) tell({ scope: id, shift: on, by }); },
+  };
+  el.onclick = () => me.set(!shifted);
+  return me;
+}
+const scope1 = makeScope("scope1", { auto: true }), scope2 = makeScope("scope2", { strip: true });
+enter.s1 = () => scope1.start(); leave.s1 = () => scope1.stop(); action.s1 = () => scope1.set(!scope1.shifted);
+enter.s2 = () => scope2.start(print); leave.s2 = () => scope2.stop(); action.s2 = () => scope2.set(!scope2.shifted);
+$$("#s2 [data-shift]").forEach((b) => b.onclick = () => scope2.set(b.dataset.shift === "1"));
+$("#scope2").addEventListener("shift", (e) => $$("#s2 [data-shift]").forEach((b) => b.classList.toggle("on", (b.dataset.shift === "1") === e.detail)));
+document.fonts?.ready.then(() => { dispatchEvent(new Event("deckscale")); if (print) { scope1.start(); scope2.start(true); } });   // the canvas labels need the fonts
+
+/* ---------------- slide 5: paint half of the frame grey, and that speaker's voice is gone ---------------- */
+const MASKS = {   // the three cases of Fig. 1c; the videos are the ones linked in the code release's README
+  both: ["nothing hidden: both voices", "https://youtu.be/H9CgWJToF_s"],
+  left: ["left hidden: only the right voice is kept", "https://youtu.be/9jPaA8ttI6A"],
+  right: ["right hidden: only the left voice is kept", "https://youtu.be/M4ACgIWuiWM"],
+};
+let mask = "both", maskTimer = 0;
+function setMask(m, remote = false) {
+  mask = m;
+  $$("#s5 [data-m]").forEach((e) => e.classList.toggle("show", e.dataset.m === m));
+  $$("#s5 [data-mask]").forEach((b) => b.classList.toggle("on", b.dataset.mask === m));
+  $("#sep-out").textContent = MASKS[m][0]; $("#sep-yt").href = MASKS[m][1];
+  if (!remote) tell({ mask: m });
+}
+const pickMask = (m, remote) => { clearInterval(maskTimer); setMask(m, remote); };          // by hand: the tour stops
+const nextMask = () => Object.keys(MASKS)[(Object.keys(MASKS).indexOf(mask) + 1) % 3];
+$$("#s5 [data-mask]").forEach((b) => b.onclick = () => pickMask(b.dataset.mask));
+enter.s5 = () => { clearInterval(maskTimer); setMask(print ? "left" : "both", true); if (!print) maskTimer = setInterval(() => setMask(nextMask(), true), 3200); };
+leave.s5 = () => clearInterval(maskTimer);
+action.s5 = () => pickMask(nextMask());
+
+if (sync) sync.onmessage = ({ data: m }) => {
+  if ("i" in m && m.i !== cur) go(m.i, true);
+  if ("t" in m) started = performance.now();
+  if ("sound" in m) setSound(m.sound, true);
+  if ("shift" in m) scopes[m.scope]?.set(m.shift, m.by, true);
+  if ("mask" in m) pickMask(m.mask, true);
+};
+
+if (print) slides.forEach((s) => { s.classList.add("active"); enter[s.id]?.(); });
+else go(Math.max(0, (parseInt(location.hash.slice(1)) || 1) - 1), true);
+</script>
+</body>
+</html>
