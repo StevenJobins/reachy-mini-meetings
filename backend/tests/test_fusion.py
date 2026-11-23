@@ -113,11 +113,17 @@ def test_the_mic_breaks_the_tie_with_a_face_seen_too_rarely():
         f.attribute(None, t, t + 2, doa=(18, 5))
         _watch(people, t + 2, t + 4, {0.3: _still, 0.7: _talking})
         f.attribute(None, t + 2, t + 4, doa=(-18, 5))
-    for i in range(40):   # person 2 found only once in 2 s, person 1's mouth moves
-        faces = [_face(0.3, 0.01 + 0.05 * (i % 2))] + ([_face(0.7)] if i == 20 else [])
+    for i in range(40):   # person 2 found only 3 times in 2 s, and their mouth moved; person 1's mouth moves
+        faces = [_face(0.3, 0.01 + 0.05 * (i % 2))] + ([_face(0.7, _talking(i))] if i in (10, 20, 30) else [])
         people.update(faces, 20 + i / 20, 0)
     assert f.attribute(None, 20, 22).person is None, "without the mic: it may have been person 2"
     assert f.attribute(None, 20, 22, doa=(18, 5)).person.pid == 1
+    # seen just as rarely, but with a still mouth: that says nothing for them (2026-11-23: such faces blocked 7 of
+    # the 11 utterances in which a mouth clearly talked)
+    for i in range(40):
+        faces = [_face(0.3, 0.01 + 0.05 * (i % 2))] + ([_face(0.7, 0.01)] if i in (10, 20, 30) else [])
+        people.update(faces, 30 + i / 20, 0)
+    assert f.attribute(None, 30, 32).person.pid == 1
 
 
 # ---------------------------------------------------------------- voice
@@ -135,7 +141,8 @@ def test_a_doubtful_voice_goes_to_the_voice_of_the_person_seen_talking_and_is_le
     assert d.voice == 1 and d.person.pid == 1 and clusters.counts == [3], "... but person 1 is seen saying it"
     _watch(people, 7, 9, {0.3: _still, 0.7: _still})
     d = f.final(obs(near(a, 0.45)), 7, 9, None)            # the same poor match, nobody seen talking
-    assert d.voice == 1 and d.person is None and clusters.counts == [3], "the closest voice, nothing learnt, no place"
+    assert d.voice is None and d.person is None and clusters.counts == [3], \
+        "no name, nothing learnt, no place: with one voice known, anyone new would match it like this (2026-11-23)"
 
 
 def test_doubtful_matches_do_not_drag_a_voice_over_everyone():
@@ -146,8 +153,8 @@ def test_doubtful_matches_do_not_drag_a_voice_over_everyone():
     f = Fusion(clusters)
     assert f.final(obs(a), 0, 3, None).voice == 1
     before = clusters.means[0].copy()
-    for i in range(10):
-        assert f.final(obs(jitter(b)), 3 + i, 4 + i, None).voice == 1
+    for i in range(10):   # the closest voice or no name (around LONE), never a new one from a clip this short
+        assert f.final(obs(jitter(b)), 3 + i, 4 + i, None).voice in (1, None)
     assert clusters.means[0] @ before > 0.999 and clusters.counts == [1], "not learnt"
     old = SpeakerClusters()                                # as it was: every match taught the mean
     old.add(a)
@@ -183,7 +190,7 @@ def test_a_similar_voice_is_found_by_its_second_utterance_and_the_first_is_relab
     f = Fusion(clusters)
     assert f.final(obs(a), 0, 3, None, key="first").voice == 1
     d = f.final(obs(b), 4, 7, None, key="second")
-    assert d.voice == 1 and not d.relabel and clusters.counts == [1], "for now the closest voice, nothing learnt"
+    assert d.voice is None and not d.relabel and clusters.counts == [1], "for now no name, nothing learnt"
     d = f.final(obs(near(b, 0.75)), 8, 11, None, key="third")
     assert d.voice == 2 and d.relabel == [("second", 2)], "two alike, both unlike voice 1: a new voice, from both"
     assert f.final(obs(near(b, 0.7)), 12, 15, None).voice == 2

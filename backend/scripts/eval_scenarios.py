@@ -30,7 +30,7 @@ def main() -> None:
     print(f"voices: {voices.speakers()} speakers; most similar pair {pairs[0][0]:.2f}, an ordinary pair "
           f"{pairs[len(pairs) // 2][0]:.2f}; {args.seeds} meetings of 60 utterances each\n")
     total = []
-    for scn in sim.scenarios(voices):
+    for scn in sim.scenarios(voices) + sim.field_scenarios(voices):
         if args.only and args.only not in scn.name:
             continue
         results = [sim.run(scn, voices, seed) for seed in range(args.seeds)]

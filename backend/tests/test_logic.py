@@ -596,9 +596,9 @@ def test_a_face_seen_too_rarely_to_judge_does_not_lose_the_vote_by_default():
     people = People(_flat)
     _watch(people, 0, 1, {0.3: _still, 0.7: _still})
     for i in range(40):                                    # person 2 is found only now and then (far away)
-        faces = {0.3: _still} | ({0.7: _talking} if i == 20 else {})
+        faces = {0.3: _still} | ({0.7: _talking} if i in (10, 20, 30) else {})
         people.update([_face(u, m(i) if u == 0.7 else 0.01 + 0.05 * (i % 2)) for u, m in faces.items()], 1 + i / 20, 0)
-    assert _heard(people, 1, 1, 3) is None                   # person 1's mouth moved a little, person 2 unknown
+    assert _heard(people, 1, 1, 3) is None                   # person 1's mouth moved a little, person 2's moved too
     _watch(people, 3, 5, {0.3: _talking})                  # person 2 not in the picture at all: person 1 it is
     assert _heard(people, 1, 3, 5).pid == 1
 

@@ -36,3 +36,32 @@ def test_who_said_it(scn):
     if faces is not None:
         assert r.faces_right >= faces, str(r)
     assert r.people <= sum(s.face for s in scn.seats), f"one person became several: {r}"
+
+
+# What the headset test of 2026-11-23 was like (tests/sim.py field_scenarios). Measured with the code of that day
+# (10 meetings): a face that comes twice now and then gave 4 tags for 2 people and faces right 0 %; things taken for
+# faces left 5.6 tags for 2 people; all of it together: right 68 %, faces right 33 %, 8.4 tags for 1.4 in view.
+# Floors a little under what the changes of 2026-11-23 reach (4 meetings).
+#                                                                right ≥, wrong ≤, faces right ≥, tags ≤ (per person in view)
+FIELD_FLOORS = {
+    "field: faces lost and found again every 3 s": (0.97, 0.02, 0.97, 1.1),
+    "field: a face comes twice now and then": (0.96, 0.02, 0.97, 1.1),
+    "field: things taken for faces": (0.95, 0.02, 0.97, 1.4),
+    "field: half the utterances short, a fifth under 1 s": (0.87, 0.02, 0.97, 1.1),
+    "field: the head looks around": (0.96, 0.03, 0.97, 1.5),
+    "field: one face cannot be known (headset on)": (0.96, 0.02, 0.97, 1.1),
+    "field: all of it, as on 2026-11-23": (0.70, 0.10, 0.80, 2.2),
+}
+
+
+def test_every_field_scenario_has_a_floor():
+    assert {s.name for s in sim.field_scenarios(VOICES)} == set(FIELD_FLOORS)
+
+
+@pytest.mark.parametrize("scn", sim.field_scenarios(VOICES), ids=lambda s: s.name)
+def test_who_said_it_in_the_field(scn):
+    r = sim.mean([sim.run(scn, VOICES, seed) for seed in range(4)])
+    right, wrong, faces, tags = FIELD_FLOORS[scn.name]
+    assert r.right >= right and r.wrong <= wrong, str(r)
+    assert r.faces_right >= faces, str(r)
+    assert r.tags <= tags * max(r.in_view, 1.0), f"tags left over: {r}"

@@ -15,6 +15,15 @@ voice is tied to a person over several utterances:
   where    fusion.py weighs this together with the mouths and the mic direction: the caption of voice k can go to its
            owner also when the mouth is not seen this time or the person is out of the picture
 
+Copies of one person (headset test 2026-11-23, backend log: two people became seven, three of them at the same
+place at the end, and their mouth votes were spread over the copies so no voice ever got an owner):
+  - a second detection of a face in the same frame (boxes overlapping) is that face, not somebody next to them;
+    only faces whose boxes are clearly apart are "seen side by side" (which forbids merging them for good)
+  - two people at the same place, seen in turns within seconds and never side by side, are one
+  - a face does not jump to someone who was just seen somewhere else because it looks like them
+  - someone seen only briefly (a hand taken for a face) is forgotten soon, and the headset is only told of people
+    seen lately (`shown`): before, a tag stayed at an empty place for up to 15 minutes
+
 Angles in degrees, yaw + = left, pitch + = up, in the robot base frame. The thresholds are first guesses, to be set
 from recordings (scripts/record_meeting.py).
 """
@@ -60,6 +69,18 @@ FADE = 0.7            # older votes of a voice count this much less with every n
                       # kept the bubble at an empty place against the speaker in view)
 VIEW_DEG = 30.0       # the camera sees this far to each side for sure
 GONE_S = 3.0          # looked at their place this long without seeing them: they are not there any more
+SAME_DEG = 6.0        # two people this close, seen in turns within SAME_S and never side by side: one person
+SAME_S = 3.0
+ELSEWHERE_DEG = 30.0  # seen this far away within ELSEWHERE_S: a face here is not them, however alike it looks (the
+ELSEWHERE_S = 1.0     # head angle lags by up to ~20 degrees while Reachy turns, so not less)
+TAG_S = 10.0          # the headset shows a tag for people seen within this long
+FLEETING_N = 100      # seen in fewer frames than this in all (5 s at 20 a second): maybe not a person at all (a
+                      # hand, a poster: "it knows my hand, and my face twice", 2026-11-23), so
+FLEETING_TAG_S = 2.0  # ... the tag goes sooner
+FLEETING_S = 20.0     # ... and they are forgotten after this long
+MOVED = 0.05          # mouth opening changed by this much within a few readings: it moved (talkers' standard
+                      # deviation is 0.04-0.19, listeners' 0.0002-0.005)
+LIVE_SAMPLES = 3      # mouth readings needed to say who talks right now (the web app's rule, speakers.js)
 
 
 def image_to_angles(u: float, v: float) -> tuple[float, float]:
@@ -89,6 +110,13 @@ def angle_diff(a: float, b: float) -> float:
     return (a - b + 180) % 360 - 180
 
 
+def overlap(f: dict, g: dict) -> bool:
+    """Two detections in one frame whose boxes overlap: the same face found twice, or two people too close in the
+    picture to call them two."""
+    return (abs(f["cx"] - g["cx"]) < (f["w"] + g["w"]) / 2
+            and abs(f["cy"] - g["cy"]) < (f.get("h", f["w"]) + g.get("h", g["w"])) / 2)
+
+
 def alike(a: np.ndarray | None, b: np.ndarray | None) -> float | None:
     """How alike two faces are (cosine of their embeddings); None if one is not known."""
     return None if a is None or b is None else float(a @ b)
@@ -111,10 +139,20 @@ class Person:
         m = emb if self.face is None else (self.face * n + emb) / (n + 1)
         self.face, self.looks = m / np.linalg.norm(m), self.looks + 1
 
-    def activity(self, t0: float, t1: float) -> float | None:
+    @property
+    def fleeting(self) -> bool:
+        """Seen only briefly so far: perhaps not a person."""
+        return self.sightings < FLEETING_N
+
+    def activity(self, t0: float, t1: float, need: int = MIN_SAMPLES) -> float | None:
         """Mouth movement over [t0, t1]: standard deviation of the opening; None = not seen enough to say."""
         m = [v for t, v in self.mouth if t0 <= t <= t1]
-        return float(np.std(m)) if len(m) >= MIN_SAMPLES else None
+        return float(np.std(m)) if len(m) >= need else None
+
+    def moved(self, t0: float, t1: float) -> bool:
+        """Seen too rarely over [t0, t1] to judge the mouth, but what was seen of it moved: it may have been them."""
+        m = [v for t, v in self.mouth if t0 <= t <= t1]
+        return 2 <= len(m) < MIN_SAMPLES and max(m) - min(m) >= MOVED
 
 
 class People:
@@ -129,14 +167,17 @@ class People:
         self.merged: list[tuple[int, int]] = []        # (person that turned out to be, this person), for roster.py
         self.next_pid = 1
 
-    def _who(self, f: dict, yaw: float, taken: set[int]) -> Person | None:
+    def _who(self, f: dict, yaw: float, taken: set[int], t: float = 0.0) -> Person | None:
         """The known person (or candidate) this face is, None = nobody known."""
         free = [p for p in self.people + self.candidates if id(p) not in taken]
         emb = f.get("emb")
         p = self.tracks.get(f.get("track"))
         if p is not None and any(p is q for q in free) and (alike(emb, p.face) or 1.0) > FACE_OTHER:
             return p                                       # followed without a break
-        looks = [(a, q) for q in free if (a := alike(emb, q.face)) is not None]
+        # by the face: not someone who was seen elsewhere a moment ago (in a dark picture, or with the eyes
+        # covered, faces look alike that are not: people's places jumped by 60 degrees, 2026-11-23)
+        looks = [(a, q) for q in free if (a := alike(emb, q.face)) is not None
+                 and not (t - q.seen < ELSEWHERE_S and abs(angle_diff(q.yaw, yaw)) > ELSEWHERE_DEG)]
         a, p = max(looks, key=lambda x: x[0], default=(0.0, None))
         if p is not None and a >= FACE_SAME:
             return p                                       # looks like them, wherever they are now
@@ -149,14 +190,23 @@ class People:
         steady=False: the head is turning, the angles lag the picture; known people keep their place, their mouths
         are still read, and nobody new is taken in."""
         head = (head_roll_deg, head_pitch_deg, head_yaw_deg)
-        self.people = [p for p in self.people if t - p.seen < MEMORY_S]
+        gone = [p for p in self.people if t - p.seen >= (FLEETING_S if p.fleeting else MEMORY_S)]
+        if gone:
+            self.people = [p for p in self.people if not any(p is g for g in gone)]
+            self._forget(gone)
         self.candidates = [p for p in self.candidates if t - p.first < CANDIDATE_S]
         taken: set[int] = set()
+        boxes: list[tuple[dict, Person]] = []   # the faces of this frame and who they are
         for f in faces:
+            twin = next((q for g, q in boxes if overlap(f, g)), None)
+            if twin is not None:   # the same face found a second time: not somebody new next to them
+                if f.get("track") is not None:
+                    self.tracks[f["track"]] = twin
+                continue
             yaw, pitch = to_base(*self.angles(f["cx"], f["cy"]), head)
             _, top = to_base(*self.angles(f["cx"], f["top"]), head)
             _, bottom = to_base(*self.angles(f["cx"], f["top"] + f["h"]), head)
-            p = self._who(f, yaw, taken)
+            p = self._who(f, yaw, taken, t)
             if p is None:
                 if not steady:
                     continue
@@ -164,6 +214,7 @@ class People:
                 p.pitch, p.top, p.h = pitch, top, top - bottom
                 self.candidates.append(p)
             taken.add(id(p))
+            boxes.append((f, p))
             if f.get("track") is not None:
                 self.tracks[f["track"]] = p
             if steady:
@@ -178,7 +229,7 @@ class People:
                 p.mouth.append((t, f[key]))
                 while p.mouth[0][0] < t - HISTORY_S:
                     p.mouth.popleft()
-        here = [p.pid for p in self.people if p.seen == t]
+        here = [p.pid for p in self.people if p.seen == t]   # (boxes that overlap never got two people above)
         self.apart.update(frozenset((a, b)) for i, a in enumerate(here) for b in here[i + 1:])
         # After all faces of the frame have found their person: a known person seen in this very frame cannot be
         # the new one (decided inside the loop before, a second face under 20 degrees away could be folded into
@@ -241,6 +292,9 @@ class People:
                 if frozenset((a.pid, b.pid)) in self.apart:
                     continue
                 same = (alike(a.face, b.face) or 0.0) >= FACE_SAME
+                # at the same place in turns, within seconds, never side by side: one person found as two (a face
+                # lost and found again before it could be known by its looks)
+                same = same or (abs(angle_diff(a.yaw, b.yaw)) < SAME_DEG and t - a.seen < SAME_S and t - b.seen < SAME_S)
                 for here, ghost in ((a, b), (b, a)):   # `here` is seen now, by their face, at the ghost's place
                     same = same or (here.seen == t and here.face is not None and ghost.face is None and ghost.seen < t
                                     and abs(angle_diff(here.yaw, ghost.yaw)) < REID_DEG)
@@ -248,16 +302,41 @@ class People:
                     self._merge(a, b)
                     return self._merge_same_faces(t)
 
+    def _forget(self, gone: list[Person]) -> None:
+        pids = {p.pid for p in gone}
+        for votes in self.votes.values():
+            for pid in pids:
+                votes.pop(pid, None)
+        self.owners = {v: pid for v, pid in self.owners.items() if pid not in pids}
+        self.apart = {pair for pair in self.apart if not pair & pids}
+
+    def shown(self, now: float, head_yaw_deg: float | None = None) -> list[Person]:
+        """The people the headset gets a name tag for: seen lately, and not missing from where the camera looks.
+        Everyone else is still known (their voice, their face) and comes back with the same label."""
+        return [p for p in self.people
+                if now - p.seen <= (FLEETING_TAG_S if p.fleeting else TAG_S)
+                and self.place(p, now, head_yaw_deg) is not None]
+
+    def liveliest(self, t0: float, t1: float) -> Person | None:
+        """Who talks right now, for the live text and the mark on the tag: the mouth that moved most over [t0, t1],
+        if it moved like talking. No "clearly more than the others" and no waiting for the end of the sentence,
+        as in the web app (speakers.js `pick`), which got this right in the headset; the final decision (fusion.py)
+        may correct it."""
+        scores = [(a, p) for p in self.people if (a := p.activity(t0, t1, LIVE_SAMPLES)) is not None and a >= TALK_STD]
+        return max(scores, key=lambda s: s[0], default=(0.0, None))[1]
+
     def talker(self, t0: float, t1: float) -> Person | None:
         """The person whose mouth clearly moved most during [t0, t1], None if nobody stands out."""
         scores = sorted(((a, p) for p in self.people if (a := p.activity(t0, t1)) is not None),
                         key=lambda s: -s[0])
         if not scores or scores[0][0] < TALK_STD:
             return None
-        # Someone else was in the picture meanwhile, but too rarely to judge their mouth: it may have been them.
-        # Without this the one face that is seen well won every utterance (headset test 2026-11-16: two faces,
-        # every bubble at the same one).
-        if any(t0 <= p.seen and p.activity(t0, t1) is None for p in self.people):
+        # Someone else was in the picture meanwhile, too rarely to judge their mouth, and what was seen of it
+        # moved: it may have been them. Without this the one face that is seen well won every utterance (headset
+        # test 2026-11-16: two faces, every bubble at the same one). Until 2026-11-23 anyone seen at all since the
+        # start blocked, also with a still mouth or seen once: with copies of people around, a mouth clearly talked
+        # in 11 utterances and a person was chosen in 4.
+        if any(p.moved(t0, t1) for p in self.people):
             return None
         if len(scores) > 1 and scores[0][0] < LEAD * scores[1][0]:
             return None

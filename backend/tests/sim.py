@@ -78,6 +78,8 @@ class Seat:
     yaw: float                # where they sit, robot base frame, + = left
     face: bool = True         # False: never in the picture (behind Reachy, on the phone)
     found: float = 1.0        # share of the frames in which their face is found while in view (far away: ~0.15)
+    look: float = 0.84        # how well a look at the face shows who it is (two looks are look^2 alike); 0 = never
+                              # (eyes covered, turned away, too small: vision.py gives no embedding)
 
 
 @dataclass
@@ -92,6 +94,12 @@ class Scenario:
     doa_offset: float = 20.0
     fidget: float = 0.15      # how often a listener's mouth moves during someone's utterance
     short: float = 0.3        # share of utterances of 1.5 s (the others 3 or 6 s)
+    # What the headset test of 2026-11-23 had and the situations of 2026-11-18 above do not (all off by default):
+    tiny: float = 0.0         # share of utterances under 1 s ("Mm-hmm", "Gut."): no voice at all
+    track_s: float = 0.0      # a face is followed this long on average before it is lost and found again as a new
+                              # track (0 = never lost)
+    dup: float = 0.0          # share of the frames in which a face comes twice, as two tracks a little apart
+    ghosts: float = 0.0       # things taken for a face (a hand, a poster) per second, each for 0.5-3 s
 
 
 @dataclass
@@ -103,11 +111,14 @@ class Result:
     participants: int
     people: int
     said: list[tuple[int, int | None]] = field(default_factory=list, repr=False)   # (seat, participant)
+    tags: float = float("nan")      # name tags the headset would show, on average ...
+    in_view: float = float("nan")   # ... and people really in the camera's view then
 
     def __str__(self) -> str:
         f = "   -" if math.isnan(self.faces_right) else f"{self.faces_right:4.0%}"
+        t = "" if math.isnan(self.tags) else f"  tags {self.tags:.1f} for {self.in_view:.1f} in view"
         return (f"right {self.right:4.0%}  wrong {self.wrong:4.0%}  unknown {self.unknown:4.0%}  faces {f}  "
-                f"participants {self.participants}  people {self.people}")
+                f"participants {self.participants}  people {self.people}{t}")
 
 
 def _unit(x):
@@ -116,6 +127,7 @@ def _unit(x):
 
 def run(scn: Scenario, voices: Voices, seed: int = 0, clusters: SpeakerClusters | None = None) -> Result:
     rng = np.random.default_rng(seed)
+    rng2 = np.random.default_rng(seed + 7919)   # for what was added later, so the meetings above stay as they were
     people = People(_flat)
     clusters = clusters or SpeakerClusters()
     fusion = Fusion(clusters, people)
@@ -139,6 +151,8 @@ def run(scn: Scenario, voices: Voices, seed: int = 0, clusters: SpeakerClusters 
     for _ in range(scn.utterances):
         seat = int(rng.choice([i for i in range(len(scn.seats)) if i != last or rng.random() < 0.3]))
         dur = 1.5 if rng.random() < scn.short else float(rng.choice([3.0, 6.0]))
+        if scn.tiny and rng2.random() < scn.tiny:
+            dur = 0.7
         plan.append((t, t + dur, seat))
         t += dur + rng.uniform(0.9, 2.0)   # the segmenter needs 0.8 s of silence between utterances
         last = seat
@@ -153,7 +167,18 @@ def run(scn: Scenario, voices: Voices, seed: int = 0, clusters: SpeakerClusters 
             yaw += max(-6.0, min(6.0, target - yaw))                          # at most 120 degrees a second
             head_true[k] = yaw
 
+    if scn.head == "wanders":   # the remote user looks around: a new direction every 2-5 s, up to 60 degrees a second
+        target, yaw, until = 0.0, 0.0, 0
+        for k in range(len(head_true)):
+            if k >= until:
+                target, until = float(rng2.uniform(-35, 35)), k + int(rng2.uniform(2, 5) * HZ)
+            yaw += max(-3.0, min(3.0, target - yaw))
+            head_true[k] = yaw
+
     tracks = {}            # seat -> [track id, mean embedding, looks, time of the last look]
+    twins: dict[int, int] = {}      # seat -> track id of its second track (scn.dup)
+    ghosts: list[dict] = []         # {"track", "yaw" in the room, "until", "emb"}
+    shown: list[tuple[int, int]] = []   # (tags the headset would show, people in view), once a second
     next_track = itertools.count(1)
     said: list[tuple[int, int | None]] = []
     seen: list[tuple[int, int | None]] = []   # (seat, participant shown above that face), once a second
@@ -172,11 +197,15 @@ def run(scn: Scenario, voices: Voices, seed: int = 0, clusters: SpeakerClusters 
                 doa = (yaw + scn.doa_offset + rng.normal(0, scn.doa_sigma), 8.0)
             elif scn.doa == "same":
                 doa = (45.0 + rng.normal(0, 4.0), 8.0)
-            if roster:
+            if roster and t1 - t0 < 1.0:   # too short for a voice (speakers.py MIN_S)
+                d = fusion.final(None, t0, t1, doa, key=len(said))
+                roster.sync()
+                said.append((seat, roster.speaker(d.voice, d.person)))
+            elif roster:
                 d = fusion.final(VoiceObs(clip(seat, t1 - t0), t1 - t0), t0, t1, doa, key=len(said))
                 roster.sync()
                 said.append((seat, roster.speaker(d.voice, d.person)))
-                for key, voice in d.relabel:   # an earlier utterance turned out to be this new voice
+                for key, voice in d.relabel if t1 - t0 >= 1.0 else []:   # an earlier utterance turned out to be this new voice
                     said[key] = (said[key][0], roster.speaker(voice, None))
             else:
                 d = fusion.final(VoiceObs(clip(seat, t1 - t0), t1 - t0), t0, t1, doa)
@@ -198,9 +227,11 @@ def run(scn: Scenario, voices: Voices, seed: int = 0, clusters: SpeakerClusters 
                 continue
             if rng.random() > s.found:
                 continue
+            if scn.track_s and i in tracks and rng2.random() < 1 / (scn.track_s * HZ):
+                del tracks[i]          # lost: found again as a new track that knows nothing of the face yet
             tr = tracks.setdefault(i, [next(next_track), None, 0, -1e9])
-            if now - tr[3] >= 0.4:     # a new look at who it is: 0.84 alike to their face, so two looks are 0.70 alike
-                look = _unit(0.84 * faces[i] + math.sqrt(1 - 0.84**2) * _unit(rng.standard_normal(FACE_DIM)))
+            if s.look and now - tr[3] >= 0.4:   # a new look at who it is: 0.84 alike to their face, so two looks are 0.70 alike
+                look = _unit(s.look * faces[i] + math.sqrt(1 - s.look**2) * _unit(rng.standard_normal(FACE_DIM)))
                 n = min(tr[2], 11)
                 tr[1], tr[2], tr[3] = _unit(look if tr[1] is None else tr[1] * n + look), tr[2] + 1, now
             if i == talking:
@@ -212,6 +243,22 @@ def run(scn: Scenario, voices: Voices, seed: int = 0, clusters: SpeakerClusters 
             frame.append({"cx": 0.5 - rel / 90, "cy": 0.5, "top": 0.4, "w": 0.06, "h": 0.2, "mouth": max(0.0, mouth),
                           "track": tr[0], "emb": tr[1]})
             frame_seats.append(i)
+            if scn.dup and rng2.random() < scn.dup:   # the same face again, as another track (vision.py keeps two
+                twins.setdefault(i, next(next_track))  # tracks apart if their centres are over 0.6 face widths apart)
+                frame.append({**frame[-1], "cx": frame[-1]["cx"] + 0.05, "track": twins[i], "emb": None})
+                frame_seats.append(i)
+        if scn.ghosts:
+            if rng2.random() < scn.ghosts / HZ:
+                ghosts.append({"track": next(next_track), "yaw": yaw_true + float(rng2.uniform(-FOV, FOV)),
+                               "until": now + float(rng2.uniform(0.5, 3.0)),
+                               "emb": _unit(rng2.standard_normal(FACE_DIM)) if rng2.random() < 0.5 else None})
+            ghosts = [g for g in ghosts if g["until"] > now]
+            for g in ghosts:
+                rel = g["yaw"] - yaw_true
+                if abs(rel) <= FOV:
+                    frame.append({"cx": 0.5 - rel / 90, "cy": 0.55, "top": 0.47, "w": 0.05, "h": 0.16,
+                                  "mouth": float(rng2.uniform(0, 0.12)), "track": g["track"], "emb": g["emb"]})
+                    frame_seats.append(-1)
         if not steady_kw:      # the code before: no track, no embedding, no word about the head turning
             people.update([{a: b for a, b in f.items() if a not in ("track", "emb")} for f in frame], now, yaw_told)
         else:
@@ -220,14 +267,21 @@ def run(scn: Scenario, voices: Voices, seed: int = 0, clusters: SpeakerClusters 
             roster.sync()
             for i, f in zip(frame_seats, frame):
                 person = people.tracks.get(f["track"])
-                seen.append((i, roster.of_person.get(person.pid) if person is not None else None))
+                if i >= 0:
+                    seen.append((i, roster.of_person.get(person.pid) if person is not None else None))
+            tagged = people.shown(now, yaw_told) if hasattr(people, "shown") else [
+                q for q in people.people if People.place(q, now, yaw_told)]
+            shown.append((len(tagged), sum(1 for s in scn.seats if s.face and abs(s.yaw - yaw_true) <= FOV)))
 
     if roster:
         said = [(seat, roster.resolve(p)) for seat, p in said]
         seen = [(seat, roster.resolve(p)) for seat, p in seen]
     else:
         seen = []
-    return _score(scn, said, seen, len({p for _, p in said if p is not None}), len(people.people))
+    r = _score(scn, said, seen, len({p for _, p in said if p is not None}), len(people.people))
+    if shown:
+        r.tags, r.in_view = float(np.mean([a for a, _ in shown])), float(np.mean([b for _, b in shown]))
+    return r
 
 
 def _score(scn: Scenario, said, seen, participants: int, n_people: int) -> Result:
@@ -255,9 +309,12 @@ def _score(scn: Scenario, said, seen, participants: int, n_people: int) -> Resul
 
 def mean(results: list[Result]) -> Result:
     faces = [r.faces_right for r in results if not math.isnan(r.faces_right)]
+    tags = [r.tags for r in results if not math.isnan(r.tags)]
     return Result(float(np.mean([r.right for r in results])), float(np.mean([r.wrong for r in results])),
                   float(np.mean([r.unknown for r in results])), float(np.mean(faces)) if faces else float("nan"),
-                  round(float(np.mean([r.participants for r in results]))), round(float(np.mean([r.people for r in results]))))
+                  round(float(np.mean([r.participants for r in results]))), round(float(np.mean([r.people for r in results]))),
+                  tags=float(np.mean(tags)) if tags else float("nan"),
+                  in_view=float(np.mean([r.in_view for r in results if not math.isnan(r.in_view)])) if tags else float("nan"))
 
 
 def scenarios(voices: Voices) -> list[Scenario]:
@@ -283,4 +340,25 @@ def scenarios(voices: Voices) -> list[Scenario]:
         Scenario("far faces found now and then", [Seat(c, 20, found=0.15), Seat(d, -20, found=0.15)]),
         Scenario("four, two of them never in the picture",
                  [Seat(a, 20), Seat(c, -20), Seat(b, 130, face=False), Seat(d, -130, face=False)]),
+    ]
+
+
+
+def field_scenarios(voices: Voices) -> list[Scenario]:
+    """What the headset test of 2026-11-23 was like (backend log, 09:48-10:13; two people in a dark picture, one of
+    them wearing the headset; Reachy's head following the headset): faces found in half the frames and lost again
+    and again, things taken for faces, half the utterances short. Each trouble alone, then all together."""
+    pairs = voices.similar_pairs()
+    _, c, d = pairs[len(pairs) // 2]
+    two = lambda **kw: [Seat(c, 25, **kw), Seat(d, -30, **kw)]   # noqa: E731
+    return [
+        Scenario("field: faces lost and found again every 3 s", two(), track_s=3.0),
+        Scenario("field: a face comes twice now and then", two(), dup=0.15),
+        Scenario("field: things taken for faces", two(), ghosts=0.2),
+        Scenario("field: half the utterances short, a fifth under 1 s", two(), short=0.5, tiny=0.2),
+        Scenario("field: the head looks around", two(), head="wanders"),
+        Scenario("field: one face cannot be known (headset on)", [Seat(c, 25), Seat(d, -30, look=0.0)], track_s=3.0),
+        Scenario("field: all of it, as on 2026-11-23",
+                 [Seat(c, 25, found=0.5), Seat(d, -30, found=0.5, look=0.0)],
+                 head="wanders", track_s=3.0, dup=0.1, ghosts=0.2, short=0.5, tiny=0.2),
     ]

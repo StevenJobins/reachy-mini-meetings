@@ -541,11 +541,12 @@ class Pipeline:
 
     def _people_message(self, now: float) -> list[dict]:
         """Everyone the camera has seen and where, for the labels above the heads."""
-        talker = self.people.talker(now - 1.0, now) if self.segmenter.active else None
+        talker = self.people.liveliest(now - 1.5, now) if self.segmenter.active else None
         speaking = self.roster.for_person(talker) if talker else self.live_speaker if self.segmenter.active else None
         out = []
-        for p in self.people.people:
-            at = self.people.place(p, now, self.doa.head_yaw_deg if self.doa else None)
+        head_yaw = self.doa.head_yaw_deg if self.doa else None
+        for p in self.people.shown(now, head_yaw):   # seen lately: no tags left behind at empty places
+            at = self.people.place(p, now, head_yaw)
             if at:
                 pid = self.roster.for_person(p)
                 out.append({"id": pid, "name": self.roster.name_of(pid) or "", **{k: v for k, v in at.items() if k != "person"},

@@ -17,6 +17,17 @@ cue decides alone, and each counts only as far as it has proved itself in this m
 The caption goes to the best person if their score is at least ACCEPT and MARGIN ahead of the next; else no
 place (subtitle panel): a bubble at the wrong face is worse than none.
 
+Changed after the headset test of 2026-11-23 (backend log: 22 of 33 utterances went to the one known voice, which
+never got an owner; a mouth clearly talked in 11 utterances and a person was chosen in 4):
+  - someone seen too rarely to judge counts as "it may have been them" only if what was seen of their mouth moved
+    (before: anyone seen at all, which with copies of people around blocked nearly every decision)
+  - a doubtful match is no longer given to the closest voice when that is the only voice known (then everything
+    said by anyone new goes to it: a 2.8 s sentence of a second speaker matched at 0.46), or when the next voice
+    is nearly as close: no name is better than the wrong one, and the mouth can still say who it was. Such an
+    utterance casts no mouth vote either: the four votes voice 1 got that day came from doubtful matches (0.42-0.52),
+    for four different people. (Votes only for sure voices was tried and dropped: a voice founded from one sentence
+    rarely matches clearly again, so it never got an owner; tests/sim.py.)
+
 The voice id itself (similarities are to each voice's mean; the mic direction the voice usually comes from moves
 them a little, see _similarities):
   - the person the mouth and the mic point at owns a voice and it might be this one (>= LOW): theirs, learnt
@@ -42,10 +53,10 @@ from dataclasses import dataclass, field
 
 import numpy as np
 
-from .people import LEAD, MIN_S, TALK_STD, People, Person, angle_diff
+from .people import LEAD, MIN_S, TALK_STD, People, Person, angle_diff  # noqa: F401
 from .speakers import NEW_S, SpeakerClusters, VoiceObs
 
-TALK_W, MOVE_W, QUIET_W, UNJUDGED_W = 2.0, 1.0, -1.0, 1.0
+TALK_W, MOVE_W, QUIET_W, UNJUDGED_W = 2.0, 1.0, -1.0, 1.0   # unjudged: seen rarely, and the mouth moved (people.moved)
 QUIET_STD = 0.008     # mouth movement under this while someone talks: not them (2026-11-18: listeners 0.0002-0.005,
                       # talkers 0.04-0.19)
 OWNER_W, OTHER_OWNER_W = 1.5, -1.0
@@ -60,6 +71,9 @@ HIGH = 0.60           # clearly that voice: it learns from the utterance
 SURE = 0.70           # ... and so clearly that where the mic heard it from does not matter
 LOW = 0.30            # might be that voice, if the camera or the mic says so too
 NEW_BELOW = 0.25      # unlike every known voice: a new one at once
+LONE = 0.50           # a doubtful match to the only known voice counts from here on (2026-11-23: the known speaker's
+                      # short sentences 0.41-0.52, another speaker's 0.15-0.46)
+LEAD_VOICE = 0.15     # ... and with several voices known, if it is this much closer than the next one
 # A new voice that is not that unlike the known ones (a similar voice: the most similar pair of the 40 speakers is
 # 0.48 in the middle to the other's mean, 0.60 at the 95th percentile) is found by its second utterance: two
 # doubtful utterances that are alike (two clips of one speaker: 0.60 in the middle, 0.45 at the 5th percentile; of
@@ -148,7 +162,7 @@ class Fusion:
                     terms.append(("talks", TALK_W) if all(a >= LEAD * b for b in others) else ("moves", MOVE_W))
                 elif a < QUIET_STD:
                     terms.append(("still", QUIET_W))
-            elif judge and t0 <= p.seen:
+            elif judge and p.moved(t0, t1):
                 terms.append(("unjudged", UNJUDGED_W))
             if owner is not None and owner.pid == p.pid:
                 terms.append(("voice", OWNER_W))
@@ -248,7 +262,10 @@ class Fusion:
                 return new, f"doubtful, voices full, {txt}", False, []
             self.pending.append((key, emb, now, 0.0 if elsewhere else s))
         if s >= c.threshold and not elsewhere:
-            return sid, f"doubtful, not learnt, {txt}", False, []
+            rest = [x for i, x in enumerate(sims) if i != best]
+            if (s >= LONE) if not rest else (s - max(rest) >= LEAD_VOICE):
+                return sid, f"doubtful, not learnt, {txt}", False, []
+            return None, f"doubtful, no name ({'the only voice known' if not rest else 'another voice is close'}), {txt}", False, []
         return None, f"not known, {txt}", False, []
 
     # ------------------------------------------------------------------ utterances
@@ -283,11 +300,12 @@ class Fusion:
         return d
 
     def partial(self, obs: VoiceObs | None, t0: float | None = None, t1: float | None = None) -> Decision:
-        """Live text: a voice heard before and whoever is seen talking; nothing is learnt."""
+        """Live text: whoever's mouth moves most right now (the last 1.5 s, as the web app did), else the owner of a
+        voice heard before; nothing is learnt."""
         voice = self.clusters.match(obs.emb)[0] if obs is not None and self.clusters is not None else None
         person = None
         if self.people:
-            if t0 is not None and t1 is not None and t1 - t0 >= MIN_S:
-                person = self.people.talker(t0, t1)
+            if t0 is not None and t1 is not None:
+                person = self.people.liveliest(max(t0, t1 - 1.5), t1)
             person = person or (self.people.owner(voice) if voice else None)
         return Decision(voice, person)
