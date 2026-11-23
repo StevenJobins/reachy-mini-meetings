@@ -4,6 +4,7 @@ label is right. For comparing versions of people.py / fusion.py / roster.py on r
     python scripts/replay_meeting.py prepare ~/reachy-data/2026-11-23_110108     # faces + voices, once (minutes)
     python scripts/replay_meeting.py run ~/reachy-data/2026-11-23_110108         # this checkout's code (seconds)
     python scripts/replay_meeting.py run DIR --code main                         # another git revision's code
+    python scripts/replay_meeting.py video DIR                                   # the video with tags + subtitles
 
 prepare runs the slow, version-independent parts and caches them next to the recording (replay/):
   faces.jsonl   vision.py FaceFinder on the video at --hz (20, as live), with the frame times of frames.csv
@@ -11,6 +12,9 @@ prepare runs the slow, version-independent parts and caches them next to the rec
 run feeds faces (with the head pose of state.jsonl at their time) and finished utterances (with the mic direction)
 to People / Fusion / Roster in time order, as captions.py does, and prints one line per utterance and a score for the
 utterances inside a "read" label (who read is known). The recording stays where it is: it shows people.
+video makes replay/headset_<code>.mp4: the recording with what the headset would have shown, the tag above each head
+(lit while that person is taken to be talking) and the subtitles (live words as they are said, then the final with
+its speaker). The text is Whisper's on the recorded sound (cached in replay/words.json), not translated.
 """
 
 from __future__ import annotations
@@ -116,7 +120,9 @@ def prepare(rec: Path, hz: float) -> None:
 
 
 # ---------------------------------------------------------------- run
-def run(rec: Path, code: str | None, verbose: bool) -> dict:
+def run(rec: Path, code: str | None, verbose: bool, snap: dict | None = None) -> dict:
+    """snap: filled with what the headset would have got, for `video`: "faces" [(t, [(face, label, speaking)])],
+    "live" [(t, utterance, label)] every 0.6 s while someone talks, "finals" [(t, utterance, label)]."""
     pkg = load_package(code)
     name = pkg.__name__
     people_mod = importlib.import_module(name + ".people")
@@ -140,6 +146,10 @@ def run(rec: Path, code: str | None, verbose: bool) -> dict:
 
     events = [(s["t"], 0, s) for s in states] + [(fr["t"], 1, fr) for fr in frames] + \
              [(r["t1"] + DECIDE_S, 2, (i, r)) for i, r in enumerate(rows)]
+    if snap is not None:
+        snap.update(faces=[], live=[], finals=[])
+        events += [(t, 3, i) for i, r in enumerate(rows) for t in np.arange(r["t0"] + 0.5, r["t1"] + DECIDE_S, 0.6)]
+    label_of = (lambda p: roster_mod.Roster.label(p, roster.name_of(p))) if hasattr(roster, "name_of") else str
     events.sort(key=lambda e: (e[0], e[1]))
     said: dict[int, int | None] = {}
     why: dict[int, str] = {}
@@ -165,6 +175,26 @@ def run(rec: Path, code: str | None, verbose: bool) -> dict:
                 shown = people.shown(t, doa.head_yaw_deg) if hasattr(people, "shown") else \
                     [p for p in people.people if people.place(p, t, doa.head_yaw_deg)]
                 tags.append((t, len(shown)))
+            if snap is not None:
+                talking = any(r["t0"] <= t <= r["t1"] for r in rows)
+                lively = people.liveliest(t - 1.5, t) if talking and hasattr(people, "liveliest") else None
+                speaking = roster.for_person(lively) if lively is not None else None
+                out = []
+                for f in x["faces"]:
+                    p = people.tracks.get(f.get("track")) if hasattr(people, "tracks") else None
+                    if p is not None and any(p is q for q in people.people):
+                        pid = roster.for_person(p)
+                        out.append((f, label_of(pid), pid == speaking))
+                snap["faces"].append((t, out))
+        elif kind == 3:
+            i, r = x, rows[x]
+            if i in said:
+                continue
+            obs = speakers_mod.VoiceObs(embs[i], r["vdur"]) if r["voice"] else None
+            d = fusion.partial(obs, r["t0"], min(t, r["t1"]))
+            roster.sync()
+            p = roster.speaker(d.voice, d.person)
+            snap["live"].append((t, i, label_of(p) if p is not None else ""))
         else:
             i, r = x
             obs = speakers_mod.VoiceObs(embs[i], r["vdur"], r["mixed"], r["windows"]) if r["voice"] else None
@@ -178,6 +208,8 @@ def run(rec: Path, code: str | None, verbose: bool) -> dict:
             for key, v in getattr(d, "relabel", []):
                 said[key] = roster.speaker(v, None)
             why[i] = d.why()
+            if snap is not None:
+                snap["finals"].append((t, i, label_of(said[i]) if said[i] is not None else ""))
     said = {i: roster.resolve(p) for i, p in said.items()}
 
     # who really spoke: the "read" label the utterance lies in (most of it)
@@ -204,7 +236,7 @@ def run(rec: Path, code: str | None, verbose: bool) -> dict:
             print(f"  [{i:2d}] {r['t0'] - frames[0]['t']:6.1f}-{r['t1'] - frames[0]['t']:6.1f} s  {r['dur']:4.1f} s  {part:10s} -> "
                   f"{label or '(no name)':10s} | {why[i][:150]}")
     free = [i for i, r in enumerate(rows) if r["t0"] >= t_free]
-    res = {"code": code or "this checkout", "read": len(truth), "right": right, "wrong": len(truth) - right - unknown,
+    res = {"rows": rows, "code": code or "this checkout", "read": len(truth), "right": right, "wrong": len(truth) - right - unknown,
            "unknown": unknown, "participants": len({p for p in said.values() if p is not None}),
            "people": len(people.people), "tags": float(np.mean([n for _, n in tags])) if tags else 0.0,
            "tags_max": max((n for _, n in tags), default=0),
@@ -215,17 +247,201 @@ def run(rec: Path, code: str | None, verbose: bool) -> dict:
     return res
 
 
+# ---------------------------------------------------------------- video
+COLORS = [(64, 156, 255), (255, 149, 0), (52, 199, 89), (175, 82, 222), (255, 59, 48), (90, 200, 250)]
+FONT = "/System/Library/Fonts/SFNS.ttf"
+
+
+def transcribe(rec: Path, model: str) -> list[dict]:
+    """Whisper on each utterance of voices.npz, with word times (wall clock); cached in replay/words.json."""
+    path = rec / "replay" / f"words_{model}.json"
+    if path.exists():
+        return json.loads(path.read_text())
+    from faster_whisper import WhisperModel
+
+    meta = json.loads((rec / "meta.json").read_text())
+    rows = json.loads(str(np.load(rec / "replay" / "voices.npz")["rows"]))
+    with wave.open(str(rec / "room.wav")) as w:
+        audio = np.frombuffer(w.readframes(w.getnframes()), "<i2").astype(np.float32) / 32768
+    t_audio = meta["audio"]["t_first_block_end"] - meta["audio"]["block"] / 16000
+    fw = WhisperModel(model, device="cpu", compute_type="int8", cpu_threads=4)
+    out = []
+    for i, r in enumerate(rows):
+        a = audio[max(0, int((r["t0"] - t_audio) * 16000)):int((r["t1"] - t_audio) * 16000)]
+        lang = None
+        if len(a) < 16000 * 0.5:
+            out.append({"lang": "", "words": []})
+            continue
+        _, info = fw.transcribe(a[:16000 * 10], beam_size=1)   # only German or English, as captions.py --langs
+        lang = info.language if info.language in ("de", "en") else "de"
+        segs, _ = fw.transcribe(a, language=lang, beam_size=5, word_timestamps=True, condition_on_previous_text=False)
+        words = [{"w": w.word, "t0": r["t0"] + w.start, "t1": r["t0"] + w.end} for sg in segs
+                 if sg.no_speech_prob < 0.6 and sg.avg_logprob > -1.0 for w in sg.words]
+        out.append({"lang": lang, "words": words})
+        print(f"  [{i}] {lang}: {''.join(w['w'] for w in words).strip()[:100]}")
+    path.write_text(json.dumps(out, ensure_ascii=False))
+    return out
+
+
+def video(rec: Path, code: str | None, model: str, fps: float, width: int) -> Path:
+    import av
+    import cv2
+    from PIL import Image, ImageDraw, ImageFont
+
+    words = transcribe(rec, model)
+    snap: dict = {}
+    res = run(rec, code, False, snap)
+    rev = subprocess.run(["git", "rev-parse", "--short", code or "HEAD"], capture_output=True, text=True, cwd=SRC).stdout.strip()
+    labels = [json.loads(line) for line in open(rec / "labels.jsonl")]
+    meta = json.loads((rec / "meta.json").read_text())
+    note = meta.get("note", "")
+    names = dict(x.split(" = ") for x in note.split(";")[0].split(", ") if " = " in x) if "=" in note else {}
+    times = [float(line.split(",")[1]) for line in open(rec / "frames.csv").read().split("\n")[1:] if line]
+    finals = {i: (t, lab) for t, i, lab in snap["finals"]}
+    colors: dict[str, tuple] = {}
+
+    def color(lab: str) -> tuple:
+        return colors.setdefault(lab, COLORS[len(colors) % len(COLORS)]) if lab else (150, 150, 150)
+
+    out_path = rec / "replay" / f"headset_{(code or 'this').replace('/', '_')}.mp4"
+    W, H = width, round(width * 9 / 16)
+    k = W / 1920
+    font = ImageFont.truetype(FONT, round(30 * k))
+    bold = ImageFont.truetype(FONT, round(30 * k))
+    small = ImageFont.truetype(FONT, round(22 * k))
+    try:
+        bold.set_variation_by_name("Bold")
+    except Exception:
+        pass
+    container = av.open(str(out_path), "w")
+    vs = container.add_stream("h264", rate=round(fps))
+    vs.width, vs.height, vs.pix_fmt = W, H, "yuv420p"
+    vs.options = {"crf": "23", "preset": "veryfast"}
+    a_s = container.add_stream("aac", rate=16000)
+    a_s.layout = "mono"
+
+    def wrap(text: str, f, maxw: float) -> list[str]:
+        lines, cur = [], ""
+        for w in text.split():
+            nxt = (cur + " " + w).strip()
+            if f.getlength(nxt) > maxw and cur:
+                lines.append(cur)
+                cur = w
+            else:
+                cur = nxt
+        return lines + ([cur] if cur else [])
+
+    cap = cv2.VideoCapture(str(rec / "video.mp4"))
+    t_first = times[0]
+    fi, li = 0, 0
+    next_t, n = t_first, 0
+    for t in times:
+        if not cap.grab():
+            break
+        if t < next_t:
+            continue
+        next_t += 1 / fps
+        _, frame = cap.retrieve()
+        img = Image.fromarray(cv2.cvtColor(cv2.resize(frame, (W, H)), cv2.COLOR_BGR2RGB)).convert("RGBA")
+        over = Image.new("RGBA", img.size, (0, 0, 0, 0))
+        d = ImageDraw.Draw(over)
+        while fi + 1 < len(snap["faces"]) and snap["faces"][fi + 1][0] <= t:
+            fi += 1
+        if snap["faces"] and 0 <= t - snap["faces"][fi][0] < 0.3:
+            for f, lab, speaking in snap["faces"][fi][1]:
+                c = color(lab)
+                x0, y0 = (f["cx"] - f["w"] / 2) * W, f["top"] * H
+                x1, y1 = (f["cx"] + f["w"] / 2) * W, (f["top"] + f["h"]) * H
+                d.rounded_rectangle([x0, y0, x1, y1], radius=12 * k, outline=c + (255 if speaking else 150,),
+                                    width=max(2, round((5 if speaking else 2) * k)))
+                text = lab + ("  spricht" if speaking else "")
+                tw = bold.getlength(text)
+                px, py = (x0 + x1) / 2 - tw / 2 - 16 * k, y0 - 62 * k
+                if py < 66 * k:   # head at the top of the picture: the tag goes under the face
+                    py = y1 + 12 * k
+                d.rounded_rectangle([px, py, px + tw + 32 * k, py + 46 * k], radius=23 * k,
+                                    fill=c + (235,) if speaking else (20, 20, 24, 190), outline=c + (255,), width=max(1, round(2 * k)))
+                d.text((px + 16 * k, py + 7 * k), text, font=bold, fill=(255, 255, 255, 255))
+        # subtitles: finals of the last 6 s and what is being said now, newest at the bottom
+        lines = []
+        for i, r in enumerate(res["rows"]):
+            ws = words[i]["words"]
+            if i in finals and finals[i][0] <= t:
+                if t - finals[i][0] < 6 and ws:
+                    lines.append((finals[i][1], "".join(w["w"] for w in ws).strip(), False))
+            elif r["t0"] <= t:
+                said_now = "".join(w["w"] for w in ws if w["t1"] <= t).strip()
+                live = [lab for tt, j, lab in snap["live"] if j == i and tt <= t]
+                if said_now or t <= r["t1"]:
+                    lines.append((live[-1] if live else "", (said_now + " …").strip(), True))
+        lines = lines[-2:]
+        y = H - 30 * k
+        for lab, text, live in reversed(lines):
+            rows_ = wrap(text, font, W * 0.62)[-3:]
+            hgt = (len(rows_) * 38 + 50) * k
+            y -= hgt + 12 * k
+            bx = W * 0.17
+            d.rounded_rectangle([bx, y, W - bx, y + hgt], radius=18 * k, fill=(16, 16, 20, 205 if not live else 170))
+            d.text((bx + 22 * k, y + 10 * k), lab or "(kein Name)", font=small, fill=color(lab) + (255,))
+            for j, line in enumerate(rows_):
+                d.text((bx + 22 * k, y + (42 + 38 * j) * k), line, font=font,
+                       fill=(255, 255, 255, 255) if not live else (215, 215, 220, 255))
+        # what really happened (the labels of the recording) and what this is
+        while li + 1 < len(labels) and labels[li + 1]["t_start"] <= t:
+            li += 1
+        lb = labels[li] if labels and labels[li]["t_start"] <= t <= labels[li]["t_end"] else None
+        truth = ("liest laut Ablauf: " + lb["person"] + (f" ({names[lb['person']]})" if lb["person"] in names else "")
+                 if lb and lb["kind"] == "read" else "freies Gespräch" if lb else "")
+        head = f"So hätte es die Brille gezeigt · Code {rev} · Untertitel: Whisper {model}, ohne Übersetzung"
+        d.rounded_rectangle([16 * k, 16 * k, 32 * k + small.getlength(head), 56 * k], radius=10 * k, fill=(0, 0, 0, 150))
+        d.text((24 * k, 22 * k), head, font=small, fill=(230, 230, 230, 255))
+        if truth:
+            tw = small.getlength(truth)
+            d.rounded_rectangle([W - 32 * k - tw, 16 * k, W - 16 * k, 56 * k], radius=10 * k, fill=(255, 214, 10, 220))
+            d.text((W - 24 * k - tw, 22 * k), truth, font=small, fill=(0, 0, 0, 255))
+        img = Image.alpha_composite(img, over).convert("RGB")
+        vf = av.VideoFrame.from_ndarray(np.asarray(img), format="rgb24")
+        vf.pts = None
+        for pkt in vs.encode(vf):
+            container.mux(pkt)
+        n += 1
+        if n % 600 == 0:
+            print(f"  video: {t - t_first:.0f} s")
+    for pkt in vs.encode():
+        container.mux(pkt)
+    # sound, from the first video frame on
+    with wave.open(str(rec / "room.wav")) as w:
+        audio = np.frombuffer(w.readframes(w.getnframes()), "<i2")
+    t_audio = meta["audio"]["t_first_block_end"] - meta["audio"]["block"] / 16000
+    audio = audio[max(0, int((t_first - t_audio) * 16000)):][: int(n / fps * 16000)]
+    for j in range(0, len(audio), 1024):
+        af = av.AudioFrame.from_ndarray(audio[j:j + 1024][None, :].copy(), format="s16", layout="mono")
+        af.sample_rate, af.pts = 16000, j
+        for pkt in a_s.encode(af):
+            container.mux(pkt)
+    for pkt in a_s.encode():
+        container.mux(pkt)
+    container.close()
+    print(f"{out_path} ({n} frames, {n / fps:.0f} s)")
+    return out_path
+
+
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
-    ap.add_argument("what", choices=["prepare", "run"])
+    ap.add_argument("what", choices=["prepare", "run", "video"])
     ap.add_argument("recording")
     ap.add_argument("--hz", type=float, default=20)
     ap.add_argument("--code", help="a git revision whose people/fusion/roster to use (default: this checkout)")
     ap.add_argument("-v", "--verbose", action="store_true", help="every utterance, not only the read ones")
+    ap.add_argument("--model", default="small", help="video: Whisper model for the subtitles")
+    ap.add_argument("--fps", type=float, default=30, help="video: frames a second")
+    ap.add_argument("--width", type=int, default=1280, help="video: width in pixels")
     args = ap.parse_args()
     rec = Path(args.recording).expanduser()
     if args.what == "prepare":
         prepare(rec, args.hz)
+    elif args.what == "video":
+        video(rec, args.code, args.model, args.fps, args.width)
     else:
         run(rec, args.code, args.verbose)
 
