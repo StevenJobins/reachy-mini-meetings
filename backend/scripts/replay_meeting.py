@@ -15,6 +15,8 @@ utterances inside a "read" label (who read is known). The recording stays where 
 video makes replay/headset_<code>.mp4: the recording with what the headset would have shown, the tag above each head
 (lit while that person is taken to be talking) and the subtitles (live words as they are said, then the final with
 its speaker). The text is Whisper's on the recorded sound (cached in replay/words.json), not translated.
+video --split tests cutting a final where someone else takes over without a pause (SplitV2: mouths against their own
+rest, turned faces not judged, the voice every 0.5 s, cuts at sentence boundaries); only the finals change.
 """
 
 from __future__ import annotations
@@ -122,7 +124,8 @@ def prepare(rec: Path, hz: float) -> None:
 # ---------------------------------------------------------------- run
 def run(rec: Path, code: str | None, verbose: bool, snap: dict | None = None) -> dict:
     """snap: filled with what the headset would have got, for `video`: "faces" [(t, [(face, label, speaking)])],
-    "live" [(t, utterance, label)] every 0.6 s while someone talks, "finals" [(t, utterance, label)]."""
+    "live" [(t, utterance, label)] every 0.6 s while someone talks, "finals" [(t, utterance, label)],
+    "voices" {utterance: {label: mean voice of the utterances given to that label before}}."""
     pkg = load_package(code)
     name = pkg.__name__
     people_mod = importlib.import_module(name + ".people")
@@ -211,6 +214,13 @@ def run(rec: Path, code: str | None, verbose: bool, snap: dict | None = None) ->
             why[i] = d.why()
             if snap is not None:
                 snap["finals"].append((t, i, label_of(said[i]) if said[i] is not None else ""))
+                # each person's voice as the system knows it now: the mean of the utterances given to them so far
+                # (for --split; the voice clusters are not all tied to a face yet)
+                voices = {}
+                for j, lab in [(j, lab) for _, j, lab in snap["finals"][:-1] if lab and rows[j]["voice"] and not rows[j]["mixed"]]:
+                    voices.setdefault(lab, []).append(embs[j] / np.linalg.norm(embs[j]))
+                voices = {lab: np.mean(v, 0) / np.linalg.norm(np.mean(v, 0)) for lab, v in voices.items()}
+                snap.setdefault("voices", {})[i] = voices
     said = {i: roster.resolve(p) for i, p in said.items()}
 
     # who really spoke: the "read" label the utterance lies in (most of it)
@@ -284,48 +294,173 @@ def transcribe(rec: Path, model: str) -> list[dict]:
     return out
 
 
-SPLIT_RUN_S = 1.5   # --split: another mouth moving most for at least this long within one subtitle is a turn
-LIVELY_LAG_S = 0.75  # "who moves most" looks at the last 1.5 s: it lags the mouth by about half of that
+# --split v2: who talks when inside one utterance, from the mouths AND the voice, decided once it is over (as the final)
+STEP_S = 0.25          # the timeline is looked at every this often
+MOUTH_WIN_S = 1.5      # a mouth's activity: its lips over this long, centred on the moment
+TURNED = 1.0           # a face turned this much further than people here usually sit (vision.turn, about 1 =
+                       # profile; 2026-11-23: both mostly +0.8 towards the laptop, Dominic turned to Simon -1.3):
+                       # its lips are not judged
+SEEN_SHARE = 0.6       # ... nor when fewer than this share of the readings in the window are usable
+REST_Q = 20            # a person's own rest: this percentile of their activity over the meeting so far
+VOICE_WIN_S = 2.0      # the voice: CAM++ on windows this long, every 0.5 s
+MOUTH_W, VOICE_W = 0.5, 0.5
+SURE_GAP = 0.2         # the best person must lead the second by this much, else the moment is "not sure"
+BOUNDARY_RUN_S = 0.75  # a turn this long is enough where the sentence allows a cut (punctuation or a pause) ...
+MIDDLE_RUN_S = 1.5     # ... mid-sentence it takes this long and the voice of the part must agree
+PAUSE_S = 0.25         # a gap between words this long is a natural place to cut
 
 
-def turns(rows: list[dict], words: list[dict], lively: list[tuple[float, str | None]]) -> dict[int, list[tuple]]:
-    """--split, a test of cutting a subtitle where someone else takes over without a pause: within each utterance,
-    the person whose mouth moves most (people.liveliest, as the tag that lights up) is followed; a run of another
-    person of SPLIT_RUN_S or more is a turn, cut at the gap between two words nearest to the change.
-    -> {utterance: [(label, text, t_from, t_to)]}, only for utterances that are cut."""
-    out = {}
-    for i, r in enumerate(rows):
-        seq = [(t - LIVELY_LAG_S, lab) for t, lab in lively if lab and r["t0"] <= t - LIVELY_LAG_S <= r["t1"]]
-        runs: list[list] = []   # [label, start, end]
-        for t, lab in seq:
+def _activity(v: list[float]) -> float | None:
+    """As people.py: the spread of the fast part of the lip readings (reading minus the running mean of 9)."""
+    if len(v) < 5:
+        return None
+    a = np.array(v)
+    base = np.array([a[max(0, k - 4):k + 5].mean() for k in range(len(a))])
+    return float(np.std(a - base))
+
+
+class SplitV2:
+    """--split: one subtitle per turn. Each moment of an utterance gets the person whose mouth moves most measured
+    against their own rest (a turned or unseen face does not count either way) and whose voice it sounds like; runs
+    of another person are a turn if long enough: BOUNDARY_RUN_S at a sentence boundary or pause, MIDDLE_RUN_S
+    mid-sentence with the voice of that part agreeing. The cut lands on the gap between two words."""
+
+    def __init__(self, rec: Path, faces: list, voices: dict):
+        sys.path.insert(0, str(SRC))
+        from reachy_meetings_backend.speakers import OnnxVoice
+
+        meta = json.loads((rec / "meta.json").read_text())
+        with wave.open(str(rec / "room.wav")) as w:
+            self.audio = np.frombuffer(w.readframes(w.getnframes()), "<i2").astype(np.float32) / 32768
+        self.ta = meta["audio"]["t_first_block_end"] - meta["audio"]["block"] / 16000
+        self.model = OnnxVoice()
+        self.voices = voices
+        self.lips: dict[str, list[tuple[float, float | None]]] = {}   # label -> (t, lips or None if not judgeable)
+        seen: list[float] = []   # every face's turn so far: their median is how people here usually sit
+        for t, out in faces:
+            front = float(np.median(seen[-2000:])) if seen else 0.0
+            for f, lab, _ in out:
+                turned = f.get("turn") is not None and abs(f["turn"] - front) > TURNED
+                ok = f.get("lips") is not None and not turned
+                self.lips.setdefault(lab, []).append((t, f["lips"] if ok else None))
+            seen += [f["turn"] for f, _, _ in out if f.get("turn") is not None]
+        self.rest: dict[str, list[tuple[float, float]]] = {}   # label -> (t, activity) every 0.5 s, for the rest level
+        for lab, v in self.lips.items():
+            ts = np.array([t for t, _ in v])
+            for a in np.arange(ts[0], ts[-1], 0.5):
+                if (x := self.mouth(lab, a)) is not None:
+                    self.rest.setdefault(lab, []).append((a, x))
+
+    def emb(self, a: float, b: float) -> np.ndarray | None:
+        x = self.audio[max(0, int((a - self.ta) * 16000)):int((b - self.ta) * 16000)]
+        if len(x) < 16000 * 0.8:
+            return None
+        e = self.model(x)
+        return e / np.linalg.norm(e)
+
+    def mouth(self, lab: str, t: float) -> float | None:
+        """Activity of that mouth around t; None = not judgeable (turned away, not seen)."""
+        w = [x for tt, x in self.lips[lab] if t - MOUTH_WIN_S / 2 <= tt < t + MOUTH_WIN_S / 2]
+        good = [x for x in w if x is not None]
+        if len(w) < 5 or len(good) < SEEN_SHARE * len(w):
+            return None
+        return _activity(good)
+
+    def rest_of(self, lab: str, t: float) -> float | None:
+        past = [x for tt, x in self.rest.get(lab, []) if tt < t]
+        return float(np.percentile(past, REST_Q)) if len(past) >= 20 else None
+
+    def timeline(self, i: int, r: dict) -> list[tuple[float, str | None]]:
+        profiles = self.voices.get(i, {})
+        labs = sorted(set(self.lips) | set(profiles))
+        vt = {}
+        for c in np.arange(r["t0"] + VOICE_WIN_S / 2, r["t1"] - VOICE_WIN_S / 2 + 1e-6, 0.5):
+            if (e := self.emb(c - VOICE_WIN_S / 2, c + VOICE_WIN_S / 2)) is not None:
+                vt[c] = {lab: float(e @ p) for lab, p in profiles.items()}
+        out = []
+        for t in np.arange(r["t0"], r["t1"] + 1e-6, STEP_S):
+            m = {}
+            for lab in self.lips:
+                a, rest = self.mouth(lab, t), self.rest_of(lab, t)
+                if a is not None and rest:
+                    m[lab] = math.log(max(a, 1e-5) / rest)
+            v = vt[min(vt, key=lambda c: abs(c - t))] if vt else {}
+            score = {}
+            for lab in labs:
+                s = 0.0
+                if lab in m and len(m) >= 2:
+                    others = [x for k, x in m.items() if k != lab]
+                    s += MOUTH_W * float(np.clip(m[lab] - max(others), -1.5, 1.5)) / 1.5
+                elif lab in m:   # the only mouth that can be judged: moving well above its own rest, or not
+                    s += MOUTH_W * float(np.clip(m[lab] / math.log(3), -1, 1)) / 2
+                if lab in v and len(v) >= 2:
+                    others = [x for k, x in v.items() if k != lab]
+                    s += VOICE_W * float(np.clip((v[lab] - max(others)) / 0.15, -1, 1))
+                score[lab] = s
+            best = sorted(score.items(), key=lambda x: -x[1])
+            sure = len(best) >= 2 and best[0][1] - best[1][1] >= SURE_GAP
+            out.append((t, best[0][0] if sure else None))
+        return out
+
+    def split(self, i: int, r: dict, ws: list[dict]) -> list[tuple] | None:
+        """[(label, text, t_from, t_to)] if the utterance has turns, else None."""
+        runs: list[list] = []
+        for t, lab in self.timeline(i, r):
+            if lab is None:
+                continue
             if runs and runs[-1][0] == lab:
-                runs[-1][2] = t
+                runs[-1][2] = t + STEP_S
             else:
-                runs.append([lab, t, t])
-        runs = [x for x in runs if x[2] - x[1] >= SPLIT_RUN_S]   # short flickers say nothing
-        merged: list[list] = []
-        for x in runs:
-            if merged and merged[-1][0] == x[0]:
-                merged[-1][2] = x[2]
-            else:
-                merged.append(list(x))
-        if len(merged) < 2:
-            continue
-        ws = words[i]["words"]
+                runs.append([lab, t, t + STEP_S])
+        if len(ws) < 2 or not runs:
+            return None
+        gaps = []   # (time of the cut, natural place?)
+        for j in range(len(ws) - 1):
+            pause = ws[j + 1]["t0"] - ws[j]["t1"]
+            punct = ws[j]["w"].strip()[-1:] in ".,?!;:…"
+            gaps.append(((ws[j]["t1"] + ws[j + 1]["t0"]) / 2, pause >= PAUSE_S or punct))
+        # turns: runs long enough, merged with their own kind across what is too short to count
+        kept: list[list] = []
+        for lab, a, b in runs:
+            if kept and kept[-1][0] == lab:
+                kept[-1][2] = b
+                continue
+            near = [g for g, natural in gaps if natural and abs(g - a) <= 0.5]
+            need = BOUNDARY_RUN_S if near else MIDDLE_RUN_S
+            if b - a < need:
+                continue   # a flicker: it belongs to the one before (at the start: to the one after)
+            kept.append([lab, a, b])
+        if len(kept) < 2:
+            return None
         cuts = []
-        for a, b in zip(merged, merged[1:]):
-            change = (a[2] + b[1]) / 2
-            gaps = [((ws[j]["t1"] + ws[j + 1]["t0"]) / 2) for j in range(len(ws) - 1)]
-            cuts.append(min(gaps, key=lambda g: abs(g - change)) if gaps else change)
+        for nxt in kept[1:]:
+            change = nxt[1]
+            natural = [g for g, n in gaps if n and abs(g - change) <= 0.6]
+            pool = natural or [g for g, _ in gaps]
+            cuts.append(min(pool, key=lambda g: abs(g - change)))
         edges = [r["t0"]] + cuts + [r["t1"] + 1]
         parts = []
-        for (lab, _, _), t_from, t_to in zip(merged, edges, edges[1:]):
-            text = "".join(w["w"] for w in ws if t_from <= (w["t0"] + w["t1"]) / 2 < t_to).strip()
-            if text:
-                parts.append((lab, text, t_from, min(t_to, r["t1"])))
-        if len(parts) > 1:
-            out[i] = parts
-    return out
+        for (lab, _, _), a, b in zip(kept, edges, edges[1:]):
+            text = "".join(w["w"] for w in ws if a <= (w["t0"] + w["t1"]) / 2 < b).strip()
+            if not text:
+                continue
+            if parts and parts[-1][0] == lab:
+                parts[-1] = (lab, parts[-1][1] + " " + text, parts[-1][2], min(b, r["t1"]))
+                continue
+            parts.append((lab, text, a, min(b, r["t1"])))
+        # mid-sentence parts must sound like their person
+        profiles = self.voices.get(i, {})
+        checked = []
+        for k, (lab, text, a, b) in enumerate(parts):
+            natural_start = k == 0 or any(n and abs(g - a) < 0.05 for g, n in gaps)
+            e = self.emb(a, min(b, r["t1"])) if not natural_start else None
+            if (e is not None and lab in profiles and len(profiles) >= 2 and checked
+                    and max(profiles, key=lambda x: float(e @ profiles[x])) != lab):
+                p = checked[-1]
+                checked[-1] = (p[0], p[1] + " " + text, p[2], b)
+                continue
+            checked.append((lab, text, a, b))
+        return checked if len(checked) > 1 else None
 
 
 def video(rec: Path, code: str | None, model: str, fps: float, width: int, split: bool = False) -> Path:
@@ -349,7 +484,12 @@ def video(rec: Path, code: str | None, model: str, fps: float, width: int, split
         return colors.setdefault(lab, COLORS[len(colors) % len(COLORS)]) if lab else (150, 150, 150)
 
     out_path = rec / "replay" / f"headset_{(code or 'this').replace('/', '_')}{'_split' if split else ''}.mp4"
-    cut = turns(res["rows"], words, snap["lively"]) if split else {}
+    cut = {}
+    if split:
+        sp = SplitV2(rec, snap["faces"], snap.get("voices", {}))
+        for i, r in enumerate(res["rows"]):
+            if (parts := sp.split(i, r, words[i]["words"])) is not None:
+                cut[i] = parts
     for i, parts in cut.items():
         print(f"  cut [{i}] at " + ", ".join(f"{p[2] - times[0]:.1f} s" for p in parts[1:]) + ": "
               + " | ".join(f"{lab}: {text[:50]}" for lab, text, _, _ in parts))
@@ -444,7 +584,7 @@ def video(rec: Path, code: str | None, model: str, fps: float, width: int, split
         lb = labels[li] if labels and labels[li]["t_start"] <= t <= labels[li]["t_end"] else None
         truth = ("liest laut Ablauf: " + lb["person"] + (f" ({names[lb['person']]})" if lb["person"] in names else "")
                  if lb and lb["kind"] == "read" else "freies Gespräch" if lb else "")
-        head = (f"So hätte es die Brille gezeigt · Code {rev}" + (" + Test: Teilen beim Wechsel des Mundes" if split else "")
+        head = (f"So hätte es die Brille gezeigt · Code {rev}" + (" + Test: Teilen bei Sprecherwechsel (Mund + Stimme)" if split else "")
                 + f" · Untertitel: Whisper {model}, ohne Übersetzung")
         d.rounded_rectangle([16 * k, 16 * k, 32 * k + small.getlength(head), 56 * k], radius=10 * k, fill=(0, 0, 0, 150))
         d.text((24 * k, 22 * k), head, font=small, fill=(230, 230, 230, 255))

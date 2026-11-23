@@ -219,6 +219,20 @@ def lips(xs, ys, W: int, H: int) -> float | None:
     return round(sum(d(a, b) for a, b in LIP_PAIRS) / len(LIP_PAIRS) / face, 4) if face > 0 else None
 
 
+CHEEKS, NOSE = (234, 454), 4
+
+
+def turn(xs, ys, W: int) -> float | None:
+    """How far the head is turned to the side: where the nose tip lies between the cheek edges, 0 = facing the
+    camera, about +-1 = profile. A turned face's lips are not measured well (2026-11-23 recording: Dominic turned to
+    Simon read as a perfectly still mouth while he talked)."""
+    if len(xs) <= max(*CHEEKS, NOSE):
+        return None
+    a, b = xs[CHEEKS[0]] * W, xs[CHEEKS[1]] * W
+    half = abs(b - a) / 2
+    return round((xs[NOSE] * W - (a + b) / 2) / half, 3) if half > 0 else None
+
+
 class FaceFinder:
     """Faces in a frame (RGB), as vision.py publishes them. Needs a landmarker in IMAGE mode."""
 
@@ -258,7 +272,7 @@ class FaceFinder:
             jaw = next((c.score for c in res.face_blendshapes[i] if c.category_name == "jawOpen"), 0.0)
             faces.append({"cx": round((fx0 + fx1) / 2, 4), "cy": round((fy0 + fy1) / 2, 4), "top": round(fy0, 4),
                           "w": round(fx1 - fx0, 4), "h": round(fy1 - fy0, 4), "mouth": round(jaw, 3),
-                          "lips": lips(xs, ys, W, H),
+                          "lips": lips(xs, ys, W, H), "turn": turn(xs, ys, W),
                           "pts": [(xs[k] * W, ys[k] * H) for k in FACE_POINTS] if len(pts) > max(FACE_POINTS) else None})
         return faces
 
