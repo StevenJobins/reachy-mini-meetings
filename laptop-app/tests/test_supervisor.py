@@ -406,3 +406,63 @@ def test_with_the_hosted_service_the_backend_gets_an_installation_id_and_no_keys
     again = sup.Supervisor(logs=tmp_path / "l", settings_path=tmp_path / "a.json", popen=Proc,
                            environ={"REACHY_SERVICE_URL": "https://example.test/meeting"})
     assert again.install_id() == install   # the same installation after a restart
+
+
+# ---------------------------------------------------------------- what the window says in plain words
+def test_headsets_are_called_by_their_model_and_keep_their_digits_only_when_two_read_the_same():
+    assert sup.friendly_names(["samsung SM-I610 aba7", "Meta Quest 3 51c0"]) == {
+        "samsung SM-I610 aba7": "Galaxy XR", "Meta Quest 3 51c0": "Meta Quest 3"}
+    assert sup.friendly_names(["samsung SM-I610 aba7", "samsung SM-I610 01ff", "kitchen"]) == {
+        "samsung SM-I610 aba7": "Galaxy XR aba7", "samsung SM-I610 01ff": "Galaxy XR 01ff", "kitchen": "kitchen"}
+
+
+def test_a_part_that_stopped_is_named_and_starts_again_when_asked(made):
+    s, started, tmp = made
+    s.start()
+    started[1].code = 1
+    assert s.status().stopped == "backend"
+    s.restart("backend")
+    assert len(started) == 3 and "reachy_meetings_backend.captions" in started[2].args and s.status().stopped == ""
+    started[0].code = 1
+    assert s.status().stopped == "gateway"
+    s.restart("gateway")
+    assert "gateway.py" in started[3].args[2] and s.status().stopped == ""
+
+
+def test_a_failed_setup_can_be_tried_again(tmp_path, monkeypatch):
+    monkeypatch.setattr(sup, "daemon_status", lambda: {"state": "running"})
+    monkeypatch.setattr(sup, "port_open", lambda port: False)
+    monkeypatch.setattr(sup, "wifi_address", lambda: "")
+    started, codes = [], [1, 0]
+
+    s = standalone_supervisor(tmp_path, started)
+    first = s.popen
+    s.popen = lambda args, **kw: (started.append(Pip(args, code=codes.pop(0), **kw)) or started[-1]) if "pip" in args \
+        else first(args, **kw)
+    s.start()
+    assert s.status().setup_failed and s.backend is None
+    s.retry_setup()
+    assert not s.status().setup_failed and s.status().problem == "" and s.backend is not None
+
+
+def test_fix_puts_the_video_patch_back_and_asks_for_a_restart_of_reachy_mini_control(made, monkeypatch):
+    s, _, tmp = made
+    ran = []
+
+    def run(args, **kw):
+        ran.append(args)
+        return subprocess.CompletedProcess(args, 0)
+
+    monkeypatch.setattr(subprocess, "run", run)
+    s.fix_video()
+    assert ran[-1] == ["/venv/python", str(sup.REPO / "robot" / "scripts" / "patch_daemon_video.py")]
+    assert s.status().video_note == "restart"
+    monkeypatch.setattr(sup, "daemon_status", lambda: {})       # Reachy Mini Control was quit: nothing left to say
+    assert s.status().video_note == ""
+
+
+def test_a_patch_that_does_not_fit_is_said_and_changes_nothing(made, monkeypatch):
+    s, _, _ = made
+    monkeypatch.setattr(subprocess, "run", lambda args, **kw: subprocess.CompletedProcess(args, 1))
+    s.fix_video()
+    assert s.status().video_note == "failed"

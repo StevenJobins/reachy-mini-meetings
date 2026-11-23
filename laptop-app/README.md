@@ -11,31 +11,41 @@ laptop-app/build_app.sh                # dist/Reachy Meetings.app: a thin shell 
 Open *Reachy Meetings* from there, or drag it to Applications first. The window is laid out like a video meeting
 (since 2026-11-16; dark, resizable):
 
-- **the stage**: the person in the headset as a little Reachy with the headset's name, a green ring while they
-  speak. With no headset connected it says so and shows the pairing code large;
+- **the stage**: the person in the headset as a little Reachy with the headset's name (as people call it: *Galaxy
+  XR*, not `samsung SM-I610 aba7`; `friendly_names` in `supervisor.py`), a green ring while they speak. With no
+  headset connected it says what to do: put on the headset, open Reachy Meetings, enter the code (shown large). If a
+  headset is paired already, it says that it connects by itself, and the code is smaller, for a new one;
 - **the last caption** under it (what was said in the room, or by the headset user, and its translation);
-- **a row of round buttons**: *share* with the headset: a menu as in a video call, a whole screen, all windows of
-  one app, or one window (also while others lie on it); while shared, the stage shows *The headset sees: …* and a
-  live picture of it, and the button stops it (`screencap.swift`, built into the app, captures with ScreenCaptureKit;
-  `robot/scripts/share_screen.py` sends it; an app built before 2026-11-18 shares only the whole screen; macOS asks once
-  for Screen Recording; needs Reachy Mini Control on this Mac, same Wi-Fi only), *captions* on / off, *other
-  networks* (below), *people* (the side panel), *mail* (the meeting notes as a draft in this Mac's mail program; the
-  only place to send them from, the headset has no such button since 2026-11-18), *?* (what Reachy's gestures mean:
-  a window with a little moving Reachy per gesture, `gestures.py`; it opens by itself the first time), the
-  *translation key*, and in red *end* (quits, stops the parts);
-- **the side panel**, described in the points below:
-- **the parts** with a dot each: robot (Reachy Mini Control is opened if it does not answer), camera stream,
-  captions and translation, the door for headsets, and which headsets are connected;
-- **Other networks**: the globe button, for headsets at home (the same as `--remote`: a Cloudflare quick tunnel;
-  remembered for the next start). Switching restarts the door; headsets reconnect by themselves;
-- **Reachy speaks for the headset in**: the language Reachy says the headset user's words in, with *Translate me* on
-  in the headset. *Auto* (the default) is the language most spoken in the room; the people in the room know it better,
-  so set it here when it is clear. Remembered; changing it restarts the backend (captions pause a few seconds, headsets
-  reconnect by themselves). Passed to the backend as `--meeting-lang`;
-- **the pairing code** for a new headset, large;
-- **the headsets that may connect**, each with *Remove*;
-- in orange, **what needs a look**: a part that stopped (with its last log lines), no DeepL key, or the
-  sharper-video patch missing after an update of Reachy Mini Control.
+- **a row of round buttons, each with its word under it**: *Share* with the headset: a menu as in a video call, a
+  whole screen, all windows of one app, or one window (also while others lie on it); while shared, the stage shows
+  *The headset sees: …* and a live picture of it, and the button stops it (`screencap.swift`, built into the app,
+  captures with ScreenCaptureKit; `robot/scripts/share_screen.py` sends it; an app built before 2026-11-18 shares only
+  the whole screen; macOS asks once for Screen Recording; needs Reachy Mini Control on this Mac, same Wi-Fi only),
+  *Captions* on / off, *Remote* (other networks, below), *Headsets* (the side panel), *Notes* (the meeting notes as a
+  draft in this Mac's mail program; the only place to send them from, the headset has no such button since
+  2026-11-18), *Help* (what Reachy's gestures mean: a window with a little moving Reachy per gesture, `gestures.py`;
+  it opens by itself the first time), *Key* (the translation key; hidden with the hosted service), and in red *End*
+  (quits, stops the parts);
+- **the side panel**, written for someone who does not know what a gateway or a backend is (since 2026-11-23):
+  - **one line on top**: green *Everything is ready*, grey *Getting ready …*, orange *Needs a look*. Under it only
+    what is not ready, in plain words, with a button where one helps: *Reachy does not answer* (*Open Reachy Mini
+    Control*), *Captions stopped* / *Headsets cannot connect right now* (*Start again*: `Supervisor.restart`), the
+    free hour used up (*More time*: the plans page), no translation key (*Set the key*), *The picture in the headset
+    is less sharp than it could be* (*Fix*: runs `robot/scripts/patch_daemon_video.py`, then asks to quit and reopen
+    Reachy Mini Control; if the patch does not fit that version, nothing is changed and the line goes away), and
+    *An update is ready* (*Restart now*);
+  - **Headsets**: the ones that may connect, each with *Remove*; *(not here)* behind one that is not connected;
+  - **the code for another headset**, only while one is connected (before that it is on the stage);
+  - **Language Reachy speaks**: the language Reachy says the headset user's words in, with *Translate me* on in the
+    headset. *Auto* (the default) is the language most spoken in the room; the people in the room know it better, so
+    set it here when it is clear. Remembered; changing it restarts the backend (captions pause a few seconds,
+    headsets reconnect by themselves). Passed to the backend as `--meeting-lang`;
+  - **Show details**, closed until asked for: what `start_meeting.sh` shows in the terminal. The parts with a dot each
+    (robot, camera stream, captions and translation with the faces in view, the door for headsets with this Mac's
+    address, other networks), the version, the installation's id at the hosted service, the last log lines of a part
+    that stopped, and the commands for what the buttons above cannot do (the key for the notes).
+- **Other networks**: the globe button (*Remote*), for headsets at home (the same as `--remote`: a Cloudflare quick
+  tunnel; remembered for the next start). Switching restarts the door; headsets reconnect by themselves.
 
 Quitting the app (or closing its window) stops the door and the backend. Reachy Mini Control keeps running.
 
@@ -52,7 +62,9 @@ goes wrong, and every change of ours would be a 2 GB download. Instead:
 
 - **On its first start** the app fetches exactly the versions in `requirements-backend.txt` with its own pip into
   `~/Library/Application Support/Reachy Meetings/libs-<name of the list>` (`reachy_meetings_app/libraries.py`), with a
-  progress bar in the window. The door for headsets is open meanwhile, so a headset can already be paired. Pip's
+  large progress bar over the whole window (`Setup` in `window.py`: per cent only, no package names; then a moving bar
+  while the backend fetches its models and starts for the first time; *Try again* if it fails, which is
+  `Supervisor.retry_setup`). The door for headsets is open meanwhile. Pip's
   words are in `setup.log` next to that folder.
 - **The models** (about 2 GB more) are fetched by the backend itself when it first needs them, as always; the
   *Captions* row says *starting …* until they are there.
@@ -113,4 +125,6 @@ the app's program stay as installed, and the backend's libraries follow when a n
 - Logs as before: `~/Library/Logs/reachy-meetings/gateway.log` and `backend.log`, and `screen.log` while sharing.
 
 To look at the window without starting anything: `python -m reachy_meetings_app --snapshot window.png` (add `--demo`
-for a meeting with made-up values, `--demo-waiting` for no headset yet).
+for a meeting with made-up values, `--demo-waiting` for a paired headset that is not there, `--demo-new` for none paired
+yet, `--demo-setup` and `--demo-models` for the two parts of the first start, `--demo-problem` for what the side
+panel says when parts stopped).

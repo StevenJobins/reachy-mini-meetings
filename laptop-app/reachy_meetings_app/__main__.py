@@ -1,5 +1,6 @@
 """python -m reachy_meetings_app            the app: starts gateway and backend, shows the window, stops them on quit
-python -m reachy_meetings_app --snapshot window.png [--demo | --demo-waiting | --demo-setup]   the window as a picture, nothing started
+python -m reachy_meetings_app --snapshot window.png [--demo | --demo-waiting | --demo-new | --demo-setup | --demo-models | --demo-problem]
+                                         the window as a picture, nothing started
 python -m reachy_meetings_app --version   which code runs (the app's own or an update it fetched)
 """
 
@@ -16,6 +17,9 @@ def main() -> None:
     ap.add_argument("--demo", action="store_true", help="with --snapshot: a made-up status with every part on show")
     ap.add_argument("--demo-setup", action="store_true", help="with --snapshot: the first start, libraries being fetched")
     ap.add_argument("--demo-waiting", action="store_true", help="with --snapshot: everything up, no headset connected yet")
+    ap.add_argument("--demo-new", action="store_true", help="with --snapshot: everything up, no headset paired yet")
+    ap.add_argument("--demo-models", action="store_true", help="with --snapshot: the first start, after the libraries")
+    ap.add_argument("--demo-problem", action="store_true", help="with --snapshot: parts that stopped or need a look")
     ap.add_argument("--version", action="store_true", help="print the version of the code that runs and where it is, and leave")
     args = ap.parse_args()
     if args.version or args.snapshot:
@@ -36,7 +40,15 @@ def main() -> None:
         demo = Status(robot="running", camera=True, backend=True, faces="2.0 faces in view", door=True,
                       address="192.168.1.20", code="493 201", known=["samsung SM-I610 aba7"], translation_key=True,
                       version="0.2.0")
-    run(Supervisor(), args.snapshot, demo)
+    if args.demo_new:
+        demo = Status(robot="running", camera=True, backend=True, door=True, address="192.168.1.20", code="493 201",
+                      translation_key=True, version="0.2.0")
+    if args.demo_problem:
+        demo = Status(door=True, address="192.168.1.20", code="493 201", known=["samsung SM-I610 aba7"],
+                      connected=["samsung SM-I610 aba7"], translation_key=True, version="0.2.0", stopped="backend",
+                      problem="The backend stopped.\nloading models\nRuntimeError: no microphone", video_patch=False,
+                      limit=True, install="3f0c8a1e-demo", update="0.3.0")
+    run(Supervisor(), args.snapshot, demo, models=args.demo_models)
 
 
 if __name__ == "__main__":

@@ -39,6 +39,9 @@ CONNECTION = re.compile(r"^(\S+) (.+) (daemon|signalling|backend|time|screen): (
 # share_screen.py needs GStreamer with webrtcsink: the Python of Reachy Mini Control has it (like fake_camera.py)
 SCREEN_PYTHON = Path.home() / "Library/Application Support/com.pollen-robotics.reachy-mini/.venv/bin/python"
 FACES = re.compile(r"([0-9.]+) faces per frame, brightness ([0-9]+)")
+# A headset names itself "<model> <four hex digits>" (Pairing.cs); the window shows the model as people call it
+HEADSET_ID = re.compile(r"^(.*\S) ([0-9a-f]{4})$")
+MODELS = {"samsung SM-I610": "Galaxy XR"}
 
 
 def load_gateway(repo: Path = REPO):
@@ -66,6 +69,19 @@ def connected_headsets(gateway_log: str) -> list:
 SERVICE_URL = "https://reachy-meetings.dominic-ill.workers.dev"
 LIMIT_LINE = "Free time used up"
 PLANS_URL = "https://stevenjobins.github.io/reachy-mini-meetings/#plans"
+
+
+def friendly_names(names) -> dict:
+    """What the window calls each headset: {"samsung SM-I610 aba7": "Galaxy XR"}. The four digits stay only where two
+    headsets would otherwise read the same. For showing only: the gateway knows a headset by its full name."""
+    short, digits = {}, {}
+    for name in names:
+        found = HEADSET_ID.match(name)
+        base = found.group(1) if found else name
+        short[name], digits[name] = MODELS.get(base, base), found.group(2) if found else ""
+    shown = list(short.values())
+    return {name: short[name] if shown.count(short[name]) == 1 or not digits[name] else f"{short[name]} {digits[name]}"
+            for name in names}
 
 
 def faces_in_view(backend_log: str) -> str:
@@ -143,6 +159,9 @@ class Status:
     install: str = ""            # this installation's id at the hosted service, "" when it is not used
     video_patch: bool = True
     problem: str = ""            # a part that stopped, with its last log lines
+    stopped: str = ""            # which one: "gateway" or "backend"
+    setup_failed: bool = False   # the libraries could not be fetched (problem says why)
+    video_note: str = ""         # after the window's Fix: "restart" (Reachy Mini Control must start again) or "failed"
     version: str = ""            # of the code that runs
     update: str = ""             # a newer version that was fetched and is used from the next start
     setup: str = ""              # first start: what is being fetched; "" when there is nothing to set up
@@ -171,6 +190,7 @@ class Supervisor:
         self.standalone = libraries.standalone() if environ is None else environ.get("REACHY_STANDALONE") == "1"
         self.support = libraries.SUPPORT
         self.setup_text, self.setup_fraction, self.setup_error = "", 0.0, ""
+        self.video_note = ""
         self.version = updates.version_of(repo)
         self.update_ready = ""
 
@@ -287,6 +307,37 @@ class Supervisor:
         if self.prepare():
             self.start_backend()
         self.check_updates()
+
+    def retry_setup(self) -> None:
+        """The window's Try again after a setup that failed."""
+        if self.backend is None and self.prepare():
+            self.start_backend()
+
+    def restart(self, name: str) -> None:
+        """A part that stopped, started again (the window's Start again)."""
+        if name == "gateway":
+            self._stop(self.gateway)
+            self.start_gateway()
+        elif name == "backend":
+            self._stop(self.backend)
+            self.start_backend()
+
+    def reopen_control(self) -> None:
+        """Reachy Mini Control once more, asked for in the window."""
+        self.opened_control = False
+        self.open_control()
+
+    def fix_video(self) -> None:
+        """The sharper-video patch put back (robot/scripts/patch_daemon_video.py; an update of Reachy Mini Control
+        removes it). It counts from the next start of Reachy Mini Control, which is not ours to restart. A daemon
+        the patch does not fit is left as it is."""
+        script = self.repo / "robot" / "scripts" / "patch_daemon_video.py"
+        try:
+            done = script.is_file() and subprocess.run([self.python, str(script)], capture_output=True,
+                                                       timeout=30).returncode == 0
+        except (OSError, subprocess.SubprocessError):
+            done = False
+        self.video_note = "restart" if done else "failed"
 
     def check_updates(self, base_url: str = updates.BASE_URL, fetch=updates.fetch, verify=updates.verify) -> None:
         """Is there a newer release of our code? Then fetch it; it is used from the next start (updates.py).
@@ -459,11 +510,14 @@ class Supervisor:
         if self.screen is not None and self.screen.poll() is not None:   # it stopped by itself: say why, once
             s.share_note = self.share_note = "Sharing stopped: " + (tail(self.logs / "screen.log", 1, 200) or "no reason given")
             self.screen, self.share_label = None, ""
+        if self.video_note == "restart" and not daemon:   # Reachy Mini Control went away: it comes back patched
+            self.video_note = ""
+        s.video_note = self.video_note
         if self.setup_error:
-            s.problem = self.setup_error
+            s.problem, s.setup_failed = self.setup_error, True
         for name, proc, log in (("gateway", self.gateway, gateway_log), ("backend", self.backend, self.logs / "backend.log")):
             if proc is not None and proc.poll() is not None:
-                s.problem = f"The {name} stopped.\n{tail(log)}"
+                s.problem, s.stopped = f"The {name} stopped.\n{tail(log)}", name
         return s
 
     @staticmethod

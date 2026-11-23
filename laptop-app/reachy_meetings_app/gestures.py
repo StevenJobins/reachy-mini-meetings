@@ -27,7 +27,7 @@ GESTURES = [
     ("Antennas move against each other", "They shake their head: no.", "shake"),
     ("Antennas lift a little", "They smile.", "smile"),
     ("Reachy speaks", "Their words: in their own voice, or translated into the language of the room.", "speak"),
-    ("Lies down, motors off", "They left the meeting. Reachy sleeps until they join again.", "sleep"),
+    ("Lies down and sleeps", "They left the meeting. Reachy sleeps until they join again.", "sleep"),
 ]
 
 
