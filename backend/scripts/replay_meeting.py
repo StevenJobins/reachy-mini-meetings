@@ -147,7 +147,7 @@ def run(rec: Path, code: str | None, verbose: bool, snap: dict | None = None) ->
     events = [(s["t"], 0, s) for s in states] + [(fr["t"], 1, fr) for fr in frames] + \
              [(r["t1"] + DECIDE_S, 2, (i, r)) for i, r in enumerate(rows)]
     if snap is not None:
-        snap.update(faces=[], live=[], finals=[])
+        snap.update(faces=[], live=[], finals=[], lively=[])
         events += [(t, 3, i) for i, r in enumerate(rows) for t in np.arange(r["t0"] + 0.5, r["t1"] + DECIDE_S, 0.6)]
     label_of = (lambda p: roster_mod.Roster.label(p, roster.name_of(p))) if hasattr(roster, "name_of") else str
     events.sort(key=lambda e: (e[0], e[1]))
@@ -186,6 +186,7 @@ def run(rec: Path, code: str | None, verbose: bool, snap: dict | None = None) ->
                         pid = roster.for_person(p)
                         out.append((f, label_of(pid), pid == speaking))
                 snap["faces"].append((t, out))
+                snap["lively"].append((t, label_of(speaking) if speaking is not None else None))
         elif kind == 3:
             i, r = x, rows[x]
             if i in said:
@@ -283,7 +284,51 @@ def transcribe(rec: Path, model: str) -> list[dict]:
     return out
 
 
-def video(rec: Path, code: str | None, model: str, fps: float, width: int) -> Path:
+SPLIT_RUN_S = 1.5   # --split: another mouth moving most for at least this long within one subtitle is a turn
+LIVELY_LAG_S = 0.75  # "who moves most" looks at the last 1.5 s: it lags the mouth by about half of that
+
+
+def turns(rows: list[dict], words: list[dict], lively: list[tuple[float, str | None]]) -> dict[int, list[tuple]]:
+    """--split, a test of cutting a subtitle where someone else takes over without a pause: within each utterance,
+    the person whose mouth moves most (people.liveliest, as the tag that lights up) is followed; a run of another
+    person of SPLIT_RUN_S or more is a turn, cut at the gap between two words nearest to the change.
+    -> {utterance: [(label, text, t_from, t_to)]}, only for utterances that are cut."""
+    out = {}
+    for i, r in enumerate(rows):
+        seq = [(t - LIVELY_LAG_S, lab) for t, lab in lively if lab and r["t0"] <= t - LIVELY_LAG_S <= r["t1"]]
+        runs: list[list] = []   # [label, start, end]
+        for t, lab in seq:
+            if runs and runs[-1][0] == lab:
+                runs[-1][2] = t
+            else:
+                runs.append([lab, t, t])
+        runs = [x for x in runs if x[2] - x[1] >= SPLIT_RUN_S]   # short flickers say nothing
+        merged: list[list] = []
+        for x in runs:
+            if merged and merged[-1][0] == x[0]:
+                merged[-1][2] = x[2]
+            else:
+                merged.append(list(x))
+        if len(merged) < 2:
+            continue
+        ws = words[i]["words"]
+        cuts = []
+        for a, b in zip(merged, merged[1:]):
+            change = (a[2] + b[1]) / 2
+            gaps = [((ws[j]["t1"] + ws[j + 1]["t0"]) / 2) for j in range(len(ws) - 1)]
+            cuts.append(min(gaps, key=lambda g: abs(g - change)) if gaps else change)
+        edges = [r["t0"]] + cuts + [r["t1"] + 1]
+        parts = []
+        for (lab, _, _), t_from, t_to in zip(merged, edges, edges[1:]):
+            text = "".join(w["w"] for w in ws if t_from <= (w["t0"] + w["t1"]) / 2 < t_to).strip()
+            if text:
+                parts.append((lab, text, t_from, min(t_to, r["t1"])))
+        if len(parts) > 1:
+            out[i] = parts
+    return out
+
+
+def video(rec: Path, code: str | None, model: str, fps: float, width: int, split: bool = False) -> Path:
     import av
     import cv2
     from PIL import Image, ImageDraw, ImageFont
@@ -303,7 +348,11 @@ def video(rec: Path, code: str | None, model: str, fps: float, width: int) -> Pa
     def color(lab: str) -> tuple:
         return colors.setdefault(lab, COLORS[len(colors) % len(COLORS)]) if lab else (150, 150, 150)
 
-    out_path = rec / "replay" / f"headset_{(code or 'this').replace('/', '_')}.mp4"
+    out_path = rec / "replay" / f"headset_{(code or 'this').replace('/', '_')}{'_split' if split else ''}.mp4"
+    cut = turns(res["rows"], words, snap["lively"]) if split else {}
+    for i, parts in cut.items():
+        print(f"  cut [{i}] at " + ", ".join(f"{p[2] - times[0]:.1f} s" for p in parts[1:]) + ": "
+              + " | ".join(f"{lab}: {text[:50]}" for lab, text, _, _ in parts))
     W, H = width, round(width * 9 / 16)
     k = W / 1920
     font = ImageFont.truetype(FONT, round(30 * k))
@@ -368,13 +417,16 @@ def video(rec: Path, code: str | None, model: str, fps: float, width: int) -> Pa
             ws = words[i]["words"]
             if i in finals and finals[i][0] <= t:
                 if t - finals[i][0] < 6 and ws:
-                    lines.append((finals[i][1], "".join(w["w"] for w in ws).strip(), False))
+                    if i in cut:   # --split: one subtitle per turn, marked
+                        lines += [(lab + "  · geteilt", text, False) for lab, text, _, _ in cut[i]]
+                    else:
+                        lines.append((finals[i][1], "".join(w["w"] for w in ws).strip(), False))
             elif r["t0"] <= t:
                 said_now = "".join(w["w"] for w in ws if w["t1"] <= t).strip()
                 live = [lab for tt, j, lab in snap["live"] if j == i and tt <= t]
                 if said_now or t <= r["t1"]:
                     lines.append((live[-1] if live else "", (said_now + " …").strip(), True))
-        lines = lines[-2:]
+        lines = lines[-3:]
         y = H - 30 * k
         for lab, text, live in reversed(lines):
             rows_ = wrap(text, font, W * 0.62)[-3:]
@@ -382,7 +434,7 @@ def video(rec: Path, code: str | None, model: str, fps: float, width: int) -> Pa
             y -= hgt + 12 * k
             bx = W * 0.17
             d.rounded_rectangle([bx, y, W - bx, y + hgt], radius=18 * k, fill=(16, 16, 20, 205 if not live else 170))
-            d.text((bx + 22 * k, y + 10 * k), lab or "(kein Name)", font=small, fill=color(lab) + (255,))
+            d.text((bx + 22 * k, y + 10 * k), lab or "(kein Name)", font=small, fill=color(lab.split("  · ")[0]) + (255,))
             for j, line in enumerate(rows_):
                 d.text((bx + 22 * k, y + (42 + 38 * j) * k), line, font=font,
                        fill=(255, 255, 255, 255) if not live else (215, 215, 220, 255))
@@ -392,7 +444,8 @@ def video(rec: Path, code: str | None, model: str, fps: float, width: int) -> Pa
         lb = labels[li] if labels and labels[li]["t_start"] <= t <= labels[li]["t_end"] else None
         truth = ("liest laut Ablauf: " + lb["person"] + (f" ({names[lb['person']]})" if lb["person"] in names else "")
                  if lb and lb["kind"] == "read" else "freies Gespräch" if lb else "")
-        head = f"So hätte es die Brille gezeigt · Code {rev} · Untertitel: Whisper {model}, ohne Übersetzung"
+        head = (f"So hätte es die Brille gezeigt · Code {rev}" + (" + Test: Teilen beim Wechsel des Mundes" if split else "")
+                + f" · Untertitel: Whisper {model}, ohne Übersetzung")
         d.rounded_rectangle([16 * k, 16 * k, 32 * k + small.getlength(head), 56 * k], radius=10 * k, fill=(0, 0, 0, 150))
         d.text((24 * k, 22 * k), head, font=small, fill=(230, 230, 230, 255))
         if truth:
@@ -436,12 +489,13 @@ def main() -> None:
     ap.add_argument("--model", default="small", help="video: Whisper model for the subtitles")
     ap.add_argument("--fps", type=float, default=30, help="video: frames a second")
     ap.add_argument("--width", type=int, default=1280, help="video: width in pixels")
+    ap.add_argument("--split", action="store_true", help="video: test cutting subtitles where another mouth takes over")
     args = ap.parse_args()
     rec = Path(args.recording).expanduser()
     if args.what == "prepare":
         prepare(rec, args.hz)
     elif args.what == "video":
-        video(rec, args.code, args.model, args.fps, args.width)
+        video(rec, args.code, args.model, args.fps, args.width, args.split)
     else:
         run(rec, args.code, args.verbose)
 
