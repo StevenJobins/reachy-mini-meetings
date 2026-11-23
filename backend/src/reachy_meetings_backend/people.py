@@ -30,6 +30,8 @@ from recordings (scripts/record_meeting.py).
 
 from __future__ import annotations
 
+import bisect
+import itertools
 import math
 from collections import deque
 
@@ -81,6 +83,10 @@ FLEETING_S = 20.0     # ... and they are forgotten after this long
 MOVED = 0.05          # mouth opening changed by this much within a few readings: it moved (talkers' standard
                       # deviation is 0.04-0.19, listeners' 0.0002-0.005)
 LIVE_SAMPLES = 3      # mouth readings needed to say who talks right now (the web app's rule, speakers.js)
+FAST_N = 9            # the slow part of the mouth opening is its mean over this many readings (~0.5 s at 16/s)
+LIPS_GAIN = 2.0       # vision.py's "lips" (lip gap / face height) is used when there, times this, to read like jawOpen
+                      # in the thresholds above. 2026-11-23 recording, fast part: readers 0.016-0.027, listeners
+                      # 0.005-0.015 (glasses: more jitter); jawOpen of the reader with little jaw movement 0.006-0.011
 
 
 def image_to_angles(u: float, v: float) -> tuple[float, float]:
@@ -145,9 +151,19 @@ class Person:
         return self.sightings < FLEETING_N
 
     def activity(self, t0: float, t1: float, need: int = MIN_SAMPLES) -> float | None:
-        """Mouth movement over [t0, t1]: standard deviation of the opening; None = not seen enough to say."""
-        m = [v for t, v in self.mouth if t0 <= t <= t1]
-        return float(np.std(m)) if len(m) >= need else None
+        """Mouth movement over [t0, t1]: standard deviation of the fast part of the opening (the opening minus its
+        running mean over FAST_N readings, ~0.5 s); None = not seen enough to say. Only the fast part: a smile,
+        a nod or a head turned changes the opening slowly, syllables change it several times a second (2026-11-23
+        recording: with the plain standard deviation the listener's smile beat the reader's mouth). Only readings
+        inside [t0, t1]: what the mouth did just before belongs to the sentence before."""
+        ts = [t for t, _ in self.mouth]
+        i0, i1 = bisect.bisect_left(ts, t0), bisect.bisect_right(ts, t1)
+        if i1 - i0 < need:
+            return None
+        h = FAST_N // 2
+        v = np.array([x for _, x in itertools.islice(self.mouth, i0, i1)])
+        base = np.array([v[max(0, k - h):k + h + 1].mean() for k in range(len(v))])
+        return float(np.std(v - base))
 
     def moved(self, t0: float, t1: float) -> bool:
         """Seen too rarely over [t0, t1] to judge the mouth, but what was seen of it moved: it may have been them."""
@@ -225,8 +241,9 @@ class People:
             p.learn_face(f.get("emb"))
             p.seen = t
             p.sightings += 1
-            if f.get(key) is not None:
-                p.mouth.append((t, f[key]))
+            m = f["lips"] * LIPS_GAIN if f.get("lips") is not None else f.get(key)
+            if m is not None:
+                p.mouth.append((t, m))
                 while p.mouth[0][0] < t - HISTORY_S:
                     p.mouth.popleft()
         here = [p.pid for p in self.people if p.seen == t]   # (boxes that overlap never got two people above)

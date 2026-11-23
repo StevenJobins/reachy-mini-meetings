@@ -80,6 +80,8 @@ class Seat:
     found: float = 1.0        # share of the frames in which their face is found while in view (far away: ~0.15)
     look: float = 0.84        # how well a look at the face shows who it is (two looks are look^2 alike); 0 = never
                               # (eyes covered, turned away, too small: vision.py gives no embedding)
+    jaw: float = 1.0          # how much the jaw opens when they talk (2026-11-23 recording: one reader 0.05 of usual)
+    jitter: float = 0.006     # landmark noise on their lip gap (vision.py "lips"; with glasses about twice as much)
 
 
 @dataclass
@@ -100,6 +102,9 @@ class Scenario:
                               # track (0 = never lost)
     dup: float = 0.0          # share of the frames in which a face comes twice, as two tracks a little apart
     ghosts: float = 0.0       # things taken for a face (a hand, a poster) per second, each for 0.5-3 s
+    # What the recording of 2026-11-23 (scripts/record_meeting.py, two people reading in turns) showed:
+    smile: float = 0.0        # share of utterances in which a listener smiles or nods: mouth and lips change slowly
+    lips: bool = False        # the faces also carry vision.py's "lips" (lip gap / face height), as from the camera
 
 
 @dataclass
@@ -185,6 +190,8 @@ def run(scn: Scenario, voices: Voices, seed: int = 0, clusters: SpeakerClusters 
     by_start = iter(plan)
     current = next(by_start, None)
     fidgets: dict[int, float] = {}
+    smiles: dict[int, float] = {}
+    art = 0.0
     amp = 0.2
     for k in range(len(head_true)):
         now = k / HZ
@@ -211,11 +218,15 @@ def run(scn: Scenario, voices: Voices, seed: int = 0, clusters: SpeakerClusters 
                 d = fusion.final(VoiceObs(clip(seat, t1 - t0), t1 - t0), t0, t1, doa)
                 said.append((seat, d.voice))
             current = next(by_start, None)
-            fidgets = {}
+            fidgets, smiles = {}, {}
         talking = current[2] if current and current[0] <= now < current[1] else None
         if current and abs(now - current[0]) < 0.5 / HZ:   # a new utterance: how they move
             amp = rng.uniform(0.11, 0.5)                     # mouth movement (std) 0.04 .. 0.19
             fidgets = {i: rng.uniform(0.08, 0.2) for i in range(len(scn.seats)) if i != current[2] and rng.random() < scn.fidget}
+            if scn.smile or scn.lips:
+                art = rng2.uniform(0.04, 0.08)               # lips while talking: fast part 0.012-0.025, as recorded
+                smiles = {i: rng2.uniform(0, 2 * math.pi) for i in range(len(scn.seats))
+                          if i != current[2] and rng2.random() < scn.smile}
         yaw_true = head_true[k]
         yaw_told = head_true[max(0, k - round(scn.pose_lag * HZ))]
         rate = abs(head_true[k] - head_true[max(0, k - 2)]) * HZ / 2
@@ -235,13 +246,21 @@ def run(scn: Scenario, voices: Voices, seed: int = 0, clusters: SpeakerClusters 
                 n = min(tr[2], 11)
                 tr[1], tr[2], tr[3] = _unit(look if tr[1] is None else tr[1] * n + look), tr[2] + 1, now
             if i == talking:
-                mouth = amp * (k % 4 < 2) + rng.normal(0, 0.01)
+                mouth = s.jaw * amp * (k % 4 < 2) + s.jaw * rng.normal(0, 0.01)
             elif i in fidgets and talking is not None:
                 mouth = fidgets[i] * (k % 6 < 3) + rng.normal(0, 0.005)
             else:
                 mouth = 0.01 + rng.normal(0, 0.003)
-            frame.append({"cx": 0.5 - rel / 90, "cy": 0.5, "top": 0.4, "w": 0.06, "h": 0.2, "mouth": max(0.0, mouth),
-                          "track": tr[0], "emb": tr[1]})
+            slow = math.sin(2 * math.pi * 0.4 * now + smiles[i]) if (scn.smile or scn.lips) and i in smiles \
+                and talking is not None else None   # a smile or a nod: up and down over 2.5 s
+            if slow is not None:
+                mouth += 0.06 * (1 + slow)          # jawOpen 0.03-0.04 (standard deviation), as the listener's
+            face = {"cx": 0.5 - rel / 90, "cy": 0.5, "top": 0.4, "w": 0.06, "h": 0.2, "mouth": max(0.0, mouth),
+                    "track": tr[0], "emb": tr[1]}
+            if scn.lips:
+                lips = 0.03 + rng2.normal(0, s.jitter) + (art * rng2.random() if i == talking else 0.0)
+                face["lips"] = round(max(0.0, lips + (0.02 * (1 + slow) if slow is not None else 0.0)), 4)
+            frame.append(face)
             frame_seats.append(i)
             if scn.dup and rng2.random() < scn.dup:   # the same face again, as another track (vision.py keeps two
                 twins.setdefault(i, next(next_track))  # tracks apart if their centres are over 0.6 face widths apart)
@@ -361,4 +380,18 @@ def field_scenarios(voices: Voices) -> list[Scenario]:
         Scenario("field: all of it, as on 2026-11-23",
                  [Seat(c, 25, found=0.5), Seat(d, -30, found=0.5, look=0.0)],
                  head="wanders", track_s=3.0, dup=0.1, ghosts=0.2, short=0.5, tiny=0.2),
+    ]
+
+
+def recorded_scenarios(voices: Voices) -> list[Scenario]:
+    """What the recording of 2026-11-23 showed (two people reading in turns in front of Reachy, no headset; replayed
+    with scripts/replay_meeting.py): one reader's jaw hardly moves (jawOpen 0.006-0.011 while reading), the other
+    smiles and nods while listening (0.026-0.033), and the one with glasses has twice the landmark noise. With
+    jawOpen alone every sentence went to one person; the lip gap ("lips") tells them apart."""
+    pairs = voices.similar_pairs()
+    _, c, d = pairs[len(pairs) // 2]
+    seats = [Seat(c, 20, jaw=0.05, jitter=0.012), Seat(d, -20)]
+    return [
+        Scenario("recorded: a still jaw and a smiling listener, jawOpen only", seats, smile=0.7),
+        Scenario("recorded: a still jaw and a smiling listener, with the lip gap", seats, smile=0.7, lips=True),
     ]

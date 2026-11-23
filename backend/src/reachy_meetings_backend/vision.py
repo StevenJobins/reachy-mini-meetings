@@ -6,7 +6,8 @@ Mac, 2026-10-08), so the page gets the faces and mouth openness at --vision-hz a
 
 The camera is read directly (macOS / Windows / Linux let a second app read it next to the daemon) and found
 by name, not by index. Output per person, same as xr-client/pages/faces-worker.js: {cx, cy, top, w, h, mouth},
-normalized 0..1 (origin top left), mouth = jawOpen 0..1. Time = wall clock of the capture.
+normalized 0..1 (origin top left), mouth = jawOpen 0..1, and lips = lip gap / face height (people.py uses that).
+Time = wall clock of the capture.
 
 Who a face is (2026-11-18): each followed face also gets "track" (a number that stays while the face is followed)
 and "emb", an embedding of the face itself (FaceId: OpenCV's SFace on the face turned upright by its eyes, nose and
@@ -18,6 +19,7 @@ this computer: captions.py does not send them to the headset. Measured in script
 from __future__ import annotations
 
 import logging
+import math
 import threading
 import time
 import urllib.request
@@ -199,6 +201,24 @@ LOST = 8          # frames without the face in its crop before it is given up
 INPUT = 640       # longer side of what goes into the landmarker
 
 
+LIP_PAIRS = ((82, 87), (13, 14), (312, 317))   # MediaPipe landmarks: upper and lower inner lip, left/middle/right
+FACE_TOP, FACE_CHIN = 10, 152
+
+
+def lips(xs, ys, W: int, H: int) -> float | None:
+    """How far the lips are apart, as a fraction of the face height (forehead to chin), from the landmarks.
+    jawOpen (the blendshape) barely moved for someone talking with little jaw movement (2026-11-23 recording:
+    0.006-0.011 while reading aloud, a listener's smile 0.03)."""
+    if len(xs) <= max(FACE_CHIN, *(k for p in LIP_PAIRS for k in p)):
+        return None
+
+    def d(a, b):
+        return math.hypot((xs[a] - xs[b]) * W, (ys[a] - ys[b]) * H)
+
+    face = d(FACE_TOP, FACE_CHIN)
+    return round(sum(d(a, b) for a, b in LIP_PAIRS) / len(LIP_PAIRS) / face, 4) if face > 0 else None
+
+
 class FaceFinder:
     """Faces in a frame (RGB), as vision.py publishes them. Needs a landmarker in IMAGE mode."""
 
@@ -238,6 +258,7 @@ class FaceFinder:
             jaw = next((c.score for c in res.face_blendshapes[i] if c.category_name == "jawOpen"), 0.0)
             faces.append({"cx": round((fx0 + fx1) / 2, 4), "cy": round((fy0 + fy1) / 2, 4), "top": round(fy0, 4),
                           "w": round(fx1 - fx0, 4), "h": round(fy1 - fy0, 4), "mouth": round(jaw, 3),
+                          "lips": lips(xs, ys, W, H),
                           "pts": [(xs[k] * W, ys[k] * H) for k in FACE_POINTS] if len(pts) > max(FACE_POINTS) else None})
         return faces
 

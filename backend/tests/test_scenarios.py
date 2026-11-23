@@ -65,3 +65,14 @@ def test_who_said_it_in_the_field(scn):
     assert r.right >= right and r.wrong <= wrong, str(r)
     assert r.faces_right >= faces, str(r)
     assert r.tags <= tags * max(r.in_view, 1.0), f"tags left over: {r}"
+
+
+def test_a_still_jaw_and_a_smiling_listener_are_told_apart_by_the_lips():
+    """The recording of 2026-11-23 (tests/sim.py recorded_scenarios): with jawOpen alone the tags went to the wrong
+    face half the time (on the recording itself every sentence went to one person); with vision.py's lip gap, as the
+    camera now gives it, they are right."""
+    jaw, lips = sim.recorded_scenarios(VOICES)
+    r = sim.mean([sim.run(lips, VOICES, seed) for seed in range(4)])
+    assert r.right >= 0.95 and r.wrong <= 0.02 and r.faces_right >= 0.95, str(r)
+    old = sim.mean([sim.run(jaw, VOICES, seed) for seed in range(4)])
+    assert old.faces_right < r.faces_right - 0.2, f"the scenario no longer shows the trouble: {old}"
