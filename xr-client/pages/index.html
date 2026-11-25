@@ -6,6 +6,12 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Reachy Meetings: be in the room, from anywhere</title>
 <meta name="description" content="Join a meeting through a Reachy Mini robot: see the room in your headset, read what is said in your language, and be there as a robot that turns its head with yours.">
+<meta property="og:type" content="website">
+<meta property="og:title" content="Reachy Meetings: be in the room, from anywhere">
+<meta property="og:description" content="Join a meeting through a Reachy Mini robot: see the room in your headset, read what is said in your language, and be there as a robot that turns its head with yours.">
+<meta property="og:url" content="https://stevenjobins.github.io/reachy-mini-meetings/">
+<meta property="og:image" content="https://stevenjobins.github.io/reachy-mini-meetings/shots/mac-meeting.png">
+<meta name="twitter:card" content="summary_large_image">
 <link rel="icon" href="icon.svg">
 <style>
   /* One look with the Mac app (window.py) and the headset app (Ui.cs): dark surfaces, blue for what can be pressed,
@@ -45,8 +51,15 @@
   .btn.small { padding: 8px 16px; font-size: 14px; }
   .btn.off { background: var(--bg2); color: var(--dim) !important; cursor: default; border: 1px dashed var(--line); filter: none; }
 
-  .hero { padding: 84px 0 72px; }
-  .hero .wrap { display: grid; grid-template-columns: 1.1fr 0.9fr; gap: 48px; align-items: center; }
+  .hero { padding: 84px 0 72px; position: relative; overflow: hidden; }
+  .hero::before {   /* a soft light behind Reachy */
+    content: ""; position: absolute; right: -12%; top: -30%; width: 72%; height: 160%; pointer-events: none;
+    background: radial-gradient(closest-side, color-mix(in srgb, var(--accent) 20%, transparent), transparent 72%);
+  }
+  .hero .wrap { display: grid; grid-template-columns: 1.1fr 0.9fr; gap: 48px; align-items: center; position: relative; }
+  .facts { margin: 24px 0 0; color: var(--dim); font-size: 14.5px; display: flex; flex-wrap: wrap; gap: 6px 10px; }
+  .facts span { white-space: nowrap; border: 1px solid var(--line); border-radius: 999px; padding: 3px 12px; }
+  .facts b { color: var(--soft); font-weight: 600; }
   .eyebrow { color: var(--accent); font-weight: 650; font-size: 14px; letter-spacing: 0.08em; text-transform: uppercase; }
   h1 { font-size: clamp(36px, 5.2vw, 58px); line-height: 1.08; margin: 14px 0 20px; letter-spacing: -0.02em; }
   .lead { font-size: 20px; color: var(--soft); max-width: 34em; margin: 0 0 30px; }
@@ -61,14 +74,59 @@
   .grid { display: grid; gap: 20px; }
   .g3 { grid-template-columns: repeat(3, 1fr); }
   .g2 { grid-template-columns: repeat(2, 1fr); }
-  .card { background: var(--card); border: 1px solid var(--line); border-radius: 18px; padding: 26px; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 18px; padding: 26px; position: relative; }
+  .g3 .card { transition: transform 0.18s ease, border-color 0.18s ease; }
+  .g3 .card:hover { transform: translateY(-3px); border-color: color-mix(in srgb, var(--accent) 45%, var(--line)); }
+  .flow .card:not(:last-child)::after {   /* one step leads to the next */
+    content: "→"; position: absolute; right: -18px; top: 30px; width: 16px; text-align: center; color: var(--dim); font-size: 18px;
+  }
   .card h3 { margin: 0 0 8px; font-size: 19px; }
   .card p { margin: 0; color: var(--soft); font-size: 16px; }
   .num {
     width: 34px; height: 34px; border-radius: 50%; background: var(--accent); color: var(--accent-ink);
     display: grid; place-items: center; font-weight: 700; margin-bottom: 16px;
   }
-  .ico { width: 30px; height: 30px; color: var(--accent); margin-bottom: 14px; }
+  .ico {
+    width: 46px; height: 46px; padding: 10px; border-radius: 13px; color: var(--accent); margin-bottom: 16px;
+    background: color-mix(in srgb, var(--accent) 13%, transparent);
+  }
+
+  /* See it: the Mac app's own pictures in a window frame, and the headset's view as a drawing */
+  .tabs { display: none; gap: 8px; flex-wrap: wrap; margin: 0 0 18px; }
+  .js .tabs { display: flex; }
+  .tab {
+    font: inherit; font-size: 15px; font-weight: 600; padding: 8px 16px; border-radius: 999px; cursor: pointer;
+    background: transparent; color: var(--soft); border: 1px solid var(--line);
+  }
+  .tab:hover { color: var(--ink); }
+  .tab.on { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+  .window {
+    border: 1px solid var(--line); border-radius: 14px; overflow: hidden; background: #0e1116;
+    box-shadow: 0 30px 80px rgba(0, 0, 0, 0.55), 0 0 0 1px rgba(255, 255, 255, 0.02);
+  }
+  .window .bar {
+    height: 38px; display: flex; align-items: center; gap: 8px; padding: 0 14px; background: #161a21;
+    border-bottom: 1px solid var(--line); color: var(--dim); font-size: 13px;
+  }
+  .window .bar i { width: 12px; height: 12px; border-radius: 50%; background: #3a4150; }
+  .window .bar span { margin: 0 auto; transform: translateX(-30px); }
+  .window img { display: block; width: 100%; height: auto; }
+  .cap { color: var(--dim); font-size: 14.5px; margin: 14px 0 0; }
+  .split { display: grid; grid-template-columns: 1.15fr 0.85fr; gap: 44px; align-items: center; margin-top: 64px; }
+  .split svg { width: 100%; height: auto; display: block; border-radius: 18px; border: 1px solid var(--line); }
+  .split h3 { font-size: 24px; margin: 0 0 10px; letter-spacing: -0.01em; }
+  .split p { color: var(--soft); margin: 0 0 14px; }
+  .split ul { margin: 0; padding-left: 20px; color: var(--soft); font-size: 16px; }
+  .split li { margin: 6px 0; }
+
+  @media (prefers-reduced-motion: no-preference) {
+    .float { animation: float 6s ease-in-out infinite; }
+    .float.b { animation-delay: -2s; }
+    .float.c { animation-delay: -4s; }
+    @keyframes float { 50% { transform: translateY(-7px); } }
+    .js .reveal { opacity: 0; transform: translateY(16px); transition: opacity 0.5s ease, transform 0.5s ease; }
+    .js .reveal.in { opacity: 1; transform: none; }
+  }
 
   .dl { display: flex; flex-direction: column; }
   .dl .tag { font-size: 13px; color: var(--dim); text-transform: uppercase; letter-spacing: 0.08em; font-weight: 650; }
@@ -108,7 +166,10 @@
 
   @media (max-width: 860px) {
     .hero { padding: 48px 0; }
-    .hero .wrap, .g3, .g2 { grid-template-columns: 1fr; }
+    .hero .wrap, .g3, .g2, .split { grid-template-columns: 1fr; }
+    .split { gap: 26px; margin-top: 44px; }
+    .flow .card:not(:last-child)::after { display: none; }
+    .window .bar span { display: none; }
     .need .row { grid-template-columns: 1fr 1fr; }
     .nav nav a:not(.btn) { display: none; }
     section { padding: 52px 0; }
@@ -121,6 +182,7 @@
   <div class="wrap">
     <a class="brand" href="#top"><img src="icon.svg" alt="">Reachy Meetings</a>
     <nav>
+      <a href="#see">See it</a>
       <a href="#how">How it works</a>
       <a href="#features">Features</a>
       <a href="#plans">Pricing</a>
@@ -140,8 +202,9 @@
         <p class="lead">A small robot sits at the table for you. In your headset you see the room through its eyes and read what is said in your own language. When you turn your head, it turns its head.</p>
         <div class="cta">
           <a class="btn" href="#download">Download the apps</a>
-          <a class="btn ghost" href="#how">See how it works</a>
+          <a class="btn ghost" href="#see">See it</a>
         </div>
+        <p class="facts"><span><b>Free</b> for an hour a day</span><span>Mac with Apple silicon</span><span>Samsung Galaxy XR</span><span>Open source</span></p>
       </div>
       <div class="scene" aria-hidden="true">
         <svg viewBox="0 0 500 380" role="img">
@@ -158,33 +221,98 @@
             <circle cx="80" cy="98" r="4.5" fill="#14171c"/>
           </g>
           <g font-family="-apple-system, Segoe UI, Helvetica, Arial, sans-serif">
-            <g transform="translate(0 14)">
+            <g class="float"><g transform="translate(0 14)">
               <rect width="188" height="62" rx="18" fill="var(--card)" stroke="var(--line)"/>
               <text x="18" y="26" font-size="12" fill="var(--dim)">Anna · DE → EN</text>
               <text x="18" y="46" font-size="15" font-weight="600" fill="var(--ink)">Shall we start at ten?</text>
-            </g>
-            <g transform="translate(310 262)">
+            </g></g>
+            <g class="float b"><g transform="translate(310 262)">
               <rect width="186" height="62" rx="18" fill="var(--accent)"/>
               <text x="18" y="26" font-size="12" fill="var(--accent-ink)" opacity="0.75">You, spoken by Reachy</text>
               <text x="18" y="46" font-size="15" font-weight="600" fill="var(--accent-ink)">Ja, das passt mir gut.</text>
-            </g>
-            <g transform="translate(0 250)">
+            </g></g>
+            <g class="float c"><g transform="translate(0 250)">
               <rect width="172" height="62" rx="14" fill="var(--card)" stroke="var(--line)"/>
               <rect x="12" y="12" width="4" height="38" rx="2" fill="var(--warm)"/>
               <text x="26" y="27" font-size="12" font-weight="700" fill="var(--ink)">Meeting notes</text>
               <text x="26" y="45" font-size="11.5" fill="var(--soft)">□ Kevin: sign the release</text>
-            </g>
+            </g></g>
           </g>
         </svg>
       </div>
     </div>
   </div>
 
-  <section id="how" class="alt">
-    <div class="wrap">
+  <section id="see" class="alt">
+    <div class="wrap reveal">
+      <h2>See it</h2>
+      <p class="sub">The Mac app sits next to the robot and says in plain words what is going on. These are its own pictures.</p>
+      <div class="tabs" role="tablist" aria-label="Pictures of the Mac app">
+        <button class="tab on" role="tab" aria-selected="true" data-shot="meeting">In the meeting</button>
+        <button class="tab" role="tab" aria-selected="false" data-shot="pairing">Pairing a headset</button>
+        <button class="tab" role="tab" aria-selected="false" data-shot="setup">First start</button>
+      </div>
+      <div class="window">
+        <div class="bar"><i></i><i></i><i></i><span>Reachy Meetings</span></div>
+        <img id="shot" src="shots/mac-meeting.webp" width="1600" height="1015"
+             alt="The Mac app during a meeting: the person in the headset as a little Reachy with a green ring while they speak, their sentence and its translation below, and a panel that says everything is ready.">
+      </div>
+      <p class="cap" id="shot-cap">The person in the headset is the little Reachy: a green ring while they speak, their words and the translation below. The panel on the right says whether everything is ready.</p>
+
+      <div class="split">
+        <svg viewBox="0 0 640 400" role="img" aria-label="Drawing of the view in the headset: the room with two people, a name above each, a speech bubble with the translation above the one who speaks, and a row of round buttons below.">
+          <defs>
+            <linearGradient id="room" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#232a36"/><stop offset="1" stop-color="#151a22"/></linearGradient>
+          </defs>
+          <rect width="640" height="400" fill="url(#room)"/>
+          <rect x="40" y="46" width="150" height="96" rx="6" fill="#2c3545"/><rect x="450" y="46" width="150" height="96" rx="6" fill="#2c3545"/>
+          <path d="M0 300 L640 300 L640 400 L0 400 Z" fill="#10141a"/>
+          <ellipse cx="320" cy="304" rx="250" ry="34" fill="#2b2118"/>
+          <!-- two people at the table -->
+          <g fill="#3b4557"><circle cx="212" cy="196" r="30"/><rect x="164" y="232" width="96" height="84" rx="34"/></g>
+          <g fill="#465066"><circle cx="430" cy="190" r="30"/><rect x="382" y="226" width="96" height="90" rx="34"/></g>
+          <circle cx="430" cy="190" r="34" fill="none" stroke="var(--good)" stroke-width="3"/>
+          <g font-family="-apple-system, Segoe UI, Helvetica, Arial, sans-serif">
+            <g transform="translate(184 142)"><rect width="56" height="22" rx="11" fill="rgba(0,0,0,0.55)"/><text x="28" y="15.5" font-size="12" fill="#f4f5f7" text-anchor="middle">Anna</text></g>
+            <g transform="translate(405 134)"><rect width="50" height="22" rx="11" fill="var(--good)"/><text x="25" y="15.5" font-size="12" font-weight="700" fill="#0b1220" text-anchor="middle">Ben</text></g>
+            <g transform="translate(330 52)">
+              <path d="M88 68 L100 84 L112 68 Z" fill="#1b2029"/>
+              <rect width="248" height="70" rx="18" fill="#1b2029" stroke="var(--line)"/>
+              <text x="18" y="29" font-size="16" font-weight="600" fill="#f4f5f7">Shall we start at ten?</text>
+              <text x="18" y="51" font-size="12.5" fill="#aab1bd">Sollen wir um zehn anfangen?</text>
+            </g>
+            <!-- the shared screen hangs next to the picture -->
+            <g transform="translate(24 176)">
+              <rect width="112" height="72" rx="8" fill="#0e1116" stroke="var(--accent)" stroke-width="2"/>
+              <rect x="12" y="14" width="56" height="6" rx="3" fill="#3a4150"/><rect x="12" y="28" width="88" height="6" rx="3" fill="#2a303b"/><rect x="12" y="40" width="72" height="6" rx="3" fill="#2a303b"/><rect x="12" y="52" width="44" height="6" rx="3" fill="#2a303b"/>
+            </g>
+            <!-- the menu: a row of glass buttons, worked with a pinch -->
+            <g transform="translate(212 338)">
+              <rect width="216" height="44" rx="22" fill="rgba(255,255,255,0.09)" stroke="rgba(255,255,255,0.16)"/>
+              <circle cx="28" cy="22" r="13" fill="var(--accent)"/><circle cx="68" cy="22" r="13" fill="rgba(255,255,255,0.14)"/><circle cx="108" cy="22" r="13" fill="rgba(255,255,255,0.14)"/><circle cx="148" cy="22" r="13" fill="rgba(255,255,255,0.14)"/><circle cx="188" cy="22" r="13" fill="#e5484d"/>
+            </g>
+          </g>
+        </svg>
+        <div>
+          <h3>And in the headset</h3>
+          <p>You sit where Reachy sits. The room is around you, and what you need hangs in it:</p>
+          <ul>
+            <li>a name above every head, green for whoever speaks</li>
+            <li>their sentence in your language, above them</li>
+            <li>the shared screen next to the picture</li>
+            <li>a row of buttons you press with a pinch</li>
+          </ul>
+          <p class="cap">A drawing, not a photo: a real picture from the headset would show the people in the room.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="how">
+    <div class="wrap reveal">
       <h2>How it works</h2>
       <p class="sub">Three things work together: the robot on the meeting table, a laptop next to it, and your headset wherever you are.</p>
-      <div class="grid g3">
+      <div class="grid g3 flow">
         <div class="card"><div class="num">1</div><h3>Reachy sits at the table</h3><p>A Reachy Mini is your place in the room. Its camera and microphones are your eyes and ears; its head and antennas show the others what you do.</p></div>
         <div class="card"><div class="num">2</div><h3>The laptop does the work</h3><p>The Mac app next to the robot transcribes and translates what is said, writes the meeting notes and lets your headset in with a pairing code.</p></div>
         <div class="card"><div class="num">3</div><h3>You put on the headset</h3><p>You see the room, with a speech bubble above whoever speaks. Everything is worked with one gesture, a pinch of thumb and index finger.</p></div>
@@ -192,8 +320,8 @@
     </div>
   </section>
 
-  <section id="features">
-    <div class="wrap">
+  <section id="features" class="alt">
+    <div class="wrap reveal">
       <h2>What you get</h2>
       <p class="sub">Built for the person who is not in the room, so that they follow the meeting as well as those who are.</p>
       <div class="grid g3">
@@ -225,8 +353,8 @@
     </div>
   </section>
 
-  <section id="download" class="alt">
-    <div class="wrap">
+  <section id="download">
+    <div class="wrap reveal">
       <h2>Download</h2>
       <p class="sub">You need both apps: one on the Mac next to the robot, one on the headset. They are free, and the source is open.</p>
       <div class="grid g2">
@@ -238,6 +366,7 @@
             <li>Mac with Apple silicon</li>
             <li>Reachy Mini Control installed</li>
             <li>Updates itself</li>
+            <li>The first start fetches about 3.5 GB, once</li>
           </ul>
           <div class="foot">
             <a class="btn off" id="dl-mac" aria-disabled="true">Not available yet</a>
@@ -272,8 +401,8 @@
     </div>
   </section>
 
-  <section id="plans">
-    <div class="wrap">
+  <section id="plans" class="alt">
+    <div class="wrap reveal">
       <h2>What it costs</h2>
       <p class="sub">The apps are free. Translation and meeting notes run on our service, so you need no keys or accounts of your own.</p>
       <div class="grid g2">
@@ -283,13 +412,13 @@
     </div>
   </section>
 
-  <section id="setup" class="alt">
-    <div class="wrap">
+  <section id="setup">
+    <div class="wrap reveal">
       <h2>Set up in ten minutes</h2>
       <p class="sub">Once per laptop and headset. After that, opening both apps is all it takes.</p>
       <ol class="steps">
         <li><b>Connect Reachy Mini to the Mac</b><span>Plug it in by USB and install Reachy Mini Control from Pollen Robotics.</span></li>
-        <li><b>Open Reachy Meetings on the Mac</b><span>Drag it to Applications and open it. macOS asks once for the microphone, the camera and the local network.</span></li>
+        <li><b>Open Reachy Meetings on the Mac</b><span>Drag it to Applications and open it. The first time, a progress bar shows while it fetches what it needs (about 3.5 GB, a few minutes). macOS asks once for the microphone, the camera and the local network.</span></li>
         <li><b>Install the app on the headset</b><span>Until it is in the store: switch on developer mode on the headset, connect it to a computer and run <code>adb install ReachyMeetings.apk</code>.</span></li>
         <li><b>Pair the headset</b><span>Open the app in the headset and type the six-digit code the Mac app shows. The headset is remembered from then on.</span></li>
         <li><b>Take the tour</b><span>The first start shows every gesture and lets you practise it, while Reachy wakes up and looks around the room.</span></li>
@@ -297,13 +426,14 @@
     </div>
   </section>
 
-  <section id="faq">
-    <div class="wrap">
+  <section id="faq" class="alt">
+    <div class="wrap reveal">
       <h2>Questions</h2>
       <p class="sub">The short answers. The details are in the repository.</p>
       <details><summary>Where does what is said in the room go?</summary><p>Speech is turned into text on the Mac itself. The text then goes through our service to DeepL for the translation and to Google Gemini for the meeting notes; our service keeps none of it, only how many minutes each installation used. Video and sound travel from the laptop straight to the headset.</p></details>
       <details><summary>Does it work without a Reachy Mini?</summary><p>No. The robot is the camera, the microphones and your presence in the room. Without it the apps have nothing to connect to.</p></details>
       <details><summary>Which headsets work?</summary><p>The app is built and tested on the Samsung Galaxy XR. It needs hand tracking; other Android headsets are untested.</p></details>
+      <details><summary>The headset does not connect. What now?</summary><p>The first time, the headset and the Mac must be on the same Wi-Fi, and the six-digit code from the Mac app is typed into the headset once. A headset that was used with another laptop keeps looking for that one: clear the app's data in the headset's settings, open it again and type the code.</p></details>
       <details><summary>Can several people join through one robot?</summary><p>One person at a time sees through the robot and turns its head. Several headsets can be paired with the same laptop.</p></details>
       <details><summary>How good is the translation live?</summary><p>A sentence appears about a second and a half after it was said. Names and technical terms can come out wrong, as with any live transcription.</p></details>
     </div>
@@ -325,6 +455,41 @@
 </footer>
 
 <script>
+  document.documentElement.classList.add("js");
+
+  // See it: three pictures of the Mac app in one frame
+  const SHOTS = {
+    meeting: ["The Mac app during a meeting: the person in the headset as a little Reachy with a green ring while they speak, their sentence and its translation below, and a panel that says everything is ready.",
+              "The person in the headset is the little Reachy: a green ring while they speak, their words and the translation below. The panel on the right says whether everything is ready."],
+    pairing: ["The Mac app waiting for a headset: two numbered steps and a large six-digit code.",
+              "A new headset: put it on, open Reachy Meetings and type the code. After that it connects by itself."],
+    setup: ["The Mac app's first start: one large progress bar at 62 per cent.",
+            "The first start fetches what the app needs, once. Then it goes straight into the meeting view."],
+  };
+  for (const tab of document.querySelectorAll(".tab")) {
+    tab.addEventListener("click", () => {
+      const [alt, caption] = SHOTS[tab.dataset.shot];
+      const shot = document.getElementById("shot");
+      shot.src = `shots/mac-${tab.dataset.shot}.webp`;
+      shot.alt = alt;
+      document.getElementById("shot-cap").textContent = caption;
+      for (const t of document.querySelectorAll(".tab")) {
+        t.classList.toggle("on", t === tab);
+        t.setAttribute("aria-selected", t === tab);
+      }
+    });
+  }
+
+  // Sections come in as they are scrolled to (not for people who switched motion off: see the styles)
+  if ("IntersectionObserver" in window) {
+    const seen = new IntersectionObserver(entries => {
+      for (const e of entries) if (e.isIntersecting) { e.target.classList.add("in"); seen.unobserve(e.target); }
+    }, { threshold: 0.08 });
+    for (const el of document.querySelectorAll(".reveal")) seen.observe(el);
+  } else {
+    for (const el of document.querySelectorAll(".reveal")) el.classList.add("in");
+  }
+
   // The headset web app signs in through Hugging Face, which sends people back to this address: pass them on
   if (/[?&]code=/.test(location.search) && /[?&]state=/.test(location.search)) location.replace("app.html" + location.search);
 
