@@ -20,13 +20,9 @@
     background: radial-gradient(1200px 700px at 85% -10%, rgba(244,114,182,.10), transparent 60%), radial-gradient(900px 600px at -10% 110%, rgba(56,189,248,.11), transparent 60%), var(--bg); overflow: hidden; }
   .slide.active { opacity: 1; visibility: visible; transform: none; transition: opacity .55s ease, transform .55s ease, visibility 0s; }
   .slide.past { transform: translateX(-40px); }
-  .slide::before { content: ""; position: absolute; inset: 0; pointer-events: none; opacity: .5;
-    background-image: linear-gradient(rgba(255,255,255,.035) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,.035) 1px, transparent 1px); background-size: 40px 40px;
-    mask-image: radial-gradient(ellipse at center, black 30%, transparent 85%); }
   .slide > * { position: relative; }
-  .kicker { font: 600 15px/1 var(--mono); letter-spacing: .14em; text-transform: uppercase; color: var(--aud); margin-bottom: 14px; }
   h1 { font: 700 92px/1.0 var(--head); margin: 0; letter-spacing: -.02em; }
-  h2 { font: 700 54px/1.08 var(--head); margin: 0 0 26px; letter-spacing: -.015em; }
+  h2 { font: 700 56px/1.08 var(--head); margin: 0 0 30px; letter-spacing: -.015em; }
   h3 { font: 600 23px/1.2 var(--head); margin: 0 0 8px; }
   p, li { font-size: 20px; line-height: 1.42; color: #cfd6e6; }
   b { color: #fff; }
@@ -35,19 +31,14 @@
   .card { background: var(--panel); border: 1px solid var(--line); border-radius: 20px; padding: 20px 24px; backdrop-filter: blur(6px); }
   .chip { display: inline-flex; align-items: center; gap: 8px; padding: 8px 14px; border-radius: 999px; font: 600 15px/1 var(--mono); border: 1px solid var(--line); background: var(--panel2); color: #dbe2f0; }
   .footer { position: absolute; left: 90px; right: 90px; bottom: 24px; display: flex; justify-content: space-between; font: 500 13px var(--mono); color: var(--dim); }
-  /* a line of the released code, with the file it is from */
-  .code { display: block; font: 500 14.5px/1.5 var(--mono); color: #d6ccff; background: rgba(167,139,250,.09); border: 1px solid rgba(167,139,250,.22); border-radius: 10px; padding: 8px 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .code i { font-style: normal; color: var(--fuse); font-weight: 700; margin-right: 10px; }
-  .code u { text-decoration: none; color: var(--muted); margin-left: 10px; font-family: var(--body); font-size: 15px; }
-
-  /* entrance animations, replayed every time a slide becomes active */
+  /* a slide with several states (the next key walks through them before it leaves the slide): one dot per state */
+  .dots { display: inline-flex; gap: 6px; margin-right: 14px; vertical-align: middle; }
+  .dots b { width: 7px; height: 7px; border-radius: 50%; background: rgba(255,255,255,.18); }
+  .dots b.on { background: var(--muted); }
+  /* entrance: the parts of a slide fade in, replayed every time the slide becomes active */
   .a { opacity: 0; }
-  .slide.active .a { animation: rise .8s cubic-bezier(.2,.75,.2,1) var(--d, 0s) both; }
-  .slide.active .a.pop { animation-name: pop; }
-  .slide.active .a.fade { animation-name: fade; }
-  @keyframes rise { from { opacity: 0; transform: translateY(26px); } to { opacity: 1; transform: none; } }
-  @keyframes pop { from { opacity: 0; transform: scale(.86); } to { opacity: 1; transform: none; } }
-  @keyframes fade { from { opacity: 0; } to { opacity: 1; } }
+  .slide.active .a { animation: rise .7s ease var(--d, 0s) both; }
+  @keyframes rise { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: none; } }
 
   /* progress + nav + notes */
   #progress { position: fixed; left: 0; bottom: 0; height: 3px; background: linear-gradient(90deg, var(--vid), var(--fuse), var(--aud)); transition: width .5s ease; z-index: 5; }
@@ -73,114 +64,84 @@
   .scope .read { position: absolute; left: 30px; right: 30px; bottom: 16px; font: 500 18px var(--mono); color: var(--muted); white-space: nowrap; }
   .scope .read b { font-weight: 700; margin-right: 12px; font-size: 21px; }
   .good { color: var(--ok); } .bad { color: var(--aud); }
-  .btns { display: flex; gap: 10px; }
-  .btn { font: 600 16px var(--mono); padding: 11px 18px; border-radius: 12px; border: 1px solid var(--line); background: var(--panel2); color: var(--text); cursor: pointer; }
-  .btn.on { border-color: var(--aud); background: rgba(244,114,182,.15); }
-  .btn.on.ok { border-color: var(--ok); background: rgba(74,222,128,.13); }
-  .key { font: 600 13px var(--mono); color: var(--dim); border: 1px solid var(--line); border-radius: 6px; padding: 3px 7px; }
 
   /* ---------- 1 title ---------- */
-  #s1 .left { position: absolute; left: 90px; top: 132px; width: 740px; }
-  #s1 .paper { margin: 36px 0 8px; font: 600 27px/1.3 var(--head); color: #e4e9f4; }
+  #s1 .left { position: absolute; left: 90px; top: 160px; width: 740px; }
+  #s1 .paper { margin: 40px 0 8px; font: 600 27px/1.3 var(--head); color: #e4e9f4; }
   #s1 .meta { font: 500 18px var(--mono); color: var(--muted); }
   #s1 .who { margin-top: 44px; display: flex; gap: 12px; flex-wrap: wrap; }
   #s1 .who .chip { font-size: 16px; padding: 10px 16px; }
-  #s1 .scope { position: absolute; right: 80px; top: 150px; width: 680px; height: 540px; }
+  #s1 .scope { position: absolute; right: 80px; top: 160px; width: 680px; height: 540px; }
 
-  /* ---------- 2 the trick ---------- */
+  /* ---------- 2 the idea ---------- */
   #s2 .grid { display: grid; grid-template-columns: 1000px 1fr; gap: 30px; }
-  #s2 .scope { height: 540px; }
-  #s2 .ctrl { display: flex; align-items: center; gap: 14px; margin-top: 14px; }
-  #s2 .ctrl .code { flex: 1; }
-  #s2 .col { display: flex; flex-direction: column; gap: 16px; }
-  #s2 .col .card { flex: 1; display: flex; flex-direction: column; justify-content: center; }
+  #s2 .scope { height: 600px; }
+  #s2 .col { display: flex; flex-direction: column; gap: 20px; }
+  #s2 .col .card { flex: 1; display: flex; flex-direction: column; justify-content: center; padding: 24px 28px; }
   .big { font: 700 66px/1 var(--head); letter-spacing: -.03em; }
-  .cap { font: 500 16px/1.35 var(--mono); color: var(--muted); margin-top: 10px; }
+  .cap { font: 500 17px/1.35 var(--mono); color: var(--muted); margin-top: 12px; }
   .three { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; text-align: center; }
   .three b { display: block; font: 700 35px/1 var(--head); letter-spacing: -.02em; }
   .three span { display: block; font: 500 14.5px var(--mono); color: var(--muted); margin-top: 8px; }
-  #s2 .why p { margin: 0; font-size: 19px; }
 
   /* ---------- 3 what does the network learn ---------- */
-  .lead { font-size: 23px; line-height: 1.4; color: #cfd6e6; margin: -8px 0 22px; }
-  .chips { display: flex; gap: 8px; flex-wrap: wrap; }
-  .credit { font: 500 12.5px var(--mono); color: var(--dim); }
-  #s3 .grid { display: grid; grid-template-columns: 760px 1fr; gap: 40px; }
-  #s3 h3 { margin-bottom: 12px; }
-  #s3 .speech { width: 760px; display: block; border-radius: 12px; }
-  /* cam_grid.jpg: 2 classes side by side (each 688 of 1416 px wide, 40 px apart), 3 rows of 224 px with 56 px under
+  .lead { font-size: 24px; line-height: 1.4; color: #cfd6e6; margin: -10px 0 26px; }
+  #s3 .grid { display: grid; grid-template-columns: 940px 1fr; gap: 40px; }
+  #s3 h3 { margin-bottom: 14px; }
+  #s3 .speech { width: 940px; display: block; border-radius: 12px; }
+  /* cam_grid.jpg: 2 frames side by side (each 224 of 468 px wide, 20 px apart), 2 rows of 224 px with 40 px under
      each for the names (presentation/paper/extract_figures.py) */
   .motions { position: relative; }
   .motions img { width: 100%; display: block; }
-  .motions span { position: absolute; left: calc(var(--c) * 51.41%); top: calc((var(--r) * 280 + 232) / 840 * 100%); font: 600 14.5px var(--mono); color: #cfd6e6; }
-  #s3 .below { display: flex; align-items: center; justify-content: space-between; margin-top: 22px; }
+  .motions span { position: absolute; left: calc(var(--c) * 52.14%); top: calc((var(--r) * 264 + 231) / 528 * 100%); font: 600 15.5px var(--mono); color: #cfd6e6; white-space: nowrap; }
 
   /* ---------- 4 action recognition ---------- */
-  #s4 .grid { display: grid; grid-template-columns: 880px 1fr; gap: 50px; }
-  .vbars { height: 440px; display: flex; align-items: flex-end; gap: 16px; border-bottom: 2px solid rgba(255,255,255,.2); }
+  #s4 .grid { display: grid; grid-template-columns: 800px 1fr; gap: 56px; align-items: center; }
+  .axis { font: 500 16px var(--mono); color: var(--muted); margin-bottom: 4px; }
+  .vbars { height: 490px; display: flex; align-items: flex-end; gap: 16px; border-bottom: 2px solid rgba(255,255,255,.2); }
   .vbar { flex: 1; display: flex; flex-direction: column; align-items: center; }
   .vbar b { font: 700 23px var(--mono); margin-bottom: 8px; color: #cfd6e6; }
   .vbar i { display: block; width: 100%; height: 0; border-radius: 10px 10px 0 0; background: rgba(148,163,184,.45); }
-  .slide.active .vbar i { animation: growv 1.1s cubic-bezier(.2,.75,.2,1) var(--d, .3s) forwards; }
+  .slide.active .vbar i { animation: growv .9s ease var(--d, .2s) forwards; }
   @keyframes growv { to { height: var(--h); } }
   .vbar.me b { color: #fff; }
-  .vbar.me i { background: linear-gradient(180deg, var(--aud), var(--fuse) 55%, var(--vid)); }
+  .vbar.me i, .points .me::before { background: linear-gradient(180deg, var(--aud), var(--fuse) 55%, var(--vid)); }
   .vbar.ours i { background: rgba(167,139,250,.5); }
-  .vbar.sup i { background: repeating-linear-gradient(45deg, rgba(148,163,184,.36) 0 8px, rgba(148,163,184,.17) 8px 16px); }
-  .vbar.gap { margin-left: 22px; }   /* a new group starts here */
+  .vbar.sup i, .points .sup::before { background: repeating-linear-gradient(45deg, rgba(148,163,184,.36) 0 8px, rgba(148,163,184,.17) 8px 16px); }
+  .vbar.gap, .vnames .gap, .vgroups .gap { margin-left: 22px; }   /* a new group starts here */
   .vnames, .vgroups { display: flex; gap: 16px; }
   .vnames span { flex: 1; text-align: center; font: 500 15.5px/1.25 var(--body); color: #cfd6e6; padding-top: 10px; }
-  .vnames .gap, .vgroups .gap { margin-left: 22px; }
   .vgroups { margin-top: 12px; }
   .vgroups span { text-align: center; font: 600 12.5px var(--mono); letter-spacing: .1em; text-transform: uppercase; color: var(--dim); border-top: 2px solid var(--line); padding-top: 8px; }
-  #s4 .col { display: flex; flex-direction: column; gap: 16px; }
-  #s4 .col .card { flex: 1; display: flex; flex-direction: column; justify-content: center; }
-  #s4 .col b.n { display: block; font: 700 44px/1 var(--head); letter-spacing: -.02em; }
-  #s4 .col h3 { margin: 10px 0 4px; }
-  #s4 .col p { margin: 0; font-size: 17.5px; color: var(--muted); }
+  .points { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 46px; }
+  .points li { position: relative; padding-left: 42px; font: 600 28px/1.25 var(--head); color: #fff; white-space: nowrap; }
+  .points li::before { content: ""; position: absolute; left: 0; top: 5px; width: 22px; height: 22px; border-radius: 6px; background: rgba(148,163,184,.45); }
 
   /* ---------- 5 source separation: how it is trained, what it then does ---------- */
-  #s5 h2 { margin-bottom: 20px; }
-  #s5 .grid { display: grid; grid-template-columns: 770px 1fr; gap: 36px; }
-  #s5 h3 { font-size: 20px; margin-bottom: 10px; }
-  .steps { display: flex; flex-direction: column; gap: 12px; }
-  .step { padding: 14px 18px 16px; }
-  .step .hd { display: flex; align-items: baseline; gap: 12px; margin-bottom: 12px; font: 600 20px var(--head); color: #fff; }
-  .step .hd em { font: 700 13px var(--mono); font-style: normal; letter-spacing: .12em; color: var(--aud); white-space: nowrap; }
-  .step .hd .code { margin-left: auto; font-size: 13px; padding: 4px 10px; flex: none; }
-  .step .row { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
-  .step .op { font: 600 26px var(--head); color: var(--muted); }
+  #s5 .grid { display: grid; grid-template-columns: 760px 1fr; gap: 40px; }
+  #s5 h3 { margin-bottom: 14px; }
+  .train { padding: 28px 28px; height: 436px; display: flex; flex-direction: column; justify-content: space-between; }
+  .train .row { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+  .train .op { font: 600 28px var(--head); color: var(--muted); }
   .sig { flex: 1; min-width: 0; }
-  .sig svg { display: block; width: 100%; height: 58px; }
-  .sig span { display: block; font: 600 13.5px var(--mono); margin-top: 6px; white-space: nowrap; }
+  .sig svg { display: block; width: 100%; height: 76px; }
+  .sig span { display: block; font: 600 15px var(--mono); margin-top: 8px; white-space: nowrap; }
   .sig.a { color: var(--ok); } .sig.b { color: var(--aud); } .sig.mix { color: #dbe2f0; } .sig.v { color: var(--vid); }
   .sig svg[data-wave] { fill: currentColor; }
-  .stack { display: flex; flex-direction: column; gap: 10px; }
-  .stack { flex: none; }
-  .stack .sig { display: flex; align-items: center; gap: 8px; }
-  .stack .sig svg { width: 112px; height: 34px; flex: none; }
+  .stack { flex: none; display: flex; flex-direction: column; gap: 14px; }
+  .stack .sig { display: flex; align-items: center; gap: 10px; }
+  .stack .sig svg { width: 140px; height: 42px; flex: none; }
   .stack .sig span { margin: 0; }
-  .model { flex: none; text-align: center; border: 1.6px solid var(--fuse); border-radius: 14px; background: rgba(167,139,250,.12); padding: 12px 16px; }
-  .model b { display: block; font: 600 16.5px var(--head); white-space: nowrap; }
-  .model span { display: block; font: 500 13px var(--mono); color: #c4b5fd; margin-top: 4px; }
-  .step .loss { font: 500 16.5px var(--mono); color: #e4e9f4; }
-  .step .loss u { text-decoration: none; color: var(--muted); font-family: var(--body); font-size: 16.5px; margin-left: 14px; }
-  .sep { position: relative; border-radius: 16px; overflow: hidden; border: 1px solid var(--line); background: #03050c; }
-  .sep .frames { position: relative; height: 242px; }
-  .sep .specs { position: relative; height: 128px; border-top: 1px solid var(--line); }
+  .model { flex: none; text-align: center; border: 1.6px solid var(--fuse); border-radius: 14px; background: rgba(167,139,250,.12); padding: 16px 22px; font: 600 19px var(--head); }
+  .train .rule { border-top: 1px solid var(--line); }
+  .train p { margin: 0; font-size: 19px; color: var(--muted); }
+  .sep { position: relative; border-radius: 16px; overflow: hidden; border: 1px solid var(--line); background: #03050c; cursor: pointer; }
+  .sep .frames { position: relative; height: 244px; }
+  .sep .specs { position: relative; height: 190px; border-top: 1px solid var(--line); }
   .sep img { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; transition: opacity .5s; }
   .sep img.show { opacity: 1; }
-  .sep .tag { position: absolute; left: 10px; top: 8px; font: 600 12px var(--mono); letter-spacing: .1em; text-transform: uppercase; color: #cbd5e1; background: rgba(3,5,12,.72); padding: 4px 8px; border-radius: 7px; z-index: 1; }
-  .sep #sep-out { left: auto; right: 10px; color: var(--ok); text-transform: none; letter-spacing: 0; font-size: 13.5px; }
-  .sepctl { display: flex; align-items: center; gap: 10px; margin-top: 12px; }
-  #s5 .btn { white-space: nowrap; font-size: 15px; padding: 9px 14px; }
-  #sep-yt { margin-left: auto; font: 600 13.5px var(--mono); color: var(--muted); text-decoration: none; border: 1px solid var(--line); border-radius: 10px; padding: 8px 12px; white-space: nowrap; }
-  #sep-yt:hover { color: #fff; }
-  #s5 .end { display: grid; grid-template-columns: 1fr 1.25fr; gap: 16px; margin-top: 16px; }
-  #s5 .end .card { padding: 16px 20px; display: flex; align-items: center; }
-  #s5 .take { font: 600 23px/1.3 var(--head); color: #fff; }
-  #s5 .us { border-color: rgba(255,159,46,.45); font-size: 18px; line-height: 1.4; color: #cfd6e6; }
-  #s5 .us b:first-child { color: var(--orange); }
+  .sep .tag { position: absolute; left: 10px; top: 8px; font: 600 13.5px var(--mono); color: var(--ok); background: rgba(3,5,12,.75); padding: 5px 9px; border-radius: 7px; z-index: 1; }
+  #s5 .take { margin-top: 22px; padding: 18px 26px; text-align: center; font: 600 26px/1.3 var(--head); color: #fff; }
 
   /* ---------- print / PDF: all slides one per page (?print) ---------- */
   @page { size: 1600px 900px; margin: 0; }
@@ -192,6 +153,7 @@
   html.print .vbar i { height: var(--h); animation: none !important; }
   html.print .grad { background: none; color: #c4b5fd; }   /* clipped gradient text prints as a solid box */
   html.print .sep img { transition: none; }
+  html.print .dots { display: none; }
   html.print #nav, html.print #progress, html.print #notes { display: none; }
 </style>
 </head>
@@ -201,201 +163,168 @@
 <!-- ======================================================= 1 TITLE -->
 <section class="slide" id="s1" data-t="20">
   <div class="left">
-    <div class="kicker a">Paper presentation · Mixed Reality HS 2026 · Team 1</div>
-    <h1 class="a" style="--d:.1s">Does this sound<br>belong to<br><span class="grad">this video?</span></h1>
-    <div class="paper a" style="--d:.25s">Audio-Visual Scene Analysis with<br>Self-Supervised Multisensory Features</div>
-    <div class="meta a" style="--d:.32s">Andrew Owens, Alexei A. Efros · UC Berkeley · ECCV 2018</div>
-    <div class="who a" style="--d:.45s"><span class="chip">Dominic Ill</span><span class="chip">Kevin Stöckli</span><span class="chip">Simon Thut</span></div>
+    <h1 class="a">Does this sound<br>belong to<br><span class="grad">this video?</span></h1>
+    <div class="paper a" style="--d:.15s">Audio-Visual Scene Analysis with<br>Self-Supervised Multisensory Features</div>
+    <div class="meta a" style="--d:.2s">Andrew Owens, Alexei A. Efros · UC Berkeley · ECCV 2018</div>
+    <div class="who a" style="--d:.3s"><span class="chip">Dominic Ill</span><span class="chip">Kevin Stöckli</span><span class="chip">Simon Thut</span></div>
   </div>
-  <div class="scope a pop" style="--d:.2s" id="scope1"><canvas></canvas><div class="read"></div></div>
-  <div class="footer"><span>arXiv 1804.03641 · code and videos: andrewowens.com/multisensory</span><span>1 / 5</span></div>
-  <aside class="notes">• Watch the ball and its sound. In sync ... and now? (flips by itself, M turns the sound on)
-• You see it at once. This paper turns that one question into training data.
-• Owens and Efros, UC Berkeley, ECCV 2018: audio-visual features learned from video alone, no labels.</aside>
+  <div class="scope a" style="--d:.15s" id="scope1"><canvas></canvas><div class="read"></div></div>
+  <div class="footer"><span>Paper presentation · Mixed Reality HS 2026 · Team 1</span><span><i class="dots"></i>1 / 5</span></div>
+  <aside class="notes">• Watch the ball and listen: in sync.
+• NEXT KEY: and now? You notice at once that something is off.
+• This paper turns that one question into training data. Owens and Efros, UC Berkeley, ECCV 2018.
+(M turns the sound on.)</aside>
 </section>
 
-<!-- ======================================================= 2 THE TRICK -->
-<section class="slide" id="s2" data-t="60">
-  <div class="kicker a">01 · motivation: learn from the soundtrack</div>
-  <h2 class="a" style="--d:.05s">Free labels: <span class="grad">shift the soundtrack</span></h2>
+<!-- ======================================================= 2 THE IDEA -->
+<section class="slide" id="s2" data-t="55">
+  <h2 class="a">Free labels: <span class="grad">shift the soundtrack</span></h2>
   <div class="grid">
-    <div>
-      <div class="scope a fade" style="--d:.15s" id="scope2"><canvas></canvas><div class="read"></div></div>
-      <div class="ctrl a" style="--d:.3s">
-        <div class="btns"><button class="btn ok" data-shift="0">in sync</button><button class="btn" data-shift="1">shifted</button></div>
-        <span class="key">S</span>
-        <span class="code"><i>shift_params.py</i>max_intersection = 30*2<u>the two windows share at most 60 frames</u></span>
-      </div>
-    </div>
+    <div class="scope a" style="--d:.1s" id="scope2"><canvas></canvas><div class="read"></div></div>
     <div class="col">
-      <div class="card a pop" style="--d:.3s"><div class="big grad">0 labels</div><div class="cap">≈ 750,000 AudioSet videos<br>raw pixels, raw waveform</div></div>
-      <div class="card a pop" style="--d:.42s">
+      <div class="card a" style="--d:.2s"><div class="big grad">0 labels</div><div class="cap">≈ 750,000 unlabeled videos</div></div>
+      <div class="card a" style="--d:.3s">
         <div class="three"><div><b class="grad">59.9%</b><span>network</span></div><div><b>66.6%</b><span>people</span></div><div><b class="muted">50%</b><span>chance</span></div></div>
         <div class="cap" style="text-align:center">in sync or not?</div>
       </div>
-      <div class="card why a pop" style="--d:.54s">
-        <h3>Why shift, not swap?</h3>
-        <p>A swapped soundtrack gives itself away in <b>one frame</b>. A shifted one keeps the scene, so only <b>motion</b> can tell.</p>
-      </div>
     </div>
   </div>
-  <div class="footer"><span>Owens &amp; Efros 2018 · Sec. 3 · shifts of 2.0 to 5.8 s</span><span>2 / 5</span></div>
-  <aside class="notes">• Motivation: most videos come with sound, but recognition models mostly ignore it. Use it as a teacher.
-• One 10 s video. Cut a 4.2 s clip. Half of the time keep its own sound, half of the time take the sound from 2 to 5.8 s away in the same video. (press S)
-• The network answers one question: in sync or not? That label costs nothing. 750,000 AudioSet videos, no annotation.
-• Hard task: network 59.9 %, people on Mechanical Turk 66.6 %, chance 50 %. Often the sound source is not on screen.
-• Why shift and not swap in another video's sound, as Look, Listen and Learn does? A swap shows in a single frame: beach picture, piano sound. A shift keeps the scene, only the timing is left, so the network has to watch motion.
-• In the code: both windows are cut from the same clip and may share at most 60 frames, that is 2 s.</aside>
+  <div class="footer"><span>Owens &amp; Efros 2018 · Sec. 3</span><span><i class="dots"></i>2 / 5</span></div>
+  <aside class="notes">• Motivation: most videos come with sound, but recognition models mostly ignore it.
+• The idea: cut 4.2 s out of a video and keep its own sound. Label: in sync.
+• NEXT KEY: or take the sound from a few seconds later in the same video. Label: not in sync.
+• The network only has to tell the two apart. The label costs nothing: about 750,000 videos, no annotation.
+• It is a hard task: the network gets 59.9 %, people 66.6 %, chance is 50 %.
+
+If asked
+• Why shift, and not swap in another video's sound? A swap shows in a single frame: beach picture, piano sound. A shift keeps the scene, so only motion can tell.
+• Shifts are 2.0 to 5.8 s. In the code the two windows may share at most 60 frames, that is 2 s.</aside>
 </section>
 
 <!-- ======================================================= 3 WHAT DOES THE NETWORK LEARN -->
-<section class="slide" id="s3" data-t="55">
-  <div class="kicker a">02 · what does the network learn?</div>
-  <h2 class="a" style="--d:.05s">It attends to <span class="grad">sound sources</span></h2>
-  <p class="lead a" style="--d:.1s">Class activation map: where in the video does the answer "in sync" come from?</p>
+<section class="slide" id="s3" data-t="50">
+  <h2 class="a">What does the network <span class="grad">learn?</span></h2>
+  <p class="lead a" style="--d:.1s">The heat shows where it finds the evidence for "in sync".</p>
   <div class="grid">
-    <div class="a fade" style="--d:.2s">
-      <h3>Strongest response: <b>speech</b></h3>
-      <img class="speech" src="cam_speech.jpg" alt="Class activation maps on 20 videos of people talking: the heat sits on the mouth">
+    <div class="a" style="--d:.2s">
+      <h3>Mostly speech</h3>
+      <img class="speech" src="cam_speech.jpg" alt="Class activation maps on 12 videos of people talking: the heat sits on the mouth">
     </div>
-    <div class="a fade" style="--d:.4s">
+    <div class="a" style="--d:.35s">
       <h3>Other motions, too</h3>
       <div class="motions">
-        <img src="cam_grid.jpg" alt="Class activation maps for six action classes">
+        <img src="cam_grid.jpg" alt="Class activation maps for four action classes">
         <span style="--c:0;--r:0">chopping wood</span><span style="--c:1;--r:0">shuffling cards</span>
-        <span style="--c:0;--r:1">dribbling basketball</span><span style="--c:1;--r:1">playing bass guitar</span>
-        <span style="--c:0;--r:2">playing organ</span><span style="--c:1;--r:2">using keyboard</span>
+        <span style="--c:0;--r:1">dribbling</span><span style="--c:1;--r:1">playing bass guitar</span>
       </div>
     </div>
   </div>
-  <div class="below a" style="--d:.6s">
-    <div class="chips"><span class="chip">no labels</span><span class="chip">no face detector</span><span class="chip">actions, not objects</span></div>
-    <span class="credit">top responses on held-out videos · Owens &amp; Efros 2018, poster</span>
-  </div>
-  <div class="footer"><span>Owens &amp; Efros 2018 · poster "What does the network learn?" · Sec. 4, Figs. 3 and 5</span><span>3 / 5</span></div>
+  <div class="footer"><span>Owens &amp; Efros 2018 · poster "What does the network learn?" · class activation maps, Figs. 3 and 5</span><span>3 / 5</span></div>
   <aside class="notes">• The network only ever answered one question: in sync or not. So what did it learn to look at?
-• A class activation map shows it: for every place and moment, how strongly it speaks for "in sync". Red is strong.
+• These are class activation maps: red is where it finds the evidence for "in sync".
 • The strongest responses are people talking, and the heat sits on the mouth. Speech is where sync is easiest to check.
-• Other motions too: the axe hitting the wood, the cards, hands on strings and keys, the bouncing basketball. The action that makes the sound, not the object.
+• Other motions too: the axe hitting the wood, the cards, the bouncing basketball, the hand on the strings. The action that makes the sound, not the object.
 • Nobody told it what a mouth or an axe is. No labels, no face detector.</aside>
 </section>
 
 <!-- ======================================================= 4 APPLICATION: ACTION RECOGNITION -->
 <section class="slide" id="s4" data-t="40">
-  <div class="kicker a">03 · application: action recognition</div>
-  <h2 class="a" style="--d:.05s">Pretraining and sound <span class="grad">both help</span></h2>
-  <p class="lead a" style="--d:.1s">The pretrained network, fine-tuned on UCF-101 (101 action classes). Accuracy in %.</p>
+  <h2 class="a">Application: <span class="grad">action recognition</span></h2>
   <div class="grid">
-    <div class="a fade" style="--d:.15s">
+    <div class="a" style="--d:.1s">
+      <div class="axis">Accuracy on UCF-101 in %</div>
       <div class="vbars">
-        <div class="vbar me"><b>82.1</b><i style="--h:345px;--d:.3s"></i></div>
-        <div class="vbar ours"><b>77.6</b><i style="--h:326px;--d:.4s"></i></div>
-        <div class="vbar ours"><b>68.1</b><i style="--h:286px;--d:.5s"></i></div>
-        <div class="vbar gap"><b>68.1</b><i style="--h:286px;--d:.65s"></i></div>
-        <div class="vbar"><b>60.3</b><i style="--h:253px;--d:.75s"></i></div>
-        <div class="vbar sup gap"><b>84.2</b><i style="--h:354px;--d:.9s"></i></div>
-        <div class="vbar sup"><b>94.5</b><i style="--h:397px;--d:1s"></i></div>
+        <div class="vbar me"><b>82.1</b><i style="--h:378px;--d:.2s"></i></div>
+        <div class="vbar ours"><b>77.6</b><i style="--h:357px;--d:.2s"></i></div>
+        <div class="vbar ours"><b>68.1</b><i style="--h:313px;--d:.2s"></i></div>
+        <div class="vbar gap"><b>68.1</b><i style="--h:313px;--d:.2s"></i></div>
+        <div class="vbar"><b>60.3</b><i style="--h:277px;--d:.2s"></i></div>
+        <div class="vbar sup gap"><b>84.2</b><i style="--h:387px;--d:.2s"></i></div>
+        <div class="vbar sup"><b>94.5</b><i style="--h:435px;--d:.2s"></i></div>
       </div>
       <div class="vnames"><span>Full</span><span>No audio</span><span>Scratch</span><span class="gap">I3D scratch</span><span>O3N</span><span class="gap">I3D + ImageNet</span><span>I3D + Kinetics</span></div>
       <div class="vgroups"><span style="flex:3">this paper</span><span class="gap" style="flex:2">others</span><span class="gap" style="flex:2">pretrained with labels</span></div>
     </div>
-    <div class="col">
-      <div class="card a pop" style="--d:.5s"><b class="n good">+14 · +4.5</b><h3>Pretraining and sound help</h3><p>Points gained over scratch, and over no audio.</p></div>
-      <div class="card a pop" style="--d:.65s"><b class="n grad">82.1 vs 60.3</b><h3>Beats other self-supervised features</h3><p>O3N: the best earlier one in the comparison.</p></div>
-      <div class="card a pop" style="--d:.8s"><b class="n muted">82.1 vs 94.5</b><h3>Still trails the best supervised</h3><p>I3D with ImageNet and Kinetics labels.</p></div>
-    </div>
+    <ul class="points a" style="--d:.4s">
+      <li class="me">Pretraining and sound help</li>
+      <li>Beats other self-supervised features</li>
+      <li class="sup">Still trails the best supervised ones</li>
+    </ul>
   </div>
   <div class="footer"><span>Owens &amp; Efros 2018 · poster "Application: action recognition" · Table 1 (UCF-101 split 1)</span><span>4 / 5</span></div>
   <aside class="notes">• First application: take the network pretrained on sync and fine-tune it to recognise actions, on UCF-101.
-• 82.1 %. The same network without the pretraining: 68.1, so sync is worth 14 points. Without the audio stream: 77.6, so sound helps too.
-• It beats the other methods that use no labels: O3N 60.3, I3D trained from scratch 68.1.
-• It still trails supervised pretraining: close to I3D with ImageNet labels, 84.2, far from I3D with ImageNet and Kinetics labels, 94.5.
+• 82.1 %. Without the pretraining 68.1, so sync is worth 14 points. Without the audio 77.6, so sound helps too.
+• It beats the other self-supervised features: O3N 60.3.
+• It still trails supervised pretraining: 84.2 with ImageNet labels, 94.5 with ImageNet and Kinetics labels.
 
 If asked
-• Swapped instead of shifted sound (the Look, Listen and Learn task) for pretraining: 78.7. The shift is worth 3.4 points.
-• Spectrogram instead of the raw waveform: 81.1, about the same.</aside>
+• Swapped instead of shifted sound for the pretraining: 78.7. The shift is worth 3.4 points.
+• A spectrogram instead of the raw waveform: 81.1, about the same.</aside>
 </section>
 
 <!-- ======================================================= 5 APPLICATION: SOURCE SEPARATION -->
-<section class="slide" id="s5" data-t="90">
-  <div class="kicker a">04 · application: source separation</div>
-  <h2 class="a" style="--d:.05s">Mix two soundtracks, <span class="grad">learn to split them</span></h2>
+<section class="slide" id="s5" data-t="80">
+  <h2 class="a">Application: <span class="grad">source separation</span></h2>
   <div class="grid">
-    <div class="a fade" style="--d:.15s">
-      <h3>How it is trained</h3>
-      <div class="steps">
-        <div class="card step">
-          <div class="hd"><em>1 MIX</em>Add a random video's sound<span class="code"><i>sourcesep.py</i>samples_mix = samples0 + samples1</span></div>
-          <div class="row">
-            <div class="sig a"><svg data-wave="a"></svg><span>video A · on-screen</span></div><span class="op">+</span>
-            <div class="sig b"><svg data-wave="b"></svg><span>video B · off-screen</span></div><span class="op">=</span>
+    <div class="a" style="--d:.1s">
+      <h3>Training: mix two videos' sound, get both back</h3>
+      <div class="card train">
+        <div class="row">
+          <div class="sig a"><svg data-wave="a"></svg><span>video A</span></div><span class="op">+</span>
+          <div class="sig b"><svg data-wave="b"></svg><span>another video</span></div><span class="op">=</span>
+          <div class="sig mix"><svg data-wave="mix"></svg><span>the mix</span></div>
+        </div>
+        <div class="rule"></div>
+        <div class="row">
+          <div class="stack">
+            <div class="sig v"><svg viewBox="0 0 130 38"><g fill="rgba(56,189,248,.12)" stroke="#38bdf8" stroke-width="1.4"><rect x="1" y="5" width="28" height="28" rx="5"/><rect x="34" y="5" width="28" height="28" rx="5"/><rect x="67" y="5" width="28" height="28" rx="5"/><rect x="100" y="5" width="28" height="28" rx="5"/></g><g fill="#38bdf8"><circle cx="15" cy="15" r="5"/><circle cx="48" cy="15" r="5"/><circle cx="81" cy="15" r="5"/><circle cx="114" cy="15" r="5"/><ellipse cx="15" cy="26" rx="4.5" ry="1.3"/><ellipse cx="48" cy="26" rx="4.5" ry="3"/><ellipse cx="81" cy="26" rx="4.5" ry="1.8"/><ellipse cx="114" cy="26" rx="4.5" ry="3.4"/></g></svg><span>video A</span></div>
             <div class="sig mix"><svg data-wave="mix"></svg><span>the mix</span></div>
           </div>
-        </div>
-        <div class="card step">
-          <div class="hd"><em>2 SPLIT</em>The network sees video A and the mix</div>
-          <div class="row">
-            <div class="stack">
-              <div class="sig v"><svg viewBox="0 0 150 30"><g fill="rgba(56,189,248,.12)" stroke="#38bdf8" stroke-width="1.4"><rect x="1" y="3" width="34" height="24" rx="4"/><rect x="39" y="3" width="34" height="24" rx="4"/><rect x="77" y="3" width="34" height="24" rx="4"/><rect x="115" y="3" width="34" height="24" rx="4"/></g><g fill="#38bdf8"><circle cx="18" cy="12" r="4.5"/><circle cx="56" cy="12" r="4.5"/><circle cx="94" cy="12" r="4.5"/><circle cx="132" cy="12" r="4.5"/><ellipse cx="18" cy="21" rx="4" ry="1.2"/><ellipse cx="56" cy="21" rx="4" ry="2.6"/><ellipse cx="94" cy="21" rx="4" ry="1.6"/><ellipse cx="132" cy="21" rx="4" ry="3"/></g></svg><span>video A</span></div>
-              <div class="sig mix"><svg data-wave="mix"></svg><span>the mix</span></div>
-            </div>
-            <span class="op">→</span>
-            <div class="model"><b>multisensory net → u-net</b><span>pretrained on sync</span></div>
-            <span class="op">→</span>
-            <div class="stack">
-              <div class="sig a"><svg data-wave="a"></svg><span>on-screen</span></div>
-              <div class="sig b"><svg data-wave="b"></svg><span>off-screen</span></div>
-            </div>
+          <span class="op">→</span>
+          <div class="model">network</div>
+          <span class="op">→</span>
+          <div class="stack">
+            <div class="sig a"><svg data-wave="a"></svg><span>on-screen</span></div>
+            <div class="sig b"><svg data-wave="b"></svg><span>off-screen</span></div>
           </div>
         </div>
-        <div class="card step">
-          <div class="hd"><em>3 COMPARE</em>With the two sounds we mixed</div>
-          <div class="loss">loss = |on-screen - A| + |off-screen - B|<u>No labels again: we did the mixing.</u></div>
-        </div>
+        <p>No labels: we mixed the two sounds ourselves.</p>
       </div>
     </div>
-    <div class="a fade" style="--d:.35s">
-      <h3>Then, on real video: hide a face, lose a voice</h3>
+    <div class="a" style="--d:.25s">
+      <h3>On real video: hide a face, lose a voice</h3>
       <div class="sep">
         <div class="frames">
-          <span class="tag">video the model sees</span>
           <img data-m="both" class="show" src="frame_both.jpg" alt="Two speakers talk at the same time">
           <img data-m="left" src="frame_left_masked.jpg" alt="Left half of the frame painted grey">
           <img data-m="right" src="frame_right_masked.jpg" alt="Right half of the frame painted grey">
         </div>
         <div class="specs">
-          <span class="tag">predicted on-screen sound</span><span class="tag" id="sep-out"></span>
+          <span class="tag" id="sep-out"></span>
           <img data-m="both" class="show" src="spec_both.jpg" alt="Spectrogram with both voices">
           <img data-m="left" src="spec_left_masked.jpg" alt="Spectrogram: only the right speaker's voice is kept">
           <img data-m="right" src="spec_right_masked.jpg" alt="Spectrogram: only the left speaker's voice is kept">
         </div>
       </div>
-      <div class="sepctl">
-        <div class="btns"><button class="btn on ok" data-mask="both">both</button><button class="btn" data-mask="left">mask left</button><button class="btn" data-mask="right">mask right</button></div>
-        <span class="key">S</span>
-        <a id="sep-yt" target="_blank" rel="noopener">▶ hear the real result</a>
-      </div>
     </div>
   </div>
-  <div class="end">
-    <div class="card take a pop" style="--d:.6s"><div><span class="grad">Sync is a free label.</span> It ties motion to sound.</div></div>
-    <div class="card us a pop" style="--d:.75s"><div><b>For Reachy Mini Meetings:</b> who is speaking? We weigh mouth motion, voice and mic direction by hand. This <b>learns</b> the link.</div></div>
-  </div>
-  <div class="footer"><span>Owens &amp; Efros 2018 · poster "Application: source separation" · Sec. 6, Fig. 1c · frames from the code release</span><span>5 / 5</span></div>
-  <aside class="notes">• Second application: separate on-screen from off-screen sound, for example a speaker from a translator's voice.
-• How it is trained. 1: take a video clip and add the sound of a random other clip. In the code that is literally samples0 + samples1.
-• 2: the network gets the frames of the first video and the mix. The multisensory features, pretrained on sync, feed a u-net that works on the spectrogram of the mix. It has to give back two sounds: on-screen and off-screen.
-• 3: the loss is the distance of both to the two sounds we mixed. So the answer is free again, no labels. Trained on speech clips of 2.1 s (VoxCeleb).
-• Why can it tell which is which? Only the on-screen voice fits the lips. With one frozen frame instead of the video the error rises from 11.4 to 14.8.
-• On real video (press S): two people talk at once. Left half grey: only the right voice is kept. Right half grey: only the left one. "hear the real result" plays it.
-• Takeaway: sync is a free label. For us: Reachy has to decide who is speaking, and we weigh mouth, voice and mic direction by hand. This paper learns that link.
+  <div class="card take a" style="--d:.4s"><span class="grad">Sync is a free label.</span> It ties motion to sound.</div>
+  <div class="footer"><span>Owens &amp; Efros 2018 · poster "Application: source separation" · Sec. 6, Fig. 1c</span><span><i class="dots"></i>5 / 5</span></div>
+  <aside class="notes">• Second application: separate the sound of what is on screen from the rest.
+• Training: take a video and add the sound of another, random video. The network sees the first video and the mix, and has to give back both sounds: on-screen and off-screen.
+• We know both, because we did the mixing. So again: no labels.
+• It works because only the on-screen voice fits the lips.
+• On real video: two people talk at once.
+• NEXT KEY: hide the left one, only the right voice remains (green).
+• NEXT KEY: hide the right one, only the left voice remains.
+• Takeaway: sync is a free label, and learning it ties motion to sound. For our project: Reachy has to decide who is speaking. We weigh mouth, voice and mic direction by hand, this paper learns that link.
 
 Questions we may get
-• Why is the sync task only solved at 59.9 %? The sound source is often off screen. People: 66.6 %, with 15 s clips and 5 s shifts.
-• Limits? Separation is trained and measured on synthetic mixes only, real mixes are shown but not measured. An audio-only u-net is almost as good, SDR 7.3 vs 7.6. Training the features took about 17 days on 3 GPUs.
-• Two voices of the same sex? Hardest case, and where seeing helps most: SDR 6.5 vs 5.9 audio-only, 3.1 with a frozen frame.
-• Does stereo help? No. Mono gives the same score, and 39 % of the tracks were mono.
-• What is the network? A 3D CNN on the frames and a 1D CNN on the raw waveform, fused early, then a 3D ResNet-18. Why raw waveform? A spectrogram version scored the same (81.1 vs 82.1 on UCF-101).</aside>
+• How is the separation network built? The sync network's features feed a u-net that works on the spectrogram of the mix. Loss: distance of both outputs to the two true sounds. In the code the mix is literally samples0 + samples1. Speech clips of 2.1 s (VoxCeleb).
+• Does it need the motion? Yes: with one frozen frame the error rises from 11.4 to 14.8.
+• Limits? Separation is trained and measured on synthetic mixes only. An audio-only u-net is almost as good, SDR 7.3 vs 7.6. Training the features took about 17 days on 3 GPUs.
+• Why is the sync task only solved at 59.9 %? The sound source is often off screen. People: 66.6 %.
+• What is the sync network? A 3D CNN on the frames and a 1D CNN on the raw waveform, fused early, then a 3D ResNet-18.</aside>
 </section>
 
 </div></div>
@@ -411,11 +340,12 @@ const print = params.has("print"), presenter = params.has("presenter");
 document.documentElement.classList.toggle("print", print);
 document.documentElement.classList.toggle("presenter", presenter);
 const slides = $$(".slide"), deck = $("#deck");
-let cur = 0, started = null, deckScale = 1;
-const enter = {}, leave = {}, action = {};   // per slide id: when it is shown, when it is left, on the S key
+let cur = 0, step = 0, started = null, deckScale = 1;
+const enter = {}, leave = {};   // per slide id: when it is shown, when it is left
+const steps = {};               // per slide id: { n, set(k) }, the states a slide goes through before the next key leaves it
 
 // Presenter view: ?presenter shows the slide on top and the notes below; P opens it in its own window. The two
-// windows follow each other over a BroadcastChannel: the slide, the demo states and the sound switch.
+// windows follow each other over a BroadcastChannel: the slide, its state and the sound switch.
 const sync = "BroadcastChannel" in window ? new BroadcastChannel("paper-deck") : null;
 const tell = (msg) => sync?.postMessage(msg);
 
@@ -435,15 +365,27 @@ function go(i, remote = false) {
   s.classList.remove("active"); void s.offsetWidth; s.classList.add("active");   // replays the entrance animations
   cur = i;
   enter[s.id]?.();
+  showStep(0);
   $("#progress").style.width = `${(i + 1) / slides.length * 100}%`;
   history.replaceState(null, "", `${location.search}#${i + 1}`);
   const budget = slides.slice(0, i + 1).reduce((a, x) => a + Number(x.dataset.t || 0), 0);
   $("#notes-slide").textContent = `slide ${i + 1}/${slides.length} · ~${s.dataset.t}s · cumulative target ${Math.floor(budget / 60)}:${String(budget % 60).padStart(2, "0")}`;
   $("#notes-text").textContent = $("aside.notes", s)?.textContent.trim() ?? "";
-  $("#notes-next").textContent = slides[i + 1] ? `next → ${$("h2", slides[i + 1]).textContent}` : "last slide";
   started ??= performance.now();
-  if (!remote) tell({ i });
+  if (!remote) tell({ i, k: 0 });
 }
+function showStep(k) {
+  const st = steps[slides[cur].id], dots = $(".dots", slides[cur]);
+  step = st ? Math.max(0, Math.min(st.n - 1, k)) : 0;
+  st?.set(step);
+  if (dots) dots.innerHTML = Array.from({ length: st.n }, (_, j) => `<b class="${j === step ? "on" : ""}"></b>`).join("");
+  const after = slides[cur + 1];               // what the next key does, for the notes
+  $("#notes-next").textContent = more() > 0 ? `next key → this slide, state ${step + 2} of ${st.n}` : after ? `next key → ${$("h2", after).textContent}` : "last slide";
+}
+function setStep(k) { showStep(k); tell({ i: cur, k: step }); }
+const more = () => (steps[slides[cur].id]?.n ?? 1) - 1 - step;      // states of this slide still to come
+function next() { if (more() > 0) setStep(step + 1); else if (cur < slides.length - 1) go(cur + 1); }
+function back() { if (step > 0) setStep(step - 1); else if (cur > 0) { go(cur - 1); setStep(more()); } }   // back over a slide border: that slide's last state
 function openPresenter() { window.open(`${location.pathname}?presenter#${cur + 1}`, "paper-presenter", "width=1200,height=850"); }
 setInterval(() => {
   if (!started) return;
@@ -454,27 +396,26 @@ setInterval(() => {
 addEventListener("keydown", (e) => {
   if (e.metaKey || e.ctrlKey || e.altKey) return;
   const k = e.key.toLowerCase();
-  if (["arrowright", "pagedown", " ", "enter"].includes(k)) { e.preventDefault(); go(cur + 1); }
-  else if (["arrowleft", "pageup", "backspace"].includes(k)) { e.preventDefault(); go(cur - 1); }
+  if (["arrowright", "arrowdown", "pagedown", " ", "enter"].includes(k)) { e.preventDefault(); next(); }
+  else if (["arrowleft", "arrowup", "pageup", "backspace"].includes(k)) { e.preventDefault(); back(); }
   else if (k === "home") go(0);
   else if (k === "end") go(slides.length - 1);
   else if (k === "n") $("#notes").classList.toggle("show");
   else if (k === "f") toggleFull();
   else if (k === "t") { started = performance.now(); tell({ t: 1 }); }
-  else if (k === "s") action[slides[cur].id]?.();
   else if (k === "m") setSound(!sound);
   else if (k === "p" && !presenter) openPresenter();
 });
 function toggleFull() { document.fullscreenElement ? document.exitFullscreen() : document.documentElement.requestFullscreen().catch(() => {}); }
-$("#nav-prev").onclick = () => go(cur - 1);
-$("#nav-next").onclick = () => go(cur + 1);
+$("#nav-prev").onclick = back;
+$("#nav-next").onclick = next;
 $("#nav-notes").onclick = () => $("#notes").classList.toggle("show");
 $("#nav-full").onclick = toggleFull;
 $("#nav-presenter").onclick = openPresenter;
 $("#nav-sound").onclick = () => setSound(!sound);
 let tx = null;
 addEventListener("touchstart", (e) => { tx = e.touches[0].clientX; }, { passive: true });
-addEventListener("touchend", (e) => { if (tx == null) return; const dx = e.changedTouches[0].clientX - tx; if (Math.abs(dx) > 50) go(cur + (dx < 0 ? 1 : -1)); tx = null; });
+addEventListener("touchend", (e) => { if (tx == null) return; const dx = e.changedTouches[0].clientX - tx; if (Math.abs(dx) > 50) (dx < 0 ? next : back)(); tx = null; });
 
 /* ---------------- sound (M): a thud for every bounce in the soundtrack, off until asked for ---------------- */
 let actx = null, sound = false;
@@ -537,18 +478,18 @@ function football(ctx, R, turn) {
 }
 
 const scopes = {};
-function makeScope(id, { strip = false, auto = false }) {
+function makeScope(id, { strip = false }) {
   const el = $("#" + id), cv = $("canvas", el), ctx = cv.getContext("2d"), read = $(".read", el);
   const PERIOD = CLIP + 0.7;                    // the clip, then a short rest
-  let token = 0, dirty = true, shifted = false, by = SHIFTS[0], n = 0, off = 0, t0 = 0, prev = 0, loop = 0, manual = false, lastNow = 0;
+  const by = SHIFTS[0];                         // the shift shown, in seconds
+  let token = 0, dirty = true, shifted = false, off = 0, t0 = 0, prev = 0, loop = 0, lastNow = 0;
   addEventListener("deckscale", () => { dirty = true; });
   const mono = (px) => `600 ${px}px "JetBrains Mono", ui-monospace, monospace`;
   const line = (xa, ya, xb, yb) => { ctx.beginPath(); ctx.moveTo(xa, ya); ctx.lineTo(xb, yb); ctx.stroke(); };
 
-  function apply(on, withBy) {                  // the state, without telling the other window
-    shifted = on; if (on) by = withBy ?? SHIFTS[n++ % SHIFTS.length];
-    read.innerHTML = on ? `<b class="bad">out of sync</b>audio from ${by.toFixed(1)} s later · label y = 0` : `<b class="good">in sync</b>audio of the same 4.2 s · label y = 1`;
-    el.dispatchEvent(new CustomEvent("shift", { detail: on }));
+  function apply(on) {
+    shifted = on;
+    read.innerHTML = on ? `<b class="bad">out of sync</b>${strip ? "label 0" : `sound from ${by.toFixed(1)} s later`}` : `<b class="good">in sync</b>${strip ? "label 1" : "its own sound"}`;
   }
 
   function frame(now, still) {
@@ -558,7 +499,7 @@ function makeScope(id, { strip = false, auto = false }) {
     }
     const W = el.clientWidth, H = el.clientHeight, dt = Math.min(0.1, (now - lastNow) / 1000); lastNow = now;
     const lp = Math.floor((now - t0) / 1000 / PERIOD), tau = still ?? ((now - t0) / 1000) % PERIOD;
-    if (still == null && lp !== loop) { loop = lp; prev = 0; if (auto && !manual) apply(!shifted); }
+    if (still == null && lp !== loop) { loop = lp; prev = 0; }
     const play = Math.min(tau, CLIP), live = tau <= CLIP, target = shifted ? by : 0;
     off = still != null || Math.abs(target - off) < 0.004 ? target : off + (target - off) * (1 - Math.exp(-dt * 8));   // the soundtrack slides
     const acol = off < 0.02 ? "#4ade80" : "#f472b6";
@@ -568,17 +509,15 @@ function makeScope(id, { strip = false, auto = false }) {
     let top = 22;
     if (strip) {                                // the 10 s video with the two windows cut from it
       const sx = (t) => x0 + (t / SRC) * (x1 - x0), y = 64, bh = 20;
-      ctx.fillStyle = "rgba(255,255,255,.07)"; ctx.fillRect(x0, y, x1 - x0, bh);
-      ctx.fillStyle = "rgba(255,255,255,.16)"; for (let s = 1; s <= 10; s++) ctx.fillRect(sx(s), y, 1, bh);
-      ctx.fillStyle = "rgba(255,255,255,.6)"; for (const h of hits) if (h > 0 && h < SRC) { ctx.beginPath(); ctx.arc(sx(h), y + bh / 2, 2.2, 0, 7); ctx.fill(); }
-      ctx.font = mono(13); ctx.fillStyle = "#8d97ad"; ctx.textAlign = "right"; ctx.fillText("one 10 s video", x1, y - 20); ctx.textAlign = "left";
+      ctx.fillStyle = "rgba(255,255,255,.08)"; ctx.fillRect(x0, y, x1 - x0, bh);
+      ctx.font = mono(14); ctx.fillStyle = "#8d97ad"; ctx.textAlign = "right"; ctx.fillText("one 10 s video", x1, y - 20); ctx.textAlign = "left";
       const win = (a, col, up, text) => {
         const xa = sx(a), xb = sx(a + CLIP), e = up ? y - 3 : y + bh + 3, f = up ? y - 11 : y + bh + 11;
         ctx.fillStyle = col + "3a"; ctx.fillRect(xa, up ? y : y + bh / 2, xb - xa, bh / 2);
         ctx.strokeStyle = col; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(xa, e); ctx.lineTo(xa, f); ctx.lineTo(xb, f); ctx.lineTo(xb, e); ctx.stroke();
         ctx.fillStyle = col; ctx.fillText(text, xa, up ? y - 20 : y + bh + 29);
       };
-      win(V0, "#38bdf8", true, "video frames · 4.2 s");
+      win(V0, "#38bdf8", true, "video · 4.2 s");
       win(V0 + off, acol, false, off < 0.02 ? "audio · the same 4.2 s" : `audio · ${off.toFixed(1)} s later`);
       top = 134;
     }
@@ -592,13 +531,12 @@ function makeScope(id, { strip = false, auto = false }) {
     ctx.font = mono(14); ctx.fillStyle = "#38bdf8"; ctx.fillText("VIDEO · a bouncing ball", x0, top + 14); ctx.fillStyle = acol; ctx.fillText("AUDIO · its sound", x0, ya + 14);
     ctx.strokeStyle = "rgba(255,255,255,.22)"; ctx.lineWidth = 1.5; line(x0, floor, x1, floor);
     ctx.strokeStyle = "rgba(255,255,255,.12)"; ctx.lineWidth = 1; line(x0, mid, x1, mid);
-    ctx.setLineDash([3, 5]); ctx.strokeStyle = "rgba(255,255,255,.2)"; for (const t of bounces) line(X(t), floor, X(t), bottom); ctx.setLineDash([]);
+    ctx.setLineDash([3, 5]); ctx.strokeStyle = "rgba(255,255,255,.28)"; for (const t of bounces) if (t <= play) line(X(t), floor, X(t), bottom); ctx.setLineDash([]);   // every landing drops a line onto the sound
 
     const path = (a, b) => { ctx.beginPath(); ctx.moveTo(X(a), ballY(a)); for (let t = a + 0.012; t < b; t += 0.012) ctx.lineTo(X(t), ballY(t)); ctx.lineTo(X(b), ballY(b)); ctx.stroke(); };
-    ctx.lineWidth = 2; ctx.strokeStyle = "rgba(56,189,248,.3)"; ctx.setLineDash([4, 6]); path(play, CLIP); ctx.setLineDash([]);
     ctx.lineWidth = 2.5; ctx.strokeStyle = "rgba(56,189,248,.9)"; path(0, play);
     for (const t of bounces) {
-      ctx.fillStyle = t <= play ? "#38bdf8" : "rgba(56,189,248,.45)"; ctx.fillRect(X(t) - 1.5, floor, 3, 8);
+      if (t <= play) { ctx.fillStyle = "#38bdf8"; ctx.fillRect(X(t) - 1.5, floor, 3, 8); }
       const age = play - t;
       if (live && age >= 0 && age < 0.4) { ctx.strokeStyle = `rgba(125,211,252,${1 - age / 0.4})`; ctx.lineWidth = 2; ctx.beginPath(); ctx.ellipse(X(t), floor, 12 + 90 * age, 3 + 22 * age, 0, 0, 7); ctx.stroke(); }
     }
@@ -608,10 +546,6 @@ function makeScope(id, { strip = false, auto = false }) {
       ctx.globalAlpha = t <= play ? 1 : 0.42; ctx.fillStyle = acol; ctx.fillRect(x, mid - h, 2, 2 * h);
     }
     ctx.globalAlpha = 1;
-    for (const t of bounces) {                  // under every bounce: is its thud there?
-      ctx.beginPath(); ctx.arc(X(t), bottom, 5, 0, 7);
-      if (thuds.some(([u]) => Math.abs(u - t) < 0.03)) { ctx.fillStyle = "#4ade80"; ctx.fill(); } else { ctx.fillStyle = "#070b16"; ctx.fill(); ctx.strokeStyle = "#f472b6"; ctx.lineWidth = 2; ctx.stroke(); }
-    }
     for (const [t, l] of thuds) {
       const age = play - t;
       if (live && age >= 0 && age < 0.35) { ctx.globalAlpha = 1 - age / 0.35; ctx.strokeStyle = acol; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(X(t), mid, 10 + 70 * age * l, 0, 7); ctx.stroke(); ctx.globalAlpha = 1; }
@@ -628,24 +562,22 @@ function makeScope(id, { strip = false, auto = false }) {
   const me = scopes[id] = {
     get shifted() { return shifted; },
     start(on = false) {                         // runs from the start of the clip, in sync unless asked otherwise
-      if (print) n = 0;                         // the PDF always shows the same shift
-      apply(on); manual = false; dirty = true;
+      apply(on); dirty = true;
       if (print) return frame(performance.now(), 2.95);
       const my = ++token; t0 = lastNow = performance.now(); loop = 0; prev = 0; off = on ? by : 0;
       const tick = (now) => { if (my !== token) return; requestAnimationFrame(tick); frame(now); };
       requestAnimationFrame(tick);
     },
     stop() { token++; },
-    set(on, withBy, remote = false) { manual = true; apply(on, withBy); if (!remote) tell({ scope: id, shift: on, by }); },
+    set: apply,
   };
-  el.onclick = () => me.set(!shifted);
+  el.onclick = () => setStep(shifted ? 0 : 1);
+  steps[el.closest(".slide").id] = { n: 2, set: (k) => apply(k === 1) };
   return me;
 }
-const scope1 = makeScope("scope1", { auto: true }), scope2 = makeScope("scope2", { strip: true });
-enter.s1 = () => scope1.start(); leave.s1 = () => scope1.stop(); action.s1 = () => scope1.set(!scope1.shifted);
-enter.s2 = () => scope2.start(print); leave.s2 = () => scope2.stop(); action.s2 = () => scope2.set(!scope2.shifted);
-$$("#s2 [data-shift]").forEach((b) => b.onclick = () => scope2.set(b.dataset.shift === "1"));
-$("#scope2").addEventListener("shift", (e) => $$("#s2 [data-shift]").forEach((b) => b.classList.toggle("on", (b.dataset.shift === "1") === e.detail)));
+const scope1 = makeScope("scope1", {}), scope2 = makeScope("scope2", { strip: true });
+enter.s1 = () => scope1.start(); leave.s1 = () => scope1.stop();
+enter.s2 = () => scope2.start(print); leave.s2 = () => scope2.stop();
 document.fonts?.ready.then(() => { dispatchEvent(new Event("deckscale")); if (print) { scope1.start(); scope2.start(true); } });   // the canvas labels need the fonts
 
 /* ---------------- slide 5: the training example as waveforms: two voices and their sum ---------------- */
@@ -663,35 +595,22 @@ document.fonts?.ready.then(() => { dispatchEvent(new Event("deckscale")); if (pr
 }
 
 /* ---------------- slide 5: paint half of the frame grey, and that speaker's voice is gone ---------------- */
-const MASKS = {   // the three cases of Fig. 1c; the videos are the ones linked in the code release's README
-  both: ["nothing hidden: both voices", "https://youtu.be/H9CgWJToF_s"],
-  left: ["left hidden: only the right voice is kept", "https://youtu.be/9jPaA8ttI6A"],
-  right: ["right hidden: only the left voice is kept", "https://youtu.be/M4ACgIWuiWM"],
-};
-let mask = "both", maskTimer = 0;
-function setMask(m, remote = false) {
-  mask = m;
+const MASKS = { both: "nothing hidden: both voices", left: "left face hidden: only the right voice remains", right: "right face hidden: only the left voice remains" };   // the three cases of Fig. 1c
+function setMask(m) {
   $$("#s5 [data-m]").forEach((e) => e.classList.toggle("show", e.dataset.m === m));
-  $$("#s5 [data-mask]").forEach((b) => b.classList.toggle("on", b.dataset.mask === m));
-  $("#sep-out").textContent = MASKS[m][0]; $("#sep-yt").href = MASKS[m][1];
-  if (!remote) tell({ mask: m });
+  $("#sep-out").textContent = MASKS[m];
 }
-const pickMask = (m, remote) => { clearInterval(maskTimer); setMask(m, remote); };          // by hand: the tour stops
-const nextMask = () => Object.keys(MASKS)[(Object.keys(MASKS).indexOf(mask) + 1) % 3];
-$$("#s5 [data-mask]").forEach((b) => b.onclick = () => pickMask(b.dataset.mask));
-enter.s5 = () => { clearInterval(maskTimer); setMask(print ? "left" : "both", true); if (!print) maskTimer = setInterval(() => setMask(nextMask(), true), 3200); };
-leave.s5 = () => clearInterval(maskTimer);
-action.s5 = () => pickMask(nextMask());
+steps.s5 = { n: 3, set: (k) => setMask(Object.keys(MASKS)[k]) };
+$("#s5 .sep").onclick = () => setStep((step + 1) % 3);
 
 if (sync) sync.onmessage = ({ data: m }) => {
   if ("i" in m && m.i !== cur) go(m.i, true);
+  if ("k" in m && m.k !== step) showStep(m.k);
   if ("t" in m) started = performance.now();
   if ("sound" in m) setSound(m.sound, true);
-  if ("shift" in m) scopes[m.scope]?.set(m.shift, m.by, true);
-  if ("mask" in m) pickMask(m.mask, true);
 };
 
-if (print) slides.forEach((s) => { s.classList.add("active"); enter[s.id]?.(); });
+if (print) { slides.forEach((s) => { s.classList.add("active"); enter[s.id]?.(); }); setMask("left"); }
 else go(Math.max(0, (parseInt(location.hash.slice(1)) || 1) - 1), true);
 </script>
 </body>

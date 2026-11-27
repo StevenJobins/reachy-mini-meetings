@@ -27,38 +27,29 @@ def embedded(page):
 
 
 # "What does the network learn?" on the poster: class activation maps, as 7 strips of 9 frames (342 x 230 each)
-# for speech and 32 square frames for 8 action classes, 4 each. Frames picked for the deck: one adult, mouth or
-# action easy to see, no caption with a name, no children.
+# for speech and 32 square frames for 8 action classes, 4 each. A few of them, large, are enough on a slide. Picked:
+# one adult, mouth or action easy to see, no caption with a name, no children.
 subprocess.run(["pdfimages", "-png", str(poster), str(tmp / "poster")], check=True)
 on_poster = lambda i: Image.open(tmp / f"poster-{i:03d}.png").convert("RGB")
 BG, FIRST_STRIP, FIRST_SQUARE = (7, 11, 22), 56, 63
 
-speech = [(1, 0), (1, 1), (1, 4), (1, 5), (1, 6),      # (strip, frame in the strip)
-          (1, 7), (2, 1), (2, 3), (2, 4), (2, 6),
-          (4, 2), (4, 5), (4, 6), (5, 0), (5, 2),
-          (5, 3), (5, 4), (5, 5), (5, 6), (6, 3)]
-W, H, GAP = 280, 188, 6
-grid = Image.new("RGB", (5 * W + 4 * GAP, 4 * H + 3 * GAP), BG)
+speech = [(1, 0), (1, 1), (1, 4), (1, 5),      # (strip, frame in the strip): 4 x 3 faces
+          (1, 6), (2, 1), (2, 3), (2, 6),
+          (4, 5), (5, 0), (5, 3), (5, 5)]
+W, H, GAP = 340, 230, 8
+grid = Image.new("RGB", (4 * W + 3 * GAP, 3 * H + 2 * GAP), BG)
 for n, (strip, k) in enumerate(speech):
-    cell = on_poster(FIRST_STRIP + strip).crop((342 * k + 1, 0, 342 * k + 341, 230)).resize((W, H), Image.LANCZOS)
-    grid.paste(cell, (n % 5 * (W + GAP), n // 5 * (H + GAP)))
+    grid.paste(on_poster(FIRST_STRIP + strip).crop((342 * k + 1, 0, 342 * k + 341, 230)), (n % 4 * (W + GAP), n // 4 * (H + GAP)))
 grid.save(out / "cam_speech.jpg", quality=84)
 
-# Two classes side by side, three rows of them, three frames per class; under every row 56 px are left free for
-# the class names, which the page writes there (.motions in index.html uses the same numbers).
-motions = [(0, 1, 2),        # chopping wood
-           (4, 5, 6),        # shuffling cards
-           (12, 13, 15),     # dribbling basketball
-           (24, 25, 26),     # playing bass guitar
-           (20, 21, 22),     # playing organ
-           (8, 9, 10)]       # using keyboard
-S, GAP, BETWEEN, LABEL = 224, 8, 40, 56
-group = 3 * S + 2 * GAP
-grid = Image.new("RGB", (2 * group + BETWEEN, 3 * (S + LABEL)), BG)
-for n, frames in enumerate(motions):
-    for c, k in enumerate(frames):
-        grid.paste(on_poster(FIRST_SQUARE + k), (n % 2 * (group + BETWEEN) + c * (S + GAP), n // 2 * (S + LABEL)))
-grid.save(out / "cam_grid.jpg", quality=84)
+# One frame for each of four classes, two by two; under every row 40 px are left free for the class names, which
+# the page writes there (.motions in index.html uses the same numbers).
+motions = [0, 5, 12, 25]   # chopping wood, shuffling cards, dribbling basketball, playing bass guitar
+S, BETWEEN, LABEL = 224, 20, 40
+grid = Image.new("RGB", (2 * S + BETWEEN, 2 * (S + LABEL)), BG)
+for n, k in enumerate(motions):
+    grid.paste(on_poster(FIRST_SQUARE + k), (n % 2 * (S + BETWEEN), n // 2 * (S + LABEL)))
+grid.save(out / "cam_grid.jpg", quality=88)
 
 # Fig. 1c (page 2): the predicted on-screen sound for the whole frame (image 12), with the right half masked
 # (13, the left speaker is left) and with the left half masked (11). Dark on white in the paper; here light on
