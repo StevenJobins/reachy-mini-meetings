@@ -58,7 +58,7 @@
   html.presenter #notes { display: block; left: 16px; right: 16px; top: calc(50vh + 8px); bottom: 16px; width: auto; transform: none; overflow: auto; font-size: 23px; line-height: 1.5; }
   html.presenter #notes .meta, html.presenter #notes-next { font-size: 17px; }
 
-  /* the sync demo (slides 1 and 2): a bouncing ball on top, its soundtrack below */
+  /* the sync demo (slide 2): a bouncing ball on top, its soundtrack below */
   .scope { position: relative; border-radius: 22px; border: 1px solid var(--line); background: rgba(5,8,18,.78); overflow: hidden; cursor: pointer; }
   .scope canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
   .scope .read { position: absolute; left: 30px; right: 30px; bottom: 16px; font: 500 18px var(--mono); color: var(--muted); white-space: nowrap; }
@@ -66,12 +66,12 @@
   .good { color: var(--ok); } .bad { color: var(--aud); }
 
   /* ---------- 1 title ---------- */
-  #s1 .left { position: absolute; left: 90px; top: 160px; width: 740px; }
-  #s1 .paper { margin: 40px 0 8px; font: 600 27px/1.3 var(--head); color: #e4e9f4; }
-  #s1 .meta { font: 500 18px var(--mono); color: var(--muted); }
-  #s1 .who { margin-top: 44px; display: flex; gap: 12px; flex-wrap: wrap; }
-  #s1 .who .chip { font-size: 16px; padding: 10px 16px; }
-  #s1 .scope { position: absolute; right: 80px; top: 160px; width: 680px; height: 540px; }
+  #s1 .mid { position: absolute; left: 90px; right: 90px; top: 216px; }
+  #s1 h1 { font-size: 108px; }
+  #s1 .paper { margin: 56px 0 10px; font: 600 31px/1.3 var(--head); color: #e4e9f4; }
+  #s1 .meta { font: 500 19px var(--mono); color: var(--muted); }
+  #s1 .who { margin-top: 56px; display: flex; gap: 12px; flex-wrap: wrap; }
+  #s1 .who .chip { font-size: 17px; padding: 11px 18px; }
 
   /* ---------- 2 the idea ---------- */
   #s2 .grid { display: grid; grid-template-columns: 1000px 1fr; gap: 30px; }
@@ -161,26 +161,24 @@
 <div id="stage"><div id="deck">
 
 <!-- ======================================================= 1 TITLE -->
-<section class="slide" id="s1" data-t="20">
-  <div class="left">
-    <h1 class="a">Does this sound<br>belong to<br><span class="grad">this video?</span></h1>
-    <div class="paper a" style="--d:.15s">Audio-Visual Scene Analysis with<br>Self-Supervised Multisensory Features</div>
+<section class="slide" id="s1" data-t="15">
+  <div class="mid">
+    <h1 class="a">Does this sound belong<br>to <span class="grad">this video?</span></h1>
+    <div class="paper a" style="--d:.15s">Audio-Visual Scene Analysis with Self-Supervised Multisensory Features</div>
     <div class="meta a" style="--d:.2s">Andrew Owens, Alexei A. Efros · UC Berkeley · ECCV 2018</div>
     <div class="who a" style="--d:.3s"><span class="chip">Dominic Ill</span><span class="chip">Kevin Stöckli</span><span class="chip">Simon Thut</span></div>
   </div>
-  <div class="scope a" style="--d:.15s" id="scope1"><canvas></canvas><div class="read"></div></div>
-  <div class="footer"><span>Paper presentation · Mixed Reality HS 2026 · Team 1</span><span><i class="dots"></i>1 / 5</span></div>
-  <aside class="notes">• Watch the ball and listen: in sync.
-• NEXT KEY: and now? You notice at once that something is off.
-• This paper turns that one question into training data. Owens and Efros, UC Berkeley, ECCV 2018.
-(M turns the sound on.)</aside>
+  <div class="footer"><span>Paper presentation · Mixed Reality HS 2026 · Team 1</span><span>1 / 5</span></div>
+  <aside class="notes">• Our paper: Audio-Visual Scene Analysis with Self-Supervised Multisensory Features, by Owens and Efros, UC Berkeley, ECCV 2018.
+• All of it grows out of one question: does this sound belong to this video?
+• Try it yourselves on the next slide.</aside>
 </section>
 
 <!-- ======================================================= 2 THE IDEA -->
-<section class="slide" id="s2" data-t="55">
+<section class="slide" id="s2" data-t="60">
   <h2 class="a">Free labels: <span class="grad">shift the soundtrack</span></h2>
   <div class="grid">
-    <div class="scope a" style="--d:.1s" id="scope2"><canvas></canvas><div class="read"></div></div>
+    <div class="scope a" style="--d:.1s" id="demo"><canvas></canvas><div class="read"></div></div>
     <div class="col">
       <div class="card a" style="--d:.2s"><div class="big grad">0 labels</div><div class="cap">≈ 750,000 unlabeled videos</div></div>
       <div class="card a" style="--d:.3s">
@@ -190,10 +188,10 @@
     </div>
   </div>
   <div class="footer"><span>Owens &amp; Efros 2018 · Sec. 3</span><span><i class="dots"></i>2 / 5</span></div>
-  <aside class="notes">• Motivation: most videos come with sound, but recognition models mostly ignore it.
-• The idea: cut 4.2 s out of a video and keep its own sound. Label: in sync.
-• NEXT KEY: or take the sound from a few seconds later in the same video. Label: not in sync.
-• The network only has to tell the two apart. The label costs nothing: about 750,000 videos, no annotation.
+  <aside class="notes">• A video of a bouncing ball, and its sound. Watch and listen: in sync. (M turns the sound on.)
+• NEXT KEY: and now? You notice at once that something is off. The sound is from 2.8 s later in the same video.
+• That is the whole training task: 4.2 s of video, with its own sound or with shifted sound, and the network says which.
+• The label costs nothing: about 750,000 videos, no annotation. Most videos have sound, and recognition models mostly ignore it.
 • It is a hard task: the network gets 59.9 %, people 66.6 %, chance is 50 %.
 
 If asked
@@ -417,7 +415,7 @@ let tx = null;
 addEventListener("touchstart", (e) => { tx = e.touches[0].clientX; }, { passive: true });
 addEventListener("touchend", (e) => { if (tx == null) return; const dx = e.changedTouches[0].clientX - tx; if (Math.abs(dx) > 50) (dx < 0 ? next : back)(); tx = null; });
 
-/* ---------------- sound (M): a thud for every bounce in the soundtrack, off until asked for ---------------- */
+/* ---------------- sound (M): a thud for every bounce in the soundtrack of slide 2, off until asked for ---------------- */
 let actx = null, sound = false;
 function setSound(on, remote = false) {
   sound = on;
@@ -448,13 +446,12 @@ function height(t) {                           // 0..1; a longer flight is a hig
 const loud = (i) => Math.min(1, 0.45 + 0.55 * ((hits[i] - hits[i - 1]) / LONGEST) ** 2);   // a higher bounce lands louder
 function envelope(t) { let e = 0; for (let i = 1; i < hits.length; i++) { const dt = t - hits[i]; if (dt >= 0 && dt < 0.6) e += loud(i) * Math.exp(-dt / 0.1); } return Math.min(1, e); }
 const hash = (i) => { const x = Math.sin(i * 12.9898) * 43758.5453; return x - Math.floor(x); };
-// Shifts from the paper's range (2.0 to 5.8 s), the three that leave every bounce of the clip furthest from any thud
-const SHIFTS = (() => {
-  const clip = hits.filter((h) => h >= V0 && h <= V0 + CLIP), all = [];
-  for (let k = 20; k <= 58; k++) { const s = k / 10; all.push([Math.min(...clip.map((h) => Math.min(...hits.map((g) => Math.abs(g - s - h))))), s]); }
-  all.sort((a, b) => b[0] - a[0]);
-  const out = []; for (const [, s] of all) if (out.length < 3 && out.every((o) => Math.abs(o - s) >= 0.9)) out.push(s);
-  return out;
+// The shift shown: of the paper's range (2.0 to 5.8 s), the one that leaves every bounce of the clip furthest from any thud
+const SHIFT = (() => {
+  const clip = hits.filter((h) => h >= V0 && h <= V0 + CLIP);
+  let best = [0, 2];
+  for (let k = 20; k <= 58; k++) { const s = k / 10, d = Math.min(...clip.map((h) => Math.min(...hits.map((g) => Math.abs(g - s - h))))); if (d > best[0]) best = [d, s]; }
+  return best[1];
 })();
 
 // A football seen from the front, so that the video reads as a video of a ball and not as a curve: white, a dark
@@ -477,11 +474,10 @@ function football(ctx, R, turn) {
   ctx.restore();
 }
 
-const scopes = {};
-function makeScope(id, { strip = false }) {
-  const el = $("#" + id), cv = $("canvas", el), ctx = cv.getContext("2d"), read = $(".read", el);
-  const PERIOD = CLIP + 0.7;                    // the clip, then a short rest
-  const by = SHIFTS[0];                         // the shift shown, in seconds
+// The demo of slide 2: the clip plays in a loop, with its own sound (state 1) or with the shifted sound (state 2)
+function syncDemo(el) {
+  const cv = $("canvas", el), ctx = cv.getContext("2d"), read = $(".read", el);
+  const PERIOD = CLIP + 0.7, by = SHIFT;        // the clip, then a short rest
   let token = 0, dirty = true, shifted = false, off = 0, t0 = 0, prev = 0, loop = 0, lastNow = 0;
   addEventListener("deckscale", () => { dirty = true; });
   const mono = (px) => `600 ${px}px "JetBrains Mono", ui-monospace, monospace`;
@@ -489,7 +485,7 @@ function makeScope(id, { strip = false }) {
 
   function apply(on) {
     shifted = on;
-    read.innerHTML = on ? `<b class="bad">out of sync</b>${strip ? "label 0" : `sound from ${by.toFixed(1)} s later`}` : `<b class="good">in sync</b>${strip ? "label 1" : "its own sound"}`;
+    read.innerHTML = on ? `<b class="bad">out of sync</b>label 0` : `<b class="good">in sync</b>label 1`;
   }
 
   function frame(now, still) {
@@ -506,8 +502,7 @@ function makeScope(id, { strip = false }) {
 
     ctx.clearRect(0, 0, W, H);
     const x0 = 30, x1 = W - 30, X = (t) => x0 + (t / CLIP) * (x1 - x0);
-    let top = 22;
-    if (strip) {                                // the 10 s video with the two windows cut from it
+    {                                           // the 10 s video with the two windows cut from it
       const sx = (t) => x0 + (t / SRC) * (x1 - x0), y = 64, bh = 20;
       ctx.fillStyle = "rgba(255,255,255,.08)"; ctx.fillRect(x0, y, x1 - x0, bh);
       ctx.font = mono(14); ctx.fillStyle = "#8d97ad"; ctx.textAlign = "right"; ctx.fillText("one 10 s video", x1, y - 20); ctx.textAlign = "left";
@@ -519,10 +514,9 @@ function makeScope(id, { strip = false }) {
       };
       win(V0, "#38bdf8", true, "video · 4.2 s");
       win(V0 + off, acol, false, off < 0.02 ? "audio · the same 4.2 s" : `audio · ${off.toFixed(1)} s later`);
-      top = 134;
     }
     // video track above (the ball's height over time is also its path), audio track below
-    const bottom = H - 58, hv = (bottom - top) * 0.56, R = 18;
+    const top = 134, bottom = H - 58, hv = (bottom - top) * 0.56, R = 18;
     const floor = top + hv - 8, rise = hv - 40 - 2 * R, ya = floor + 30, mid = (ya + bottom) / 2 + 6, ha = (bottom - ya) / 2 - 8;
     const ballY = (t) => floor - R - height(V0 + t) * rise;
     const bounces = hits.filter((h) => h >= V0 && h <= V0 + CLIP).map((h) => h - V0);
@@ -559,8 +553,9 @@ function makeScope(id, { strip = false }) {
     football(ctx, R, play * 2.4); ctx.restore();   // it spins as it flies
   }
 
-  const me = scopes[id] = {
-    get shifted() { return shifted; },
+  el.onclick = () => setStep(shifted ? 0 : 1);
+  steps[el.closest(".slide").id] = { n: 2, set: (k) => apply(k === 1) };
+  return {
     start(on = false) {                         // runs from the start of the clip, in sync unless asked otherwise
       apply(on); dirty = true;
       if (print) return frame(performance.now(), 2.95);
@@ -569,16 +564,11 @@ function makeScope(id, { strip = false }) {
       requestAnimationFrame(tick);
     },
     stop() { token++; },
-    set: apply,
   };
-  el.onclick = () => setStep(shifted ? 0 : 1);
-  steps[el.closest(".slide").id] = { n: 2, set: (k) => apply(k === 1) };
-  return me;
 }
-const scope1 = makeScope("scope1", {}), scope2 = makeScope("scope2", { strip: true });
-enter.s1 = () => scope1.start(); leave.s1 = () => scope1.stop();
-enter.s2 = () => scope2.start(print); leave.s2 = () => scope2.stop();
-document.fonts?.ready.then(() => { dispatchEvent(new Event("deckscale")); if (print) { scope1.start(); scope2.start(true); } });   // the canvas labels need the fonts
+const demo = syncDemo($("#demo"));
+enter.s2 = () => demo.start(print); leave.s2 = () => demo.stop();
+document.fonts?.ready.then(() => { dispatchEvent(new Event("deckscale")); if (print) demo.start(true); });   // the canvas labels need the fonts
 
 /* ---------------- slide 5: the training example as waveforms: two voices and their sum ---------------- */
 {
